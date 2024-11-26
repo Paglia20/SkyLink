@@ -6,6 +6,7 @@ version = 3
 name = "SkyLinksProg"
 version = "0.1.0"
 dependencies = [
+ "crossbeam-channel",
  "toml",
  "wg_2024",
 ]
