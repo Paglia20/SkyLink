@@ -68,7 +68,7 @@ impl MyDrone {
     fn handle_packet(&mut self, packet: Packet) {
         match packet.pack_type {
             PacketType::MsgFragment(_fragment_id) => {
-
+                //ciao
             },
             PacketType::FloodRequest(_flood_request_id) => {
 
