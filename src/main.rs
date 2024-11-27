@@ -4,5 +4,5 @@ mod sim_control;
 fn main() {
 
     println!("Hello, world!");
-    sim_control::simulate_controller();
+    sim_control::run_simulation_gui();
 }
