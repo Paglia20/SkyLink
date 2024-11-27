@@ -8,3 +8,5 @@ toml = "0.8.19"
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize"] }
 crossbeam-channel = "0.5.13"
 rand = "0.8"
+egui = "0.24"
+eframe = "0.24"
