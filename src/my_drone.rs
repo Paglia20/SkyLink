@@ -6,6 +6,7 @@ use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::packet::{Packet, PacketType, Nack, FloodResponse, NodeType, FloodRequest};
 use wg_2024::packet::Nack::{DestinationIsDrone, ErrorInRouting};
 use rand::Rng;
+//ciao
 
 pub struct MyDrone {
     id: NodeId,
