@@ -4,7 +4,7 @@ use crossbeam_channel::{select_biased, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::packet::{Packet, PacketType, Nack, FloodResponse, NodeType, FloodRequest};
-use wg_2024::packet::Nack::{DestinationIsDrone, ErrorInRouting};
+use wg_2024::packet::Nack::{DestinationIsDrone, ErrorInRouting, UnexpectedRecipient};
 use rand::Rng;
 
 pub struct MyDrone {
@@ -69,80 +69,89 @@ impl MyDrone {
     fn handle_packet(&mut self, packet: Packet) {
         let position = packet.routing_header.hop_index;
 
-        match packet.pack_type.clone() {
-            PacketType::MsgFragment(_fragment) => {
-                if position < packet.routing_header.hops.len() {
-                    let next = packet.routing_header.hops[position];
-                    if self.packet_send.contains_key(&next) {
-                        let mut rng = rand::thread_rng();
-                        let random_number: u32 = rng.gen_range(0..101);
+        if packet.routing_header.hops[position] == self.id {
 
-                        if random_number > self.pdr {
-                             if self.forward_packet(packet.clone(), &next) {
-                                 return;
-                             }
+            match packet.pack_type.clone() {
+                PacketType::MsgFragment(_fragment) => {
+                    if position < packet.routing_header.hops.len() {
+                        let next = packet.routing_header.hops[position];
+                        if self.packet_send.contains_key(&next) {
+                            let mut rng = rand::thread_rng();
+                            let random_number: u32 = rng.gen_range(0..101);
+
+                            if random_number > self.pdr {
+                                if self.forward_packet(packet.clone(), &next) {
+                                    return;
+                                }
+                            }
                         }
+                        self.send_nack(ErrorInRouting(next),
+                                       packet.routing_header.hops.clone(),
+                                       packet.session_id
+                        );
+
+                    } else {
+                        self.send_nack(DestinationIsDrone,
+                                       packet.routing_header.hops.clone(),
+                                       packet.session_id
+                        );
                     }
-                    self.send_nack(ErrorInRouting(next),
-                                         packet.routing_header.hops.clone(),
-                                         packet.session_id
-                    );
+                },
 
-                } else {
-                    self.send_nack(DestinationIsDrone,
-                                         packet.routing_header.hops.clone(),
-                                         packet.session_id
-                    );
-                }
-            },
+                PacketType::FloodRequest(mut flood_request) => {
+                    let prev = flood_request.path_trace.get(flood_request.path_trace.len() - 1).unwrap().0;
+                    flood_request.path_trace.push((self.id, NodeType::Drone));
 
-            PacketType::FloodRequest(mut flood_request) => {
-                let prev = flood_request.path_trace.get(flood_request.path_trace.len() - 1).unwrap().0;
-                flood_request.path_trace.push((self.id, NodeType::Drone));
-
-                if self.flood_ids.contains(&flood_request.flood_id) {
-                    self.send_flood_response(flood_request);
-                }
-                else {
-                    if self.packet_send.len() == 1 {
+                    if self.flood_ids.contains(&flood_request.flood_id) {
                         self.send_flood_response(flood_request);
                     }
                     else {
-                        for (key, _) in self.packet_send.iter() {
-                            if *key != prev{
-                                if !self.forward_packet(packet.clone(), key) {
-                                    // self.send_nack(ErrorInRouting(*key),
-                                    //                packet.routing_header.hops.clone(),
-                                    //                packet.session_id
-                                    // );
+                        if self.packet_send.len() == 1 {
+                            self.send_flood_response(flood_request);
+                        }
+                        else {
+                            for (key, _) in self.packet_send.iter() {
+                                if *key != prev{
+                                    if !self.forward_packet(packet.clone(), key) {
+                                        // self.send_nack(ErrorInRouting(*key),
+                                        //                packet.routing_header.hops.clone(),
+                                        //                packet.session_id
+                                        // );
 
-                                    //problem with mutable borrow in send nack, and immutable in the other parts
+                                        //problem with mutable borrow in send nack, and immutable in the other parts
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            },
-            _ => {
-                if position < packet.routing_header.hops.len() {
-                    let next = packet.routing_header.hops[position];
-                    if self.packet_send.contains_key(&next) {
-                        if self.forward_packet(packet.clone(), &next){
-                            return;
+                },
+                _ => {
+                    if position < packet.routing_header.hops.len() {
+                        let next = packet.routing_header.hops[position];
+                        if self.packet_send.contains_key(&next) {
+                            if self.forward_packet(packet.clone(), &next){
+                                return;
+                            }
                         }
+                        self.send_nack(ErrorInRouting(next),
+                                       packet.routing_header.hops.clone(),
+                                       packet.session_id
+                        );
+                    } else{
+                        self.send_nack(DestinationIsDrone,
+                                       packet.routing_header.hops.clone(),
+                                       packet.session_id
+                        );
                     }
-                    self.send_nack(ErrorInRouting(next),
-                                         packet.routing_header.hops.clone(),
-                                         packet.session_id
-                    );
-                } else{
-                    self.send_nack(DestinationIsDrone,
-                              packet.routing_header.hops.clone(),
-                              packet.session_id
-                    );
                 }
             }
+        } else {
+            self.send_nack(UnexpectedRecipient(self.id),
+                           packet.routing_header.hops.clone(),
+                           packet.session_id
+            );
         }
+
     }
 
     fn forward_packet(&self, mut packet: Packet, next: &NodeId) -> bool{
@@ -172,11 +181,11 @@ impl MyDrone {
         self.controller_send.send(NodeEvent::PacketSent(err)).unwrap();
     }
 
-    fn send_flood_response(&mut self, flood: FloodRequest) { //take a fload req, generate the response, send it
+    fn send_flood_response(&mut self, flood: FloodRequest) { //take a flood req, generate the response, send it
 
         let flood_resp = FloodResponse{
             flood_id: flood.flood_id,
-            path_trace: flood.path_trace.clone(),  //controlla sto clone per codice duplicato
+            path_trace: flood.path_trace.clone(), //I put a copy of path trace done by the flood
         };
 
         let resp = Packet {
@@ -186,8 +195,8 @@ impl MyDrone {
                 hops: flood.path_trace
                     .iter()
                     .rev()
-                    .map(|(id, _)| *id)// questo routing è diverso, solo gli id
-                    .collect::<Vec<NodeId>>()
+                    .map(|(id, _)| *id)
+                    .collect::<Vec<NodeId>>() //I take only the ID's from the path trace and reverse them.
             },
             session_id : flood.flood_id,
         };
