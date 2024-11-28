@@ -60,5 +60,5 @@ pub fn run_simulation_gui() {
         "Simulation Controller",
         options,
         Box::new(|_cc| Box::new(SimulationApp::default())),
-    );
+    ).expect("TODO: panic message");
 }
