@@ -12,6 +12,7 @@ dependencies = [
  "rand",
  "toml",
  "wg_2024",
+ "winapi",
 ]
 
 [[package]]
