@@ -1,64 +1,51 @@
-use eframe::egui;
+use std::cell::RefCell;
+use std::sync::Arc;
+use crossbeam_channel::{select, Receiver, Sender};
+use std::thread::JoinHandle;
+use std::collections::HashMap;
 
-pub struct SimulationApp;
+use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::network::NodeId;
 
-impl Default for SimulationApp {
-    fn default() -> Self {
-        Self
+pub struct SimulationControl{
+    node_send: HashMap<NodeId, Sender<DroneCommand>>,
+    node_recv: Receiver<NodeEvent>,
+    threads: Arc<RefCell<HashMap<NodeId, JoinHandle<()>>>>,
+    log: Vec<String>
+}
+
+impl SimulationControl{
+    fn new(node_send: HashMap<u8, Sender<DroneCommand>>, node_recv: Receiver<NodeEvent>, threads: Arc<RefCell<HashMap<NodeId, JoinHandle<()>>>> )->Self{
+        SimulationControl{
+            node_send,
+            node_recv,
+            threads,
+            log: Vec::new(),
+        }
     }
-}
 
-impl eframe::App for SimulationApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-
-            let rect = egui::Rect::from_min_size(egui::Pos2::new(5.0, 10.0), egui::vec2(300.0, 30.0));
-            ui.allocate_ui_at_rect(rect, |ui| {
-                ui.heading("Simulation Controller");
-            });
-
-            let painter = ui.painter();
-
-            // Nodi
-            let nodes = vec![
-                (100.0, 100.0, "Drone1"),
-                (200.0, 200.0, "Drone2"),
-            ];
-
-            // Disegno nodi
-            for &(x, y, label) in &nodes {
-                painter.circle_filled(egui::Pos2::new(x, y), 10.0, egui::Color32::BLUE);
-                painter.text(
-                    egui::Pos2::new(x, y - 15.0),
-                    egui::Align2::CENTER_CENTER,
-                    label,
-                    egui::FontId::default(),
-                    egui::Color32::WHITE,
-                );
+    fn run(&mut self){
+        loop{
+            select! {
+            recv(self.node_recv) -> e =>{
+                    if let Ok(event) = e {
+                        self.add_to_log(event);
+                    }
+                }
             }
-
-            // Connessione nodi
-            if nodes.len() > 1 {
-                painter.line_segment(
-                    [
-                        egui::Pos2::new(nodes[0].0, nodes[0].1),
-                        egui::Pos2::new(nodes[1].0, nodes[1].1),
-                    ],
-                    (2.0, egui::Color32::GREEN),
-                );
-            }
-
-
-            ui.label("by SkyLink");
-        });
+        }
     }
+
+    fn add_to_log(&mut self, e: NodeEvent){
+        match e {
+            NodeEvent::PacketSent(packet) => {
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                self.log.push( format!("Drone {} sent fragment {:?} of type: {:?}",id_drone ,packet.session_id, packet.pack_type))}
+            NodeEvent::PacketDropped(packet) => {
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                self.log.push( format!("Drone {} dropped fragment {:?} of type: {:?}",id_drone ,packet.session_id, packet.pack_type))}
+        }
+    }
+
 }
 
-pub fn run_simulation_gui() {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Simulation Controller",
-        options,
-        Box::new(|_cc| Box::new(SimulationApp::default())),
-    ).expect("TODO: panic message");
-}
