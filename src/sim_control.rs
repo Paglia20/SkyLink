@@ -19,8 +19,7 @@ pub struct SimulationControl{
 }
 
 impl SimulationControl{
-    fn new()->Self{
-        let (channel_for_drone, node_recv) = unbounded();
+    fn new(channel_for_drone :Sender<NodeEvent> , node_recv: Receiver<NodeEvent>)->Self{
         SimulationControl{
             node_send: HashMap::new(),
             node_recv,
