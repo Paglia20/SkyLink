@@ -7,7 +7,7 @@ use wg_2024::controller::DroneCommand::AddSender;
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::my_drone::MyDrone;
+use crate::my_drone::SkyLinkDrone;
 
 pub struct SimulationControl{
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
@@ -15,7 +15,6 @@ pub struct SimulationControl{
     channel_for_drone: Sender<NodeEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
     all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn
     log: Vec<String>,
-
 }
 
 impl SimulationControl{
@@ -87,7 +86,7 @@ impl SimulationControl{
 
         //crea thread e restituisci handle
         let handle = thread::spawn(|| {
-            let _new_drone = MyDrone::new(new_option_drone);
+            let _new_drone = SkyLinkDrone::new(new_option_drone);
 
         });
         handle
