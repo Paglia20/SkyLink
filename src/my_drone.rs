@@ -203,6 +203,4 @@ impl MyDrone {
         self.handle_packet(resp.clone());
         self.controller_send.send(NodeEvent::PacketSent(resp)).unwrap();
     }
-
-
 }
