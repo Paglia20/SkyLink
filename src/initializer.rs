@@ -1,16 +1,14 @@
-use std::cell::RefCell;
 use std::{fs, thread};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::collections::HashMap;
 use crossbeam_channel::unbounded;
 use wg_2024::config::Config;
 use wg_2024::drone::{Drone, DroneOptions};
-use crate::my_drone::MyDrone;
+use crate::my_drone::SkyLinkDrone;
 
 pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
     let config = parse_config(file);
-    let mut handles = HashMap::new();
+    let mut handles = Vec::new();
     //println!("{:?}", config);
 
     let mut command_send = HashMap::new();
@@ -57,7 +55,7 @@ pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
 
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
-            let mut drone = MyDrone::new(DroneOptions {
+            let mut drone = SkyLinkDrone::new(DroneOptions {
                 id: drone.id,
                 controller_recv: contr_recv,
                 controller_send: node_event_send,
