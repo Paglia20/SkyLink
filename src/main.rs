@@ -9,9 +9,9 @@ fn main() {
 
     println!("Hello, world!");
     //sim_app::run_simulation_gui();
-    let mut handles = initialize("input.toml").1;
+    let mut handles = initialize("input.toml");
 
-    while let Some(handle) = handles.get_mut().pop() {
+    while let Some(handle) = handles.pop() {
         handle.join().unwrap();
     }
 }
