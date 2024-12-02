@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::{Drone};
 use wg_2024::packet::{Packet, PacketType, FloodResponse, NodeType, FloodRequest, NackType};
 
 pub struct SkyLinkDrone {
@@ -16,18 +16,18 @@ pub struct SkyLinkDrone {
 }
 
 impl Drone for SkyLinkDrone {
-    fn new(options: DroneOptions) -> Self {
-        SkyLinkDrone {
-            id: options.id,
-            controller_send: options.controller_send,
-            controller_recv: options.controller_recv,
-            packet_recv: options.packet_recv,
-            //packet_send: options.packet_send,
-            packet_send: HashMap::new(),
-            pdr: (options.pdr*100.0) as u32,
-            flood_ids: HashSet::new(),
+    fn new(id: NodeId, controller_send: Sender<NodeEvent>, controller_recv: Receiver<DroneCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>, pdr: f32) -> Self {
+        SkyLinkDrone{
+            id,
+            controller_send,
+            controller_recv,
+            packet_recv,
+            packet_send,
+            pdr: (pdr*100.0) as u32,
+            flood_ids: Default::default(),
         }
     }
+
 
     fn run(&mut self) {
         loop {
@@ -60,6 +60,13 @@ impl SkyLinkDrone {
             DroneCommand::SetPacketDropRate(pdr) => {
                 self.pdr = (pdr*100.0) as u32;
             },
+
+            DroneCommand::RemoveSender(node_id) => {
+                if self.packet_send.contains_key(&node_id){
+                    self.packet_send.remove(&node_id);
+                }
+            }
+
             DroneCommand::Crash => unreachable!(),
         }
     }
@@ -153,6 +160,7 @@ impl SkyLinkDrone {
         self.handle_packet(resp.clone());
         self.controller_send.send(NodeEvent::PacketSent(resp)).unwrap();
     }
+
 }
 
 mod error {
@@ -182,7 +190,6 @@ mod error {
 }
 
 mod check_packet {
-    use rand::Rng;
     use wg_2024::packet::{NackType, Packet, PacketType};
     use crate::my_drone::{error, SkyLinkDrone};
 
@@ -210,8 +217,7 @@ mod check_packet {
     }
     pub fn pdr_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
         if let PacketType::MsgFragment(_) = packet.pack_type.clone() {
-            let mut rng = rand::thread_rng();
-            let random_number: u32 = rng.gen_range(0..101);
+            let random_number: u32 = fastrand::u32(0..101);
             if random_number > drone.pdr {
                 return Err(error::create_error(packet, NackType::Dropped))
             }
