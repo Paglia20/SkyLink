@@ -52,6 +52,7 @@ impl Drone for SkyLinkDrone {
                     }
                 }
             } else {
+                break;
                 select! {
                     recv(self.packet_recv) -> pkt => {
                         match pkt {
@@ -80,6 +81,7 @@ impl SkyLinkDrone {
             },
             DroneCommand::Crash => {
                 self.crashing = true;
+                println!("Crashed!");
             },
             DroneCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id){
@@ -124,7 +126,7 @@ impl SkyLinkDrone {
                         //If the message was sent, I also notify the sim controller.
                     } else {
                         let err = error::create_error(self.id, packet, NackType::ErrorInRouting(next_hop), 1);
-                        self.packet_send.get(&next_hop).unwrap().send(err.clone()).unwrap();
+                        self.packet_send.get(&err.routing_header.hops[1]).unwrap().send(err.clone()).unwrap();
                         //This doesn't consider eventual lost of Nack yet.
                         self.controller_send.send(DroneEvent::PacketSent(err)).unwrap();
                     }
@@ -134,9 +136,8 @@ impl SkyLinkDrone {
                     match packet.pack_type {
                         PacketType::FloodRequest(_) => {unreachable!()},
                         PacketType::MsgFragment(_) => {
-                            let next_hop = &nack.routing_header.hops[nack.routing_header.hop_index];
-                            self.packet_send.get(next_hop).unwrap().send(nack.clone()).unwrap();
-                            //This doesn't consider the solutions to possible ack lost.
+                            println!("{:?}", nack);
+                            self.handle_packet(nack);
                         },
                         _ => {
                             self.controller_send.send(ControllerShortcut(nack)).unwrap()
@@ -281,7 +282,7 @@ mod check_packet {
     pub fn pdr_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
         if let PacketType::MsgFragment(_) = packet.pack_type.clone() {
             let random_number: u32 = fastrand::u32(0..101);
-            if random_number > drone.pdr {
+            if random_number < drone.pdr {
                 return Err(error::create_error(drone.id, packet, NackType::Dropped, 1))
             }
         }
