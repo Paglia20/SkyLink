@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use crossbeam_channel::{select, select_biased, Receiver, Sender};
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::{DroneCommand, DroneEvent};
+use wg_2024::controller::DroneEvent::ControllerShortcut;
 use wg_2024::drone::Drone;
 use wg_2024::packet::{Packet, PacketType, FloodResponse, NodeType, FloodRequest, NackType};
 
 pub struct SkyLinkDrone {
     id: NodeId,
-    controller_send: Sender<NodeEvent>,
+    controller_send: Sender<DroneEvent>,
     controller_recv: Receiver<DroneCommand>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -18,7 +19,7 @@ pub struct SkyLinkDrone {
 
 impl Drone for SkyLinkDrone {
     fn new(id: NodeId,
-           controller_send: Sender<NodeEvent>,
+           controller_send: Sender<DroneEvent>,
            controller_recv: Receiver<DroneCommand>,
            packet_recv: Receiver<Packet>,
            packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -105,7 +106,7 @@ impl SkyLinkDrone {
                     for (key, _) in self.packet_send.iter() {
                         if *key != prev{
                             if let Ok(_) = self.packet_send.get(key).unwrap().send(packet.clone()) {
-                                self.controller_send.send(NodeEvent::PacketSent(packet.clone())).unwrap();
+                                self.controller_send.send(DroneEvent::PacketSent(packet.clone())).unwrap();
                                 //If the message was sent, I also notify the sim controller.
                             }//There's no else, since I don't care of nodes which can't be reached.
                         }
@@ -114,25 +115,33 @@ impl SkyLinkDrone {
             }
         } else {
             //If the packet is not a flood response.
-            match self.apply_checks(packet) {
+            match self.apply_checks(packet.clone()) {
                 //If every check is passed
                 Ok(packet) => {
                     let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
                     if let Ok(_) = self.packet_send.get(&next_hop).unwrap().send(packet.clone()) {
-                        self.controller_send.send(NodeEvent::PacketSent(packet)).unwrap();
+                        self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
                         //If the message was sent, I also notify the sim controller.
                     } else {
                         let err = error::create_error(self.id, packet, NackType::ErrorInRouting(next_hop), 1);
                         self.packet_send.get(&next_hop).unwrap().send(err.clone()).unwrap();
                         //This doesn't consider eventual lost of Nack yet.
-                        self.controller_send.send(NodeEvent::PacketSent(err)).unwrap();
+                        self.controller_send.send(DroneEvent::PacketSent(err)).unwrap();
                     }
                 },
                 //Otherwise the error is already the right one to send.
                 Err(nack) => {
-                    let next_hop = &nack.routing_header.hops[nack.routing_header.hop_index];
-                    self.packet_send.get(next_hop).unwrap().send(nack.clone()).unwrap();
-                    //This doesn't consider the solutions to possible ack lost.
+                    match packet.pack_type {
+                        PacketType::FloodRequest(_) => {unreachable!()},
+                        PacketType::MsgFragment(_) => {
+                            let next_hop = &nack.routing_header.hops[nack.routing_header.hop_index];
+                            self.packet_send.get(next_hop).unwrap().send(nack.clone()).unwrap();
+                            //This doesn't consider the solutions to possible ack lost.
+                        },
+                        _ => {
+                            self.controller_send.send(ControllerShortcut(nack)).unwrap()
+                        }
+                    }
                 }
             }
         }
@@ -143,10 +152,9 @@ impl SkyLinkDrone {
             PacketType::MsgFragment(_fragment) =>{
                 let err = error::create_error(self.id, packet, NackType::ErrorInRouting(self.id), 1);
                 self.packet_send.get(&err.routing_header.hops[1]).unwrap().send(err.clone()).unwrap(); // please check
-                self.controller_send.send(NodeEvent::PacketSent(err)).unwrap();
+                self.controller_send.send(DroneEvent::PacketSent(err)).unwrap();
             }
             PacketType::FloodRequest(_flood_request) => {},
-
             _ => {
                 self.handle_packet(packet);
             }
@@ -154,7 +162,7 @@ impl SkyLinkDrone {
 
     }
 
-    fn apply_checks(&self, mut packet:Packet) -> Result<Packet, Packet> {
+    fn apply_checks(&self, mut packet: Packet) -> Result<Packet, Packet> {
         //Check if we're on the right hop.
         check_packet::id_hop_match_check(&self, packet.clone())?;
         //Increase the index.
@@ -191,7 +199,7 @@ impl SkyLinkDrone {
             session_id : flood.flood_id,
         };
         self.handle_packet(resp.clone());
-        self.controller_send.send(NodeEvent::PacketSent(resp)).unwrap();
+        self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap();
     }
 }
 

@@ -14,5 +14,4 @@ fn main() {
     for handle in handles.into_iter() {
         handle.join().unwrap();
     }
-
 }
