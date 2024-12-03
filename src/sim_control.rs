@@ -140,7 +140,7 @@ impl SimulationControl{
 
     fn add_sender(&mut self, id: NodeId, id_to_add: NodeId, ){
         if let Some(sender) = self.node_send.get(&id) {
-            if let Some(senderpacket) = self.all_sender_packets.get(*id) {
+            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
