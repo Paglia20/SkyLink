@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use crossbeam_channel::{select_biased, Receiver, Sender};
+use crossbeam_channel::{select, select_biased, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone};
+use wg_2024::drone::Drone;
 use wg_2024::packet::{Packet, PacketType, FloodResponse, NodeType, FloodRequest, NackType};
 
 pub struct SkyLinkDrone {
@@ -13,37 +13,54 @@ pub struct SkyLinkDrone {
     packet_send: HashMap<NodeId, Sender<Packet>>,
     pdr: u32,
     flood_ids: HashSet<u64>,
+    crashing: bool,
 }
 
 impl Drone for SkyLinkDrone {
-    fn new(id: NodeId, controller_send: Sender<NodeEvent>, controller_recv: Receiver<DroneCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>, pdr: f32) -> Self {
-        SkyLinkDrone{
+    fn new(id: NodeId,
+           controller_send: Sender<NodeEvent>,
+           controller_recv: Receiver<DroneCommand>,
+           packet_recv: Receiver<Packet>,
+           packet_send: HashMap<NodeId, Sender<Packet>>,
+           pdr: f32) -> Self {
+        SkyLinkDrone {
             id,
             controller_send,
             controller_recv,
             packet_recv,
             packet_send,
             pdr: (pdr*100.0) as u32,
-            flood_ids: Default::default(),
+            flood_ids: HashSet::new(),
+            crashing: false,
         }
     }
 
-
     fn run(&mut self) {
         loop {
-            select_biased! {
-                recv(self.controller_recv) -> cmd => {
-                    if let Ok(command) = cmd {
-                        if let DroneCommand::Crash = command {
-                            println!("Drone {} has crashed", self.id);
-                            break;
+            if !self.crashing {
+                select_biased! {
+                    recv(self.controller_recv) -> cmd => {
+                        if let Ok(command) = cmd {
+                            self.handle_command(command);
                         }
-                        self.handle_command(command);
+                    }
+                    recv(self.packet_recv) -> pkt => {
+                        if let Ok(packet) = pkt {
+                            self.handle_packet(packet);
+                        }
                     }
                 }
-                recv(self.packet_recv) -> pkt => {
-                    if let Ok(packet) = pkt {
-                        self.handle_packet(packet);
+            } else {
+                select! {
+                    recv(self.packet_recv) -> pkt => {
+                        match pkt {
+                            Ok(packet) => {
+                                self.crashing_handle_packet(packet);
+                            },
+                            Err(_error) => {
+                                //Here the actual crush happens I think
+                            }
+                        }
                     }
                 }
             }
@@ -60,14 +77,14 @@ impl SkyLinkDrone {
             DroneCommand::SetPacketDropRate(pdr) => {
                 self.pdr = (pdr*100.0) as u32;
             },
-
+            DroneCommand::Crash => {
+                self.crashing = true;
+            },
             DroneCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id){
                     self.packet_send.remove(&node_id);
                 }
             }
-
-            DroneCommand::Crash => unreachable!(),
         }
     }
 
@@ -121,6 +138,10 @@ impl SkyLinkDrone {
         }
     }
 
+    fn crashing_handle_packet(&mut self, packet: Packet) {
+
+    }
+
     fn apply_checks(&self, mut packet:Packet) -> Result<Packet, Packet> {
         //Check if we're on the right hop.
         check_packet::id_hop_match_check(&self, packet.clone())?;
@@ -160,7 +181,6 @@ impl SkyLinkDrone {
         self.handle_packet(resp.clone());
         self.controller_send.send(NodeEvent::PacketSent(resp)).unwrap();
     }
-
 }
 
 mod error {
