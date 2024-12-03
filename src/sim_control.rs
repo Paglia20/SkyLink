@@ -19,7 +19,7 @@ pub struct SimulationControl{
 }
 
 impl SimulationControl{
-    fn new(channel_for_drone :Sender<NodeEvent> , all_sender_packets: HashMap<NodeId, Sender<Packet>>, node_send: HashMap<NodeId, Sender<DroneCommand>>, node_recv: Receiver<NodeEvent>, network_graph: HashMap<NodeId, Vec<NodeId>>)->Self{
+    pub fn new(node_send: HashMap<NodeId, Sender<DroneCommand>>, node_recv: Receiver<NodeEvent>, channel_for_drone :Sender<NodeEvent> , all_sender_packets: HashMap<NodeId, Sender<Packet>>, network_graph: HashMap<NodeId, Vec<NodeId>>)->Self{
         SimulationControl{
             node_send,
             node_recv,
@@ -30,7 +30,7 @@ impl SimulationControl{
         }
     }
 
-    fn run(&mut self){
+    pub fn run(&mut self){
         loop{
             select! {
             recv(self.node_recv) -> e =>{
