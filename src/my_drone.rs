@@ -240,14 +240,27 @@ mod check_packet {
         if packet.routing_header.hops[packet.routing_header.hop_index] == drone.id {
             Ok(())
         } else {
-            Err(error::create_error(packet.routing_header.hops[packet.routing_header.hop_index-1], packet, NackType::UnexpectedRecipient(drone.id), 0))
-        }
+            match packet.pack_type.clone() {
+                PacketType::MsgFragment(_fragment) => {
+                    Err(error::create_error(packet.routing_header.hops[packet.routing_header.hop_index-1], packet, NackType::UnexpectedRecipient(drone.id), 0))
+                },
+                _ => {
+                    Err(packet)
+                }
+            }}
     }
     pub fn final_destination_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
         if packet.routing_header.hop_index < packet.routing_header.hops.len() {
             Ok(())
         } else {
-            Err(error::create_error(drone.id, packet, NackType::DestinationIsDrone, 1))
+            match packet.pack_type.clone() {
+                PacketType::MsgFragment(_fragment) => {
+                    Err(error::create_error(drone.id, packet, NackType::DestinationIsDrone, 1))
+                },
+                _ => {
+                    Err(packet)
+                }
+            }
         }
     }
     pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
@@ -255,7 +268,14 @@ mod check_packet {
         if drone.packet_send.contains_key(next_hop) {
             Ok(())
         } else {
-            Err(error::create_error(drone.id, packet, NackType::ErrorInRouting(drone.id), 1))
+            match packet.pack_type.clone() {
+                PacketType::MsgFragment(_fragment) => {
+                    Err(error::create_error(drone.id, packet, NackType::ErrorInRouting(drone.id), 1))
+                },
+                _ => {
+                    Err(packet)
+                }
+            }
         }
     }
     pub fn pdr_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
