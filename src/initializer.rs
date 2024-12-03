@@ -3,7 +3,7 @@ use std::thread::JoinHandle;
 use std::collections::HashMap;
 use crossbeam_channel::unbounded;
 use wg_2024::config::Config;
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::{Drone};
 use crate::my_drone::SkyLinkDrone;
 
 pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
@@ -55,14 +55,7 @@ pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
 
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
-            let mut drone = SkyLinkDrone::new(DroneOptions {
-                id: drone.id,
-                controller_recv: contr_recv,
-                controller_send: node_event_send,
-                packet_recv: drone_recv,
-                packet_send: drone_send,
-                pdr: drone.pdr,
-            });
+            let mut drone = SkyLinkDrone::new(drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr);
 
             drone.run();
         }));

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::thread;
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::controller::DroneCommand::AddSender;
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 use crate::my_drone::SkyLinkDrone;
@@ -48,6 +48,10 @@ impl SimulationControl{
             NodeEvent::PacketDropped(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
                 self.log.push( format!("Drone {} dropped fragment {:?} of type: {:?}",id_drone ,packet.session_id, packet.pack_type))}
+            NodeEvent::ControllerShortcut(packet) => {
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                self.log.push( format!("Received {:?} from drone {:?}", packet.pack_type, id_drone));
+            }
         }
     }
 
@@ -66,28 +70,23 @@ impl SimulationControl{
                 }
             }
         }
-        let mut new_option_drone : DroneOptions= DroneOptions{
-            id: new_id,
-            controller_send: self.channel_for_drone.clone(),
-            controller_recv: control_receiver,
-            packet_recv,
-            packet_send : HashMap::new(),
-            pdr
-        };
 
-       //riempi la hashmap
+        let mut packet_send = HashMap::new();
+        //riempi la hashmap
         for (id, sender) in &self.all_sender_packets {
             for i in node_out.clone() {
                 if i == *id{
-                    new_option_drone.packet_send.insert(*id, sender.clone());
+                    packet_send.insert(*id, sender.clone());
                 }
             }
         }
 
-        //crea thread e restituisci handle
-        let handle = thread::spawn(|| {
-            let _new_drone = SkyLinkDrone::new(new_option_drone);
+        let channel_clone = self.channel_for_drone.clone();
 
+        //crea thread
+        let handle = thread::spawn(move || {
+            let mut new_drone = SkyLinkDrone::new(new_id, channel_clone, control_receiver, packet_recv, packet_send, pdr);
+            new_drone.run();
         });
         handle
     }
