@@ -58,7 +58,7 @@ impl Drone for SkyLinkDrone {
                                 self.crashing_handle_packet(packet);
                             },
                             Err(_error) => {
-                                //Here the actual crush happens I think
+                                break;
                             }
                         }
                     }
@@ -139,6 +139,18 @@ impl SkyLinkDrone {
     }
 
     fn crashing_handle_packet(&mut self, packet: Packet) {
+        match packet.clone().pack_type {
+            PacketType::MsgFragment(_fragment) =>{
+                let err = error::create_error(self.id, packet, NackType::ErrorInRouting(self.id), 1);
+                self.packet_send.get(&err.routing_header.hops[1]).unwrap().send(err.clone()).unwrap(); // please check
+                self.controller_send.send(NodeEvent::PacketSent(err)).unwrap();
+            }
+            PacketType::FloodRequest(_flood_request) => {},
+
+            _ => {
+                self.handle_packet(packet);
+            }
+        }
 
     }
 
@@ -202,9 +214,7 @@ mod error {
             }),
             routing_header: SourceRoutingHeader{
                 hop_index,
-                hops: packet.routing_header.hops
-                    .into_iter()
-                    .as_slice()[0..position].to_vec()
+                hops: packet.routing_header.hops[0..position + 1].to_vec()
                     .into_iter()
                     .rev()
                     .collect::<Vec<NodeId>>()
