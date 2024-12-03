@@ -122,7 +122,7 @@ impl SkyLinkDrone {
                         self.controller_send.send(NodeEvent::PacketSent(packet)).unwrap();
                         //If the message was sent, I also notify the sim controller.
                     } else {
-                        let err = error::create_error(packet, NackType::ErrorInRouting(next_hop));
+                        let err = error::create_error(self.id, packet, NackType::ErrorInRouting(next_hop), 1);
                         self.packet_send.get(&next_hop).unwrap().send(err.clone()).unwrap();
                         //This doesn't consider eventual lost of Nack yet.
                         self.controller_send.send(NodeEvent::PacketSent(err)).unwrap();
@@ -148,7 +148,7 @@ impl SkyLinkDrone {
         //Increase the index.
         packet.routing_header.hop_index += 1;
         //Check if we're a final destination.
-        check_packet::final_destination_check(packet.clone())?;
+        check_packet::final_destination_check(&self, packet.clone())?;
         //Check if the packet is dropped (only when msg_fragment).
         check_packet::pdr_check(&self, packet.clone())?;
         //Check if the next_hop exists.
@@ -187,19 +187,24 @@ mod error {
     use wg_2024::network::{NodeId, SourceRoutingHeader};
     use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
-    pub fn create_error(packet: Packet, nack_type: NackType) -> Packet {
+    pub fn create_error(starting_id: NodeId, packet: Packet, nack_type: NackType, hop_index: usize) -> Packet {
         let mut fragment_index = 0;
         if let PacketType::MsgFragment(msg_fragment) = packet.pack_type {
             fragment_index = msg_fragment.fragment_index;
         }
+        let position = packet.routing_header.hops
+            .iter()
+            .position(|x| *x == starting_id).unwrap();
         Packet {
             pack_type: PacketType::Nack(Nack{
                 fragment_index,
                 nack_type,
             }),
             routing_header: SourceRoutingHeader{
-                hop_index: 1,
+                hop_index,
                 hops: packet.routing_header.hops
+                    .into_iter()
+                    .as_slice()[0..position].to_vec()
                     .into_iter()
                     .rev()
                     .collect::<Vec<NodeId>>()
@@ -217,14 +222,14 @@ mod check_packet {
         if packet.routing_header.hops[packet.routing_header.hop_index] == drone.id {
             Ok(())
         } else {
-            Err(error::create_error(packet, NackType::UnexpectedRecipient(drone.id)))
+            Err(error::create_error(packet.routing_header.hops[packet.routing_header.hop_index-1], packet, NackType::UnexpectedRecipient(drone.id), 0))
         }
     }
-    pub fn final_destination_check(packet: Packet) -> Result<(), Packet> {
+    pub fn final_destination_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
         if packet.routing_header.hop_index < packet.routing_header.hops.len() {
             Ok(())
         } else {
-            Err(error::create_error(packet, NackType::DestinationIsDrone))
+            Err(error::create_error(drone.id, packet, NackType::DestinationIsDrone, 1))
         }
     }
     pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
@@ -232,14 +237,14 @@ mod check_packet {
         if drone.packet_send.contains_key(next_hop) {
             Ok(())
         } else {
-            Err(error::create_error(packet, NackType::ErrorInRouting(drone.id)))
+            Err(error::create_error(drone.id, packet, NackType::ErrorInRouting(drone.id), 1))
         }
     }
     pub fn pdr_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
         if let PacketType::MsgFragment(_) = packet.pack_type.clone() {
             let random_number: u32 = fastrand::u32(0..101);
             if random_number > drone.pdr {
-                return Err(error::create_error(packet, NackType::Dropped))
+                return Err(error::create_error(drone.id, packet, NackType::Dropped, 1))
             }
         }
         Ok(())
