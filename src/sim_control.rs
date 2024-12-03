@@ -3,7 +3,7 @@ use std::thread::JoinHandle;
 use std::collections::HashMap;
 use std::thread;
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::controller::DroneCommand::AddSender;
+use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
@@ -14,16 +14,18 @@ pub struct SimulationControl{
     node_recv: Receiver<NodeEvent>,
     channel_for_drone: Sender<NodeEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
     all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn
+    network_graph: HashMap<NodeId, Vec<NodeId>>,
     log: Vec<String>,
 }
 
 impl SimulationControl{
-    fn new(channel_for_drone :Sender<NodeEvent> , node_recv: Receiver<NodeEvent>)->Self{
+    fn new(channel_for_drone :Sender<NodeEvent> , all_sender_packets: HashMap<NodeId, Sender<Packet>>, node_send: HashMap<NodeId, Sender<DroneCommand>>, node_recv: Receiver<NodeEvent>, network_graph: HashMap<NodeId, Vec<NodeId>>)->Self{
         SimulationControl{
-            node_send: HashMap::new(),
+            node_send,
             node_recv,
             channel_for_drone,
-            all_sender_packets: HashMap::new(),
+            all_sender_packets,
+            network_graph,
             log: Vec::new(),
         }
     }
@@ -102,5 +104,28 @@ impl SimulationControl{
         unreachable!("No free key found");
     }
 
+    fn crash_drone(&mut self, id: NodeId){
+        if let Some(sender) = self.node_send.get(&id) {
+            if let Err(e) = sender.send(DroneCommand::Crash) {
+                println!("error in crashing drone {}: {:?}", id, e);
+            } else {
+                println!("crash command sent do the drone {}", id);
+
+
+                // remove the drone from the neighbour's sends
+                if let Some(vec) = self.network_graph.get(&id) {
+                    for (neighbor_id, neighbor_sender) in &self.node_send {
+                        if vec.contains(neighbor_id) {
+                            neighbor_sender.send(RemoveSender(id)).unwrap()
+                        }
+                    }
+                }
+                self.node_send.remove(&id);
+                self.log.push(format!("drone {} crashed.", id));
+            }
+        } else {
+            println!("drone {} not found in the network.", id);
+        }
+    }
 }
 
