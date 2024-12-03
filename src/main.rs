@@ -1,5 +1,4 @@
 use crate::initializer::initialize;
-use crate::testbench::create_sample_packet;
 
 mod my_drone;
 mod sim_app;
@@ -11,7 +10,9 @@ fn main() {
 
     println!("Hello, world!");
     //sim_app::run_simulation_gui();
-    let mut handles = initialize("input.toml");
-
+    let handles = initialize("input.toml");
+    for handle in handles.into_iter() {
+        handle.join().unwrap();
+    }
 
 }
