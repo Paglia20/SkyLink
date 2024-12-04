@@ -120,6 +120,7 @@ impl SkyLinkDrone {
             match self.apply_checks(packet.clone()) {
                 //If every check is passed
                 Ok(packet) => {
+
                     let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
                     if let Ok(_) = self.packet_send.get(&next_hop).unwrap().send(packet.clone()) {
                         self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
@@ -256,7 +257,7 @@ mod check_packet {
         } else {
             match packet.pack_type.clone() {
                 PacketType::MsgFragment(_fragment) => {
-                    Err(error::create_error(drone.id, packet, NackType::DestinationIsDrone, 1))
+                    Err(error::create_error(drone.id, packet, NackType::DestinationIsDrone, 0))
                 },
                 _ => {
                     Err(packet)
@@ -271,7 +272,7 @@ mod check_packet {
         } else {
             match packet.pack_type.clone() {
                 PacketType::MsgFragment(_fragment) => {
-                    Err(error::create_error(drone.id, packet, NackType::ErrorInRouting(drone.id), 1))
+                    Err(error::create_error(drone.id, packet, NackType::ErrorInRouting(drone.id), 0)) //per colpa di questo settato a 1
                 },
                 _ => {
                     Err(packet)
