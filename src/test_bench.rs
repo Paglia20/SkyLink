@@ -3,12 +3,11 @@ use std::thread;
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
 use wg_2024::controller::DroneCommand::{Crash, RemoveSender};
-use wg_2024::controller::{DroneCommand, DroneEvent};
+use wg_2024::controller::{DroneCommand};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Fragment, Packet, PacketType};
 use crate::my_drone::SkyLinkDrone;
-use crate::sim_control::SimulationControl;
 
 fn create_sample_packet() -> Packet {
     Packet {
@@ -31,7 +30,7 @@ fn create_sample_packet() -> Packet {
 pub fn generic_fragment_forward() {
     let mut handles = Vec::new();
 
-    let (d0_packet_sender, d0_packet_receiver) = unbounded::<Packet>();
+    let (d0_packet_sender, _d0_packet_receiver) = unbounded::<Packet>();
     let (d1_packet_sender, d1_packet_receiver) = unbounded::<Packet>();
     let (d2_packet_sender, d2_packet_receiver) = unbounded::<Packet>();
     let (d3_packet_sender, d3_packet_receiver) = unbounded::<Packet>();
