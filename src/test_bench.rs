@@ -10,7 +10,7 @@ use wg_2024::packet::{Fragment, Packet, PacketType};
 use crate::my_drone::SkyLinkDrone;
 use crate::sim_control::SimulationControl;
 
-pub fn create_sample_packet() -> Packet {
+fn create_sample_packet() -> Packet {
     Packet {
         pack_type: PacketType::MsgFragment(Fragment {
             fragment_index: 1,
@@ -20,7 +20,7 @@ pub fn create_sample_packet() -> Packet {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0,1,2,4],
+            hops: vec![0,1,2,3],
         },
         session_id: 1,
     }
@@ -28,7 +28,6 @@ pub fn create_sample_packet() -> Packet {
 
 
 /// This function is used to test the packet forward functionality of a drone.
-#[test]
 pub fn generic_fragment_forward() {
     let mut handles = Vec::new();
 
@@ -44,15 +43,15 @@ pub fn generic_fragment_forward() {
     let (d2_command_sender, d2_command_receiver) = unbounded::<DroneCommand>();
 
 
-    let neighboor_d1 = HashMap::from([(2, d2_packet_sender.clone()), (0, d0_packet_sender.clone())]);
-    let neighboor_d2 = HashMap::from([(1, d1_packet_sender.clone()), (3, d3_packet_sender.clone())]);
+    let neighbour_d1 = HashMap::from([(2, d2_packet_sender.clone()), (0, d0_packet_sender.clone())]);
+    let neighbour_d2 = HashMap::from([(1, d1_packet_sender.clone()), (3, d3_packet_sender.clone())]);
 
     let mut drone1 = SkyLinkDrone::new(
         1,
         sc_sender.clone(),
         d1_command_receiver,
         d1_packet_receiver,
-        neighboor_d1,
+        neighbour_d1,
         0.0);
 
     let d1_handle = thread::spawn(move || {
@@ -60,55 +59,44 @@ pub fn generic_fragment_forward() {
         });
     handles.push(d1_handle);
 
-     let mut drone2 = SkyLinkDrone::new(
-                2,
-                sc_sender.clone(),
-                d2_command_receiver,
-                d2_packet_receiver,
-                neighboor_d2,
-                0.0);
+    let mut drone2 = SkyLinkDrone::new(
+        2,
+        sc_sender.clone(),
+        d2_command_receiver,
+        d2_packet_receiver,
+        neighbour_d2,
+        0.0);
 
     let d2_handle = thread::spawn(move || {
-                drone2.run();
+        drone2.run();
     });
-
     handles.push(d2_handle);
 
-    // let handle_sc = thread::spawn(move || {
-    //     for i in 0..2{
-    //         select! {
-    //             recv(sc_receiver) -> event => {
-    //                 if let Ok(e) = event {
-    //                     println!(" event received: {:?}", e);
-    //                 }
-    //                 else{
-    //                     println!("porccaccioddio");
-    //                 }
-    //             }
-    //         }
-    //         thread::sleep(Duration::from_millis(100));
-    //     }
-    // });
+    let handle_sc = thread::spawn(move || {
+        loop {
+            select! {
+                recv(sc_receiver) -> event => {
+                    if let Ok(e) = event {
+                        println!("\nEvent received: {:?}", e);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_sc);
 
-    //handles.push(handle_sc);
-
-    // let handle_dst = thread::spawn(move || {
-    //     for i in 0..5 {
-    //         select! {
-    //             recv(d3_packet_receiver) -> packet => {
-    //                 if let Ok(p) = packet {
-    //                     println!(" packet received: {:?}", p);
-    //                 }
-    //                 else{
-    //                     println!("diolamadonnaindiana");
-    //                 }
-    //             }
-    //         }
-    //         thread::sleep(Duration::from_millis(100));
-    //     }
-    // });
-    // handles.push(handle_dst);
-
+    let handle_dst = thread::spawn(move || {
+         loop {
+            select! {
+                recv(d3_packet_receiver) -> packet => {
+                    if let Ok(p) = packet {
+                        println!("\nPacket received: {:?}", p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_dst);
 
 
     let msg = create_sample_packet();
@@ -117,24 +105,17 @@ pub fn generic_fragment_forward() {
         Ok(_) => {println!("D1 packet sent successfully!")},
         Err(error) => {println!("{}", error)}
     };
-
-    // match d1_command_sender.send(Crash){
-    //     Ok(_) => {println!("crash successfully!")},
-    //     Err(error) => {println!("{}", error)}
-    // };
-
     thread::sleep(Duration::from_millis(3000));
 
-    // d1_command_sender.send(RemoveSender(2)).unwrap();
-    // d2_command_sender.send(RemoveSender(1)).unwrap();
-    // std::mem::drop(d1_packet_sender);
-    // std::mem::drop(d2_packet_sender);
-    //
-    //
-    // d1_command_sender.send(Crash).unwrap();
-    // d2_command_sender.send(Crash).unwrap();
+    d1_command_sender.send(RemoveSender(2)).unwrap();
+    d2_command_sender.send(RemoveSender(1)).unwrap();
+    drop(d1_packet_sender);
+    drop(d2_packet_sender);
 
+    d1_command_sender.send(Crash).unwrap();
+    d2_command_sender.send(Crash).unwrap();
 
+    /*
     loop {
         select! {
             recv(d0_packet_receiver) -> packet => {
@@ -172,7 +153,7 @@ pub fn generic_fragment_forward() {
 
 
     d1_command_sender.send(Crash).unwrap();
-    d2_command_sender.send(Crash).unwrap();
+    d2_command_sender.send(Crash).unwrap();*/
 
     for i in handles {
         i.join().unwrap();
@@ -186,12 +167,9 @@ pub fn generic_fragment_forward() {
 /*
 NOTES
 
-- with [0,1,2,4] doesnt stop, in 2 it get's lost? should it return a nack to 0...
-IL NACK NON PASSAVA IL PRIMO CHECK!!! per colpa di riga 275 my drone
+- By using #test, it won't print until all the threads finish.
 
-
-
-
-- maybe you should drop channels also in sim control
+- Q: maybe you should drop channels also in sim control
+- A: Yea probably
 
 */
