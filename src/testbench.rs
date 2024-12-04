@@ -20,7 +20,7 @@ pub fn create_sample_packet() -> Packet {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 1, 2],
+            hops: vec![0,1,2,4],
         },
         session_id: 1,
     }
@@ -123,8 +123,48 @@ pub fn generic_fragment_forward() {
     //     Err(error) => {println!("{}", error)}
     // };
 
-    // thread::sleep(Duration::from_millis(10000));
+    thread::sleep(Duration::from_millis(3000));
 
+    // d1_command_sender.send(RemoveSender(2)).unwrap();
+    // d2_command_sender.send(RemoveSender(1)).unwrap();
+    // std::mem::drop(d1_packet_sender);
+    // std::mem::drop(d2_packet_sender);
+    //
+    //
+    // d1_command_sender.send(Crash).unwrap();
+    // d2_command_sender.send(Crash).unwrap();
+
+
+    loop {
+        select! {
+            recv(d0_packet_receiver) -> packet => {
+                if let Ok(p) = packet {
+                    println!("d0 packet received: {:?}", p);
+                break;
+                }
+                else{
+                    println!("diolamadonnaindiana");
+                break;
+                }
+            }
+
+            recv(d3_packet_receiver) -> packet => {
+                if let Ok(p) = packet {
+                    println!("d3 packet received: {:?}", p);
+                break;
+                }
+                else{
+                    println!("diolamadonnaindiana");
+                break;
+                }
+            }
+             default(Duration::from_secs(5)) => {
+            println!("Timeout: No packets received within 5 seconds.");
+            break;
+        }
+        }
+
+    }
     d1_command_sender.send(RemoveSender(2)).unwrap();
     d2_command_sender.send(RemoveSender(1)).unwrap();
     std::mem::drop(d1_packet_sender);
@@ -138,20 +178,20 @@ pub fn generic_fragment_forward() {
         i.join().unwrap();
     }
 
-    loop {
-        break;
-        select! {
-            recv(d3_packet_receiver) -> packet => {
-                if let Ok(p) = packet {
-                    println!(" packet received: {:?}", p);
-                break;
-                }
-                else{
-                    println!("diolamadonnaindiana");
-                break;
-                }
-            }
-        }
 
-    }
 }
+
+
+
+/*
+NOTES
+
+- with [0,1,2,4] doesnt stop, in 2 it get's lost? should it return a nack to 0...
+IL NACK NON PASSAVA IL PRIMO CHECK!!! per colpa di riga 275 my drone
+
+
+
+
+- maybe you should drop channels also in sim control
+
+*/
