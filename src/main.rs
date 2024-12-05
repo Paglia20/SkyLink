@@ -9,6 +9,7 @@ mod test;
 
 fn main() {
     println!("Hello, world!");
+    sim_app::run_simulation_gui();
 
     let test = true;
     if test {
@@ -17,7 +18,6 @@ fn main() {
     } else {
         let (sim_contr, handles) = initialize("input.toml");
         sim_app::run_simulation_gui(sim_contr);
-
 
         for handle in handles.into_iter() {
             handle.join().unwrap();
