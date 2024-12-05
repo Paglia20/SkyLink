@@ -1,4 +1,5 @@
 use std::thread;
+use crate::test::test_bench::{my_generic_fragment_forward, test_flood};
 use crate::initializer::initialize;
 
 mod sim_app;
@@ -9,7 +10,6 @@ mod test;
 
 fn main() {
     println!("Hello, world!");
-    sim_app::run_simulation_gui();
 
     let test = true;
     if test {
@@ -29,4 +29,5 @@ fn main() {
     // generic_chain_fragment_drop();
 
     // test_generic();
+    test_flood();
 }
