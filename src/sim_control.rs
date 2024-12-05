@@ -7,7 +7,7 @@ use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::my_drone::SkyLinkDrone;
+use crate::skylink_drone::drone::SkyLinkDrone;
 
 pub struct SimulationControl{
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
@@ -93,9 +93,9 @@ impl SimulationControl{
         handle
     }
 
-    fn generate_id (&mut self) -> NodeId {                  //just a function to generate an id that is empty in our hashmap, if is 1-3-4, it should give 2, if it's 1-2-3, should give 4.
+    fn generate_id (&mut self) -> NodeId {//just a function to generate an id that is empty in our hashmap, if is 1-3-4, it should give 2, if it's 1-2-3, should give 4.
         for k in 0..=u8::MAX {
-            // Se `k` non è una chiave nella mappa, restituiscilo
+            //If k is not a key in the map, I return it.
             if !self.node_send.contains_key(&k) {
                 return k;
             }
