@@ -9,19 +9,20 @@ mod test;
 
 fn main() {
     println!("Hello, world!");
-    sim_app::run_simulation_gui();
 
-    let test = true;
+    let (sim_contr, handles) = initialize("input.toml");
+    sim_app::run_simulation_gui(sim_contr);
+
+    for handle in handles.into_iter() {
+        handle.join().unwrap();
+    }
+
+    let test = false;
     if test {
         //Comment functions we aren't testing
         //my_generic_fragment_forward();
     } else {
-        let (sim_contr, handles) = initialize("input.toml");
-        sim_app::run_simulation_gui(sim_contr);
 
-        for handle in handles.into_iter() {
-            handle.join().unwrap();
-        }
     }
 
     // generic_chain_fragment_ack();
