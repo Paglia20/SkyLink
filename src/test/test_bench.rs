@@ -6,7 +6,9 @@ use wg_2024::controller::DroneCommand::{Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
-use wg_2024::packet::{Fragment, Packet, PacketType};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
+use wg_2024::packet::PacketType::FloodRequest;
+use crate::skylink_drone::drone::SkyLinkDrone;
 
 /// This function is used to test the packet forward functionality of a drone.
 pub fn my_generic_fragment_forward() {
@@ -80,21 +82,21 @@ pub fn my_generic_fragment_forward() {
     handles.push(handle_dst);
 
 
-    let msg = my_create_sample_packet();
+    let msg = create_packet();
 
     match d1_packet_sender.send(msg){
         Ok(_) => {println!("D1 packet sent successfully!")},
         Err(error) => {println!("{}", error)}
     };
-    thread::sleep(Duration::from_millis(3000));
+    // thread::sleep(Duration::from_millis(3000));
 
-    d1_command_sender.send(RemoveSender(2)).unwrap();
-    d2_command_sender.send(RemoveSender(1)).unwrap();
-    drop(d1_packet_sender);
-    drop(d2_packet_sender);
-
-    d1_command_sender.send(Crash).unwrap();
-    d2_command_sender.send(Crash).unwrap();
+    // d1_command_sender.send(RemoveSender(2)).unwrap();
+    // d2_command_sender.send(RemoveSender(1)).unwrap();
+    // drop(d1_packet_sender);
+    // drop(d2_packet_sender);
+    //
+    // d1_command_sender.send(Crash).unwrap();
+    // d2_command_sender.send(Crash).unwrap();
 
 
     for i in handles {
@@ -144,7 +146,7 @@ pub fn test_generic(){
         drone2.run();
     });
 
-    let msg = create_sample_packet();
+    let msg = create_packet();
 
     // "Client" sends packet to the drone
     d_send.send(msg.clone()).unwrap();
@@ -179,7 +181,7 @@ pub fn test_generic(){
     );
 }
 
-fn create_sample_packet() -> Packet {
+fn create_packet() -> Packet {
     Packet {
         pack_type: PacketType::MsgFragment(Fragment {
             fragment_index: 1,
@@ -189,11 +191,141 @@ fn create_sample_packet() -> Packet {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 11, 12, 21],
+            hops: vec![0,1,6],
         },
         session_id: 1,
     }
 }
+
+
+pub fn test_flood(){
+    let mut handles = Vec::new();
+
+    let (cl_flood_sender, cl_flood_receiver) = unbounded::<Packet>();
+    let (d1_flood_sender, d1_flood_receiver) = unbounded::<Packet>();
+    let (d2_flood_sender, d2_flood_receiver) = unbounded::<Packet>();
+    let (d3_flood_sender, d3_flood_receiver) = unbounded::<Packet>();
+
+
+    let (sc_sender, sc_receiver) = unbounded();
+    let (d1_command_sender, d1_command_receiver) = unbounded::<DroneCommand>();
+    let (d2_command_sender, d2_command_receiver) = unbounded::<DroneCommand>();
+    let (d3_command_sender, d3_command_receiver) = unbounded::<DroneCommand>();
+
+    let neighbour_d1 = HashMap::from([(2, d2_flood_sender.clone()), (0, cl_flood_sender.clone())]);
+    let neighbour_d2 = HashMap::from([(1, d1_flood_sender.clone()), (3, d3_flood_sender.clone())]);
+    let neighbour_d3 = HashMap::from([(2, d2_flood_sender.clone())]);
+
+    let flood_request = wg_2024::packet::FloodRequest{
+        flood_id: 1,
+        initiator_id: 0,
+        path_trace: vec![],
+    };
+
+    let flood = FloodRequest(flood_request);
+
+    let packet = Packet{
+        pack_type: flood,
+        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+        session_id: 0,
+    };
+
+    let mut drone1 = SkyLinkDrone::new(
+        1,
+        sc_sender.clone(),
+        d1_command_receiver,
+        d1_flood_receiver,
+        neighbour_d1,
+        0.0);
+
+    let d1_handle = thread::spawn(move || {
+        drone1.run();
+    });
+    handles.push(d1_handle);
+
+    let mut drone2 = SkyLinkDrone::new(
+        2,
+        sc_sender.clone(),
+        d2_command_receiver,
+        d2_flood_receiver,
+        neighbour_d2,
+        0.0);
+
+    let d2_handle = thread::spawn(move || {
+        drone2.run();
+    });
+    handles.push(d2_handle);
+
+    let handle_sc = thread::spawn(move || {
+        loop {
+            select! {
+                recv(sc_receiver) -> event => {
+                    if let Ok(e) = event {
+                        println!("\nEvent received: {:?}", e);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_sc);
+
+    let mut drone3 = SkyLinkDrone::new(
+        3,
+        sc_sender.clone(),
+        d3_command_receiver,
+        d3_flood_receiver,
+        neighbour_d3,
+        0.0);
+
+    let d3_handle = thread::spawn(move || {
+        drone3.run();
+    });
+    handles.push(d3_handle);
+
+    let handle_dst = thread::spawn(move || {
+        loop {
+            select! {
+                recv(cl_flood_receiver) -> packet => {
+                    if let Ok(p) = packet {
+                        println!("\nflood received: {:?}", p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_dst);
+
+
+
+    match d1_flood_sender.send(packet){
+        Ok(_) => {println!("D1 flood sent successfully!")},
+        Err(error) => {println!("{}", error)}
+    };
+     thread::sleep(Duration::from_millis(3000));
+
+
+    for i in handles {
+        i.join().unwrap();
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

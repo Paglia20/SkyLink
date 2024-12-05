@@ -94,7 +94,7 @@ impl SkyLinkDrone {
         }
     }
 
-    fn handle_packet(&mut self, packet: Packet) {
+    fn handle_packet(&mut self, mut packet: Packet) {
         if let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone() {
             //First check if we're dealing with a flood request, since we ignore its SRH.
             flood_request.path_trace.push((self.id, NodeType::Drone));
@@ -105,8 +105,15 @@ impl SkyLinkDrone {
                 if self.packet_send.len() == 1 {
                     self.send_flood_response(flood_request);
                 } else {
-                    let prev = flood_request.path_trace.get(flood_request.path_trace.len() - 1).unwrap().0;
+                    let mut prev = flood_request.initiator_id.clone();
+                    if flood_request.path_trace.clone().len() > 1 {
+                        prev = flood_request.path_trace.get(flood_request.path_trace.len() - 2).unwrap().0;
+                    }
+                    //I update the path_trace in the packet.
+                    packet.pack_type = PacketType::FloodRequest(flood_request);
                     for (key, _) in self.packet_send.iter() {
+                        //println!("Previous: {}", prev);
+                        //println!("Key: {}", key);
                         if *key != prev {
                             //I send the flooding to everyone except the node I received it from.
                             if let Ok(_) = self.packet_send.get(key).unwrap().send(packet.clone()) {
@@ -127,7 +134,7 @@ impl SkyLinkDrone {
                     let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
                     if let Some(sender) = self.packet_send.get(&next_hop) {
                         if let Ok(_) = sender.send(packet.clone()) {
-                            self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap(); //scommentare questo non fa and
+                            self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
                             //If the message was sent, I also notify the sim controller.
                             return;
                         }
@@ -211,20 +218,22 @@ impl SkyLinkDrone {
             path_trace: flood.path_trace.clone(), //I put a copy of path trace done by the flood
         };
 
+        let mut hops = flood.path_trace
+            .iter()
+            .rev()
+            .map(|(id, _)| *id)
+            .collect::<Vec<NodeId>>(); //I take only the ID's from the path trace and reverse them.
+        hops.push(flood.initiator_id);
         let resp = Packet {
             pack_type: PacketType::FloodResponse(flood_resp),
             routing_header: SourceRoutingHeader {
-                hop_index: 1,
-                hops: flood.path_trace
-                    .iter()
-                    .rev()
-                    .map(|(id, _)| *id)
-                    .collect::<Vec<NodeId>>() //I take only the ID's from the path trace and reverse them.
+                hop_index: 0,
+                hops,
             },
             session_id: flood.flood_id,
         };
-        self.handle_packet(resp.clone());
-        self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap();
+        self.handle_packet(resp);
+        //self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap(); //Should be set by handle_packet.
     }
 
     pub fn get_id(&self) -> NodeId {

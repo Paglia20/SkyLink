@@ -1,4 +1,5 @@
 use std::thread;
+use crate::test::test_bench::{my_generic_fragment_forward, test_flood};
 
 mod sim_app;
 mod sim_control;
@@ -9,10 +10,10 @@ mod test;
 fn main() {
     println!("Hello, world!");
 
-
-    thread::spawn(move || {
-        sim_app::run_simulation_gui();
-    });
+    //
+    // thread::spawn(move || {
+    //     sim_app::run_simulation_gui();
+    // });
 
 
 
@@ -32,4 +33,5 @@ fn main() {
     // generic_chain_fragment_drop();
 
     // test_generic();
+    test_flood();
 }
