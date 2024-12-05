@@ -7,24 +7,6 @@ use wg_2024::controller::{DroneCommand};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Fragment, Packet, PacketType};
-use crate::my_drone::SkyLinkDrone;
-
-fn my_create_sample_packet() -> Packet {
-    Packet {
-        pack_type: PacketType::MsgFragment(Fragment {
-            fragment_index: 1,
-            total_n_fragments: 1,
-            length: 128,
-            data: [1; 128] ,
-        }),
-        routing_header: SourceRoutingHeader {
-            hop_index: 1,
-            hops: vec![0,1,2,3],
-        },
-        session_id: 1,
-    }
-}
-
 
 /// This function is used to test the packet forward functionality of a drone.
 pub fn my_generic_fragment_forward() {
@@ -114,51 +96,103 @@ pub fn my_generic_fragment_forward() {
     d1_command_sender.send(Crash).unwrap();
     d2_command_sender.send(Crash).unwrap();
 
-    /*
-    loop {
-        select! {
-            recv(d0_packet_receiver) -> packet => {
-                if let Ok(p) = packet {
-                    println!("d0 packet received: {:?}", p);
-                break;
-                }
-                else{
-                    println!("diolamadonnaindiana");
-                break;
-                }
-            }
-
-            recv(d3_packet_receiver) -> packet => {
-                if let Ok(p) = packet {
-                    println!("d3 packet received: {:?}", p);
-                break;
-                }
-                else{
-                    println!("diolamadonnaindiana");
-                break;
-                }
-            }
-             default(Duration::from_secs(5)) => {
-            println!("Timeout: No packets received within 5 seconds.");
-            break;
-        }
-        }
-
-    }
-    d1_command_sender.send(RemoveSender(2)).unwrap();
-    d2_command_sender.send(RemoveSender(1)).unwrap();
-    std::mem::drop(d1_packet_sender);
-    std::mem::drop(d2_packet_sender);
-
-
-    d1_command_sender.send(Crash).unwrap();
-    d2_command_sender.send(Crash).unwrap();*/
 
     for i in handles {
         i.join().unwrap();
     }
+}
 
+pub fn test_generic(){
+    // Client 1 channels
+    let (c_send, c_recv) = unbounded();
+    // Server 21 channels
+    let (s_send, _s_recv) = unbounded();
+    // Drone 11
+    let (d_send, d_recv) = unbounded();
+    // Drone 12
+    let (d12_send, d12_recv) = unbounded();
+    // SC - needed to not make the drone crash
+    let (_d_command_send, d_command_recv) = unbounded();
 
+    // Drone 11
+    let neighbours11 = HashMap::from([(12, d12_send.clone()), (1, c_send.clone())]);
+    let mut drone = SkyLinkDrone::new(
+        11,
+        unbounded().0,
+        d_command_recv.clone(),
+        d_recv.clone(),
+        neighbours11,
+        0.0,
+    );
+    // Drone 12
+    let neighbours12 = HashMap::from([(11, d_send.clone()), (21, s_send.clone())]);
+    let mut drone2 = SkyLinkDrone::new(
+        12,
+        unbounded().0,
+        d_command_recv.clone(),
+        d12_recv.clone(),
+        neighbours12,
+        1.0,
+    );
+
+    // Spawn the drone's run method in a separate thread
+    thread::spawn(move || {
+        drone.run();
+    });
+
+    thread::spawn(move || {
+        drone2.run();
+    });
+
+    let msg = create_sample_packet();
+
+    // "Client" sends packet to the drone
+    d_send.send(msg.clone()).unwrap();
+
+    // Client receive an ACK originated from 'd'
+    // assert_eq!(
+    //     c_recv.recv().unwrap(),
+    //     Packet {
+    //         pack_type: PacketType::Ack(Ack { fragment_index: 1 }),
+    //         routing_header: SourceRoutingHeader {
+    //             hop_index: 1,
+    //             hops: vec![11, 1],
+    //         },
+    //         session_id: 1,
+    //     }
+    // );
+
+    // Client receive an NACK originated from 'd2'
+    assert_eq!(
+        c_recv.recv().unwrap(),
+        Packet {
+            pack_type: PacketType::Nack(Nack {
+                fragment_index: 1,
+                nack_type: NackType::Dropped,
+            }),
+            routing_header: SourceRoutingHeader {
+                hop_index: 2,
+                hops: vec![12, 11, 1],
+            },
+            session_id: 1,
+        }
+    );
+}
+
+fn create_sample_packet() -> Packet {
+    Packet {
+        pack_type: PacketType::MsgFragment(Fragment {
+            fragment_index: 1,
+            total_n_fragments: 1,
+            length: 128,
+            data: [1; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1, 11, 12, 21],
+        },
+        session_id: 1,
+    }
 }
 
 
