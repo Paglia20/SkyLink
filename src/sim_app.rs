@@ -1,5 +1,6 @@
 use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
 use eframe::{App, Frame, NativeOptions};
+use crate::sim_control::SimulationControl;
 
 struct Drone {
     id: String,
@@ -14,10 +15,11 @@ pub struct SimulationApp {
     log: Vec<String>,
     selected_drone: Option<usize>,
     dragging_drone: Option<usize>, // Track which drone is being dragged
+    sim_contr: SimulationControl,
 }
 
-impl Default for SimulationApp {
-    fn default() -> Self {
+impl SimulationApp {
+    fn new(sim_contr: SimulationControl) -> Self {
         Self {
             drones: vec![
                 Drone {
@@ -41,11 +43,10 @@ impl Default for SimulationApp {
             log: Vec::new(),
             selected_drone: None,
             dragging_drone: None,
+            sim_contr,
         }
     }
-}
 
-impl SimulationApp {
     fn load_drone_image(&mut self, ctx: &Context) {
         if self.drone_texture.is_none() {
             let image_data = include_bytes!("drone.png");
@@ -217,12 +218,11 @@ impl App for SimulationApp {
     }
 }
 
-pub fn run_simulation_gui() {
+pub fn run_simulation_gui(sim_contr: SimulationControl) {
     let options = NativeOptions::default();
     eframe::run_native(
         "SkyLink Simulation",
         options,
-        Box::new(|_cc| Box::new(SimulationApp::default())),
-    )
-        .expect("Failed to start GUI");
+        Box::new(|_cc| Box::new(SimulationApp::new(sim_contr))),
+    ).expect("Failed to start GUI");
 }
