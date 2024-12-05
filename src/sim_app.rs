@@ -258,7 +258,23 @@ impl App for SimulationApp {
                 self.render_connection_dialog(ui);
             }
         });
+
+        let sim_control_log_vec = &self.sim_contr.log;
+
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .min_height(100.0) // Altezza minima
+            .max_height(400.0) // Altezza massima
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label("Simulation controller log:");
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for message in sim_control_log_vec {
+                        ui.label(message); // Mostra ciascun messaggio
+                    }
+                });
+            });
     }
+
 }
 
 
