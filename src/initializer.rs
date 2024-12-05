@@ -7,7 +7,7 @@ use wg_2024::drone::Drone;
 use crate::sim_control::SimulationControl;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
+pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
     let mut handles = Vec::new();
     //I'll return the handles of the threads, and join them to the main thread.
@@ -76,15 +76,9 @@ pub fn initialize(file: &str) -> Vec<JoinHandle<()>>{
     }
 
 
+    let sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
 
-    handles.push(thread::spawn(move || {
-        let mut sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
-
-        sim_contr.run();
-    }));
-
-
-    handles
+    (sim_contr, handles)
 }
 
 fn parse_config(file: &str) -> Config {
