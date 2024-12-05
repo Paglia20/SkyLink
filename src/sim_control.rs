@@ -120,7 +120,9 @@ impl SimulationControl{
                         }
                     }
                 }
-                self.node_send.remove(&id);
+                if let Some(to_be_dropped) = self.node_send.remove(&id){
+                    drop(to_be_dropped);
+                }
                 self.log.push(format!("drone {} crashed.", id));
             }
         } else {

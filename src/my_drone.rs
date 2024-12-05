@@ -85,7 +85,9 @@ impl SkyLinkDrone {
             },
             DroneCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id){
-                    self.packet_send.remove(&node_id);
+                    if let Some(to_be_dropped) = self.packet_send.remove(&node_id){
+                        drop(to_be_dropped);
+                    }
                 }
             }
         }
@@ -123,7 +125,7 @@ impl SkyLinkDrone {
                     let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
                     if let Some(sender) = self.packet_send.get(&next_hop) {
                         if let Ok(_) = sender.send(packet.clone()) {
-                            self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap();
+                            self.controller_send.send(DroneEvent::PacketSent(packet)).unwrap(); //scommentare questo non fa and
                             //If the message was sent, I also notify the sim controller.
                             return;
                         }

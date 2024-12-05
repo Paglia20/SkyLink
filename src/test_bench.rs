@@ -9,7 +9,7 @@ use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Fragment, Packet, PacketType};
 use crate::my_drone::SkyLinkDrone;
 
-fn create_sample_packet() -> Packet {
+fn my_create_sample_packet() -> Packet {
     Packet {
         pack_type: PacketType::MsgFragment(Fragment {
             fragment_index: 1,
@@ -27,7 +27,7 @@ fn create_sample_packet() -> Packet {
 
 
 /// This function is used to test the packet forward functionality of a drone.
-pub fn generic_fragment_forward() {
+pub fn my_generic_fragment_forward() {
     let mut handles = Vec::new();
 
     let (d0_packet_sender, _d0_packet_receiver) = unbounded::<Packet>();
@@ -98,7 +98,7 @@ pub fn generic_fragment_forward() {
     handles.push(handle_dst);
 
 
-    let msg = create_sample_packet();
+    let msg = my_create_sample_packet();
 
     match d1_packet_sender.send(msg){
         Ok(_) => {println!("D1 packet sent successfully!")},
