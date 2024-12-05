@@ -13,7 +13,9 @@ pub struct SimulationApp {
     drone_texture: Option<TextureHandle>,
     log: Vec<String>,
     selected_drone: Option<usize>,
-    dragging_drone: Option<usize>, // Track which drone is being dragged
+    dragging_drone: Option<usize>,
+    show_connection_dialog: bool,
+    new_drone_index: Option<usize>,
 }
 
 impl Default for SimulationApp {
@@ -41,6 +43,8 @@ impl Default for SimulationApp {
             log: Vec::new(),
             selected_drone: None,
             dragging_drone: None,
+            show_connection_dialog: false,
+            new_drone_index: None,
         }
     }
 }
@@ -79,7 +83,6 @@ impl SimulationApp {
                 size,
             );
 
-            // Make the drone interactable
             let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
             if response.clicked() {
                 self.selected_drone = Some(i);
@@ -88,22 +91,20 @@ impl SimulationApp {
 
             if response.dragged() {
                 if self.dragging_drone.is_none() {
-                    self.dragging_drone = Some(i); // Start dragging the drone
+                    self.dragging_drone = Some(i);
                 }
 
                 if let Some(dragging_idx) = self.dragging_drone {
                     if dragging_idx == i {
-                        drone.position += response.drag_delta(); // Update position
+                        drone.position += response.drag_delta();
                     }
                 }
             }
 
             if response.drag_released() && self.dragging_drone == Some(i) {
-                self.dragging_drone = None; // Stop dragging when released
-                self.log.push(format!("{} moved to {:?}", drone.id, drone.position));
+                self.dragging_drone = None;
             }
 
-            // Draw the drone image
             ui.painter().image(
                 texture.id(),
                 rect,
@@ -114,7 +115,6 @@ impl SimulationApp {
                 color_overlay,
             );
 
-            // Draw the drone ID
             ui.painter().text(
                 egui::Pos2::new(drone.position.x + 20.0, drone.position.y - 10.0),
                 egui::Align2::CENTER_CENTER,
@@ -148,11 +148,17 @@ impl SimulationApp {
     fn handle_ui_controls(&mut self, ui: &mut egui::Ui) {
         if ui.button("Add Drone").clicked() {
             let new_id = format!("Drone{}", self.drones.len() + 1);
-            self.drones.push(Drone {
+            let new_drone = Drone {
                 id: new_id.clone(),
                 position: Vec2::new(200.0, 200.0),
                 is_crashed: false,
-            });
+            };
+
+            self.drones.push(new_drone);
+            let new_index = self.drones.len() - 1;
+            self.new_drone_index = Some(new_index);
+
+            self.show_connection_dialog = true;
             self.log.push(format!("{} added", new_id));
         }
 
@@ -183,6 +189,42 @@ impl SimulationApp {
             ui.label("No Drone Selected");
         }
     }
+
+    fn render_connection_dialog(&mut self, ui: &mut egui::Ui) {
+        if self.show_connection_dialog && self.new_drone_index.is_some() {
+            egui::Window::new("Connect New Drone")
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Select drones to connect the new drone to:");
+
+                    let new_drone_index = self.new_drone_index.unwrap();
+                    let mut selected_connections = Vec::new();
+
+                    for (idx, drone) in self.drones.iter().enumerate() {
+                        if idx != new_drone_index {
+                            let mut is_connected = false;
+                            ui.checkbox(&mut is_connected, &drone.id);
+
+                            if is_connected {
+                                selected_connections.push(idx);
+                            }
+                        }
+                    }
+
+                    if ui.button("Confirm Connections").clicked() {
+                        for connect_idx in selected_connections {
+                            self.connections.push((new_drone_index, connect_idx));
+                            self.log.push(format!("Connected {} to {}",
+                                                  self.drones[new_drone_index].id,
+                                                  self.drones[connect_idx].id));
+                        }
+
+                        self.show_connection_dialog = false;
+                        self.new_drone_index = None;
+                    }
+                });
+        }
+    }
 }
 
 impl App for SimulationApp {
@@ -205,13 +247,11 @@ impl App for SimulationApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(texture) = &self.drone_texture {
-                // Store a reference to the texture temporarily to break the immutable borrow
-                let texture_ref = texture.clone();
-
-                // Render connections and drones
+            if let Some(texture) = self.drone_texture.clone() {
                 self.render_connections(ui);
-                self.render_drones(ui, &texture_ref);
+                self.render_drones(ui, &texture);
+
+                self.render_connection_dialog(ui);
             }
         });
     }

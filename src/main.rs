@@ -14,10 +14,10 @@ mod test_bench;
 
 fn main() {
     println!("Hello, world!");
+    sim_app::run_simulation_gui();
 
 
     thread::spawn(move || {
-        sim_app::run_simulation_gui();
     });
 
 
