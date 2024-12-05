@@ -72,6 +72,9 @@ impl SimulationApp {
     }
 
     fn render_drones(&mut self, ui: &mut egui::Ui, texture: &TextureHandle) {
+
+        let window_size = ui.available_size();
+
         for (i, drone) in self.drones.iter_mut().enumerate() {
             let color_overlay = if drone.is_crashed {
                 Color32::RED
@@ -100,7 +103,15 @@ impl SimulationApp {
 
                 if let Some(dragging_idx) = self.dragging_drone {
                     if dragging_idx == i {
-                        drone.position += response.drag_delta();
+
+                        // Calcola la nuova posizione limitata del drone
+                        let new_x = (drone.position.x + response.drag_delta().x)
+                            .clamp(100.0, 465.0); // Limita la posizione orizzontale
+                        let new_y = (drone.position.y + response.drag_delta().y)
+                            .clamp(20.0, 330.0); // Limita la posizione verticale
+
+                        // Assegna la nuova posizione al drone
+                        drone.position = Vec2::new(new_x, new_y);
                     }
                 }
             }
@@ -235,6 +246,15 @@ impl App for SimulationApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         self.load_drone_image(ctx);
 
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if let Some(texture) = self.drone_texture.clone() {
+                self.render_connections(ui);
+                self.render_drones(ui, &texture);
+
+                self.render_connection_dialog(ui);
+            }
+        });
+
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.heading("SkyLink Simulation");
         });
@@ -250,21 +270,13 @@ impl App for SimulationApp {
             self.handle_selection(ui);
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(texture) = self.drone_texture.clone() {
-                self.render_connections(ui);
-                self.render_drones(ui, &texture);
-
-                self.render_connection_dialog(ui);
-            }
-        });
-
         let sim_control_log_vec = &self.sim_contr.log;
 
         egui::TopBottomPanel::bottom("bottom_panel")
             .min_height(100.0) // Altezza minima
             .max_height(400.0) // Altezza massima
             .resizable(true)
+            .show_separator_line(true)
             .show(ctx, |ui| {
                 ui.label("Simulation controller log:");
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -274,7 +286,6 @@ impl App for SimulationApp {
                 });
             });
     }
-
 }
 
 
