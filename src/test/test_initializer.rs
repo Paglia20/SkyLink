@@ -3,13 +3,13 @@ use std::thread::JoinHandle;
 use std::collections::HashMap;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use wg_2024::config::Config;
-use wg_2024::controller::DroneEvent;
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Packet, PacketType};
+use wg_2024::network::{NodeId};
+use wg_2024::packet::{Packet};
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinHandle<()>>) {
+pub fn test_initialize(file: &str) -> (MySimContr, MyClient, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
     let mut handles = Vec::new();
     //I'll return the handles of the threads, and join them to the main thread.
@@ -76,28 +76,16 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
         client_recv
     };
 
-    let flood_request = wg_2024::packet::FloodRequest{
-        flood_id: 1,
-        initiator_id: 0,
-        path_trace: vec![],
-    };
-    let flood = PacketType::FloodRequest(flood_request);
-    let packet = Packet{
-        pack_type: flood,
-        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-        session_id: 0,
+    let sim_contr = MySimContr {
+        command_send,
+        event_recv,
+        // event_send,
+        // packet_senders,
+        // network_graph
     };
 
-    for (i, s) in &my_client.client_send {
-        if let Ok(_) = s.send(packet.clone()) {
-            println!("Packet {:?} sent successfully!", packet);
-        } else {
-            println!("Doesn't work");
-        }
-    }
 
-
-    (event_recv, my_client, handles)
+    (sim_contr, my_client, handles)
 }
 
 fn parse_config(file: &str) -> Config {
@@ -110,4 +98,11 @@ pub struct MyClient {
     pub id: NodeId,
     pub client_send: HashMap<NodeId, Sender<Packet>>,
     pub client_recv: Receiver<Packet>
+}
+pub struct MySimContr {
+    pub command_send: HashMap<NodeId,Sender<DroneCommand>>,
+    pub event_recv: Receiver<DroneEvent>,
+    // pub event_send: Sender<DroneEvent>,
+    // pub packet_senders,
+    // pub network_graph
 }

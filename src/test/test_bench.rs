@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::{thread, vec};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
-use wg_2024::controller::DroneCommand::{Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
@@ -74,7 +72,7 @@ pub fn my_generic_fragment_forward() {
             select! {
                 recv(d3_packet_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        packet_printer(p);
+                        println!("\nPacket received: {:?}", p);
                     }
                 }
             }
@@ -287,7 +285,7 @@ pub fn test_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        packet_printer(p)             ;
+                        println!("\nflood received: {:?}", p);
                     }
                 }
             }
@@ -519,8 +517,7 @@ pub fn test_double_chain_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        packet_printer(p);
-
+                        println!("\nclient flood response received: {:?}", p);
                         // let path = match p.pack_type {
                         //     PacketType::FloodResponse(flood) => flood.path_trace,
                         //     _ => Vec::new(),
@@ -531,8 +528,7 @@ pub fn test_double_chain_flood(){
                 }
                 recv(dest_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                         packet_printer(p);
-
+                        println!("\ndest flood req received: {:?}", p);
                         //should simulate a server, but since is only a channel it doesn't produce a float response.
                     }
                 }
@@ -751,7 +747,7 @@ pub fn test_star_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                       //println!("\nEvent received: {:?}", e);
+                        println!("\nEvent received: {:?}", e);
                     }
                 }
             }
@@ -759,19 +755,19 @@ pub fn test_star_flood(){
     });
     handles.push(handle_sc);
 
+
     let handle_dst = thread::spawn(move || {
         loop {
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                    packet_printer(p);
+                        println!("\nflood received: {:?}", p);
                     }
                 }
             }
         }
     });
     handles.push(handle_dst);
-
 
 
 
@@ -980,7 +976,7 @@ pub fn test_butterfly_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                    //    println!("\nEvent received: {:?}", e);
+                        println!("\nEvent received: {:?}", e);
                     }
                 }
             }
@@ -994,7 +990,7 @@ pub fn test_butterfly_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                         packet_printer(p);
+                        println!("\nflood received: {:?}", p);
                     }
                 }
             }
@@ -1017,10 +1013,10 @@ pub fn test_butterfly_flood(){
 }
 
 pub fn test_tree_flood(){
-    let (rec, client, mut handles) = test_initialize("input_star.toml");
+    let (sim_contr, client, mut handles) = test_initialize("input_tree.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
-        flood_id: 3,
+        flood_id: 1,
         initiator_id: 0,
         path_trace: vec![],
     };
@@ -1031,32 +1027,30 @@ pub fn test_tree_flood(){
         session_id: 0,
     };
 
-    /*for (i, s) in client.client_send {
+    for (i, s) in client.client_send {
         if let Ok(_) = s.send(packet.clone()) {
             println!("Packet {:?} sent successfully!", packet);
         } else {
             println!("Doesn't work");
         }
-    }*/
+    }
 
     let handle_dst = thread::spawn(move || {
         loop {
             select! {
                 recv(client.client_recv) -> packet => {
                     if let Ok(p) = packet {
-                         packet_printer(p);
+                        println!("\nflood received: {:?}", p);
                     }
                 }
             }
         }
     });
-
-
     handles.push(handle_dst);
     let handle_sc = thread::spawn(move || {
         loop {
             select! {
-                recv(rec) -> packet => {
+                recv(sim_contr.event_recv) -> packet => {
                     if let Ok(p) = packet {
                         println!("\nevent received: {:?}", p);
                     }
@@ -1066,7 +1060,6 @@ pub fn test_tree_flood(){
     });
     handles.push(handle_sc);
 
-    println!(".");
 
     for i in handles {
         i.join().unwrap();
@@ -1109,15 +1102,15 @@ fn packet_printer(packet: Packet) {
         },
         PacketType::FloodRequest(flood_request) => {
             println!("Flood request received:");
-        //    println!("session id: {:?}", packet.session_id);
+            println!("session id: {:?}", packet.session_id);
             println!("flood_id: {:?}", flood_request.flood_id);
-        //    println!("initiator.id: {:?}", flood_request.initiator_id);
+            println!("initiator.id: {:?}", flood_request.initiator_id);
             println!("path_trace: {:?}", flood_request.path_trace);
         },
         PacketType::FloodResponse(flood_response) => {
             println!("Flood response received:");
             println!("source_routing_header: {:?}", packet.routing_header);
-       //     println!("session id: {:?}", packet.session_id);
+            println!("session id: {:?}", packet.session_id);
             println!("flood_id: {:?}", flood_response.flood_id);
             println!("path_trace: {:?}", flood_response.path_trace);
         }
@@ -1125,17 +1118,7 @@ fn packet_printer(packet: Packet) {
 }
 
 fn event_printer(event: DroneEvent) {
-    match event {
-        DroneEvent::PacketSent(packet) => {
-            println!("Packet sent:");
-            packet_printer(packet);
-        }
-        DroneEvent::PacketDropped(packet) => {
-            println!("Packet dropped:");
-            packet_printer(packet);
-        }
-        DroneEvent::ControllerShortcut(_) => {}
-    }
+
 }
 
 
@@ -1146,8 +1129,5 @@ NOTES
 
 - Q: maybe you should drop channels also in sim control
 - A: Yea probably
-
-
-- quando fai join, cerchi di chiudere tutti i thread, quando continua ad andare è perchè qualche thread non è chiuso, non ha assolto al suo "compito"
 
 */
