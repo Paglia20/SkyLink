@@ -55,7 +55,20 @@ impl Drone for SkyLinkDrone {
                     }
                 }
             } else {
-                select! {
+                select_biased! {
+                    recv(self.controller_recv) -> cmd => {
+                        // If I'm in crushing behavior, I still listen for RemoveSender command,
+                        // to avoid neighbour drones not crushing because of each other existence.
+                        if let Ok(command) = cmd {
+                            if let DroneCommand::RemoveSender(node_id) = command {
+                                if self.packet_send.contains_key(&node_id) {
+                                    if let Some(to_be_dropped) = self.packet_send.remove(&node_id) {
+                                        drop(to_be_dropped);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     recv(self.packet_recv) -> pkt => {
                         match pkt {
                             Ok(packet) => {
