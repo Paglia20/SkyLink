@@ -59,7 +59,7 @@ pub fn my_generic_fragment_forward() {
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                        println!("\nEvent received: {:?}", e);
+                        event_printer(e);
                     }
                 }
             }
@@ -72,7 +72,7 @@ pub fn my_generic_fragment_forward() {
             select! {
                 recv(d3_packet_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nPacket received: {:?}", p);
+                        packet_printer(p);
                     }
                 }
             }
@@ -259,7 +259,7 @@ pub fn test_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                        println!("\nEvent received: {:?}", e);
+                        event_printer(e);
                     }
                 }
             }
@@ -285,7 +285,7 @@ pub fn test_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nflood received: {:?}", p);
+                        packet_printer(p);
                     }
                 }
             }
@@ -499,7 +499,7 @@ pub fn test_double_chain_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                        //println!("\nEvent received: {:?}", e);
+                        event_printer(e);
                     }
                 }
             }
@@ -517,7 +517,8 @@ pub fn test_double_chain_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nclient flood response received: {:?}", p);
+                        packet_printer(p);
+                        // println!("\n client flood response received: {:?}", p);
                         // let path = match p.pack_type {
                         //     PacketType::FloodResponse(flood) => flood.path_trace,
                         //     _ => Vec::new(),
@@ -528,7 +529,7 @@ pub fn test_double_chain_flood(){
                 }
                 recv(dest_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\ndest flood req received: {:?}", p);
+                        packet_printer(p);
                         //should simulate a server, but since is only a channel it doesn't produce a float response.
                     }
                 }
@@ -747,7 +748,7 @@ pub fn test_star_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                        println!("\nEvent received: {:?}", e);
+                        event_printer(e);
                     }
                 }
             }
@@ -761,7 +762,7 @@ pub fn test_star_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nflood received: {:?}", p);
+                        packet_printer(p);
                     }
                 }
             }
@@ -976,7 +977,7 @@ pub fn test_butterfly_flood(){
             select! {
                 recv(sc_receiver) -> event => {
                     if let Ok(e) = event {
-                        println!("\nEvent received: {:?}", e);
+                        event_printer(e);
                     }
                 }
             }
@@ -990,7 +991,7 @@ pub fn test_butterfly_flood(){
             select! {
                 recv(cl_flood_receiver) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nflood received: {:?}", p);
+                        packet_printer(p);
                     }
                 }
             }
@@ -1040,7 +1041,7 @@ pub fn test_tree_flood(){
             select! {
                 recv(client.client_recv) -> packet => {
                     if let Ok(p) = packet {
-                        println!("\nflood received: {:?}", p);
+                        packet_printer(p);
                     }
                 }
             }
@@ -1051,8 +1052,8 @@ pub fn test_tree_flood(){
         loop {
             select! {
                 recv(sim_contr.event_recv) -> packet => {
-                    if let Ok(p) = packet {
-                        println!("\nevent received: {:?}", p);
+                    if let Ok(e) = packet {
+                        event_printer(e);
                     }
                 }
             }
@@ -1118,7 +1119,24 @@ fn packet_printer(packet: Packet) {
 }
 
 fn event_printer(event: DroneEvent) {
-
+    match event {
+        DroneEvent::PacketSent(packet) => {
+            let index = packet.routing_header.hop_index;
+            let prev = packet.routing_header.hops[index-1];
+            let next = packet.routing_header.hops[index];
+            println!("Packet sent from {} to {}:", prev, next);
+            packet_printer(packet);
+        },
+        DroneEvent::PacketDropped(packet) => {
+            let id = packet.routing_header.hops[0];
+            println!("Packet dropped by {}:", id); //Not sure the index is right.
+            packet_printer(packet);
+        },
+        DroneEvent::ControllerShortcut(packet) => {
+            println!("Controller Shortcut used by this packet:");
+            packet_printer(packet);
+        }
+    }
 }
 
 
