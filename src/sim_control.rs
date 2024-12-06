@@ -15,7 +15,7 @@ pub struct SimulationControl{
     channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
     all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn
     network_graph: HashMap<NodeId, Vec<NodeId>>,
-    log: Vec<String>,
+    pub(crate) log: Vec<String>,
 }
 
 impl SimulationControl{
@@ -57,7 +57,7 @@ impl SimulationControl{
         }
     }
 
-    fn spawn_drone (&mut self, pdr: f32, node_in: Vec<NodeId>, node_out: Vec<NodeId>) -> JoinHandle<()>{
+    fn spawn_drone (&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()>{
         let new_id = self.generate_id();
 
         let (control_sender, control_receiver) = unbounded();  //canale per il Sim che manda drone command al drone
@@ -66,7 +66,7 @@ impl SimulationControl{
 
         let (packet_send, packet_recv) = unbounded();                       //canale per il drone, il recv gli va dentro, il send va dato in copia a tutti i droni che vogliono comunicare con lui
         for (id, sender) in self.node_send.iter() {                        // per dare a tutti i droni in node_in il sender al new drone
-            for i in node_in.clone() {
+            for i in connections.clone() {
                 if i == *id {
                     sender.send(AddSender(new_id, packet_send.clone())).unwrap();
                 }
@@ -76,7 +76,7 @@ impl SimulationControl{
         let mut packet_send = HashMap::new();
         //riempi la hashmap
         for (id, sender) in &self.all_sender_packets {
-            for i in node_out.clone() {
+            for i in connections.clone() {
                 if i == *id{
                     packet_send.insert(*id, sender.clone());
                 }
