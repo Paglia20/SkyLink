@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use crossbeam_channel::{select, select_biased, Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::controller::DroneEvent::ControllerShortcut;
 use wg_2024::drone::Drone;
