@@ -49,11 +49,9 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
             .into_iter()
             .map(|id| (id, packet_senders[&id].clone()))
             .collect();
-
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
             let mut drone = SkyLinkDrone::new(drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr);
-
             drone.run();
         }));
         //This will probably need to be changed based on the
