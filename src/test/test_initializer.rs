@@ -5,8 +5,8 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use wg_2024::config::Config;
 use wg_2024::controller::DroneEvent;
 use wg_2024::drone::Drone;
-use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{Packet, PacketType};
 use crate::skylink_drone::drone::SkyLinkDrone;
 
 pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinHandle<()>>) {
@@ -34,6 +34,7 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
         packet_receivers.insert(client.id, recv);
     }
 
+
     for drone in config.drone.into_iter() {
         //Adding the sender to this drone to the senders of the Sim Contr.
         let (contr_send, contr_recv) = unbounded();
@@ -50,7 +51,7 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
             .map(|id| (id, packet_senders[&id].clone()))
             .collect();
 
-        //println!("Drone {} - channels:\n{:?}",drone.id, drone_send);
+
 
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
@@ -58,8 +59,6 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
 
             drone.run();
         }));
-        //This will probably need to be changed based on the
-        //implementation of other groups drones in our network.
     }
 
     let client = config.client.get(0).unwrap();
@@ -77,9 +76,26 @@ pub fn test_initialize(file: &str) -> (Receiver<DroneEvent>, MyClient, Vec<JoinH
         client_recv
     };
 
+    let flood_request = wg_2024::packet::FloodRequest{
+        flood_id: 1,
+        initiator_id: 0,
+        path_trace: vec![],
+    };
+    let flood = PacketType::FloodRequest(flood_request);
+    let packet = Packet{
+        pack_type: flood,
+        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+        session_id: 0,
+    };
 
+    for (i, s) in &my_client.client_send {
+        if let Ok(_) = s.send(packet.clone()) {
+            println!("Packet {:?} sent successfully!", packet);
+        } else {
+            println!("Doesn't work");
+        }
+    }
 
-  //  let sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
 
     (event_recv, my_client, handles)
 }
@@ -89,6 +105,7 @@ fn parse_config(file: &str) -> Config {
     toml::from_str(&file_str).unwrap()
 }
 
+#[derive(Debug)]
 pub struct MyClient {
     pub id: NodeId,
     pub client_send: HashMap<NodeId, Sender<Packet>>,
