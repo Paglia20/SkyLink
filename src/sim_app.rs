@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
 use eframe::{App, Frame, NativeOptions};
 use crate::sim_control::SimulationControl;
@@ -6,7 +7,9 @@ struct Drone {
     id: String,
     position: Vec2,
     is_crashed: bool,
+    pdr: f32,
 }
+
 
 pub struct SimulationApp {
     drones: Vec<Drone>,
@@ -22,37 +25,49 @@ pub struct SimulationApp {
 }
 
 impl SimulationApp {
-
     fn new(sim_contr: SimulationControl) -> Self {
+        let network_graph = sim_contr.network_graph.clone();
+
+        let mut drones = Vec::new();
+        let mut drone_map = HashMap::new();
+
+        for node_id in network_graph.keys() {
+            let index = drones.len();
+            drones.push(Drone {
+                id: format!("drone{}", node_id),
+                position: Vec2::new(100.0 + (index as f32) * 100.0, 100.0),
+                is_crashed: false,
+                pdr: 0.0,
+            });
+            drone_map.insert(node_id.clone(), index);
+        }
+
+
+        let mut connections = Vec::new();
+        for (node_id, neighbors) in &network_graph {
+            if let Some(&start_idx) = drone_map.get(node_id) {
+                for neighbor in neighbors {
+                    if let Some(&end_idx) = drone_map.get(neighbor) {
+                        connections.push((start_idx, end_idx));
+                    }
+                }
+            }
+        }
+
         Self {
-            drones: vec![
-                Drone {
-                    id: "Drone1".to_string(),
-                    position: Vec2::new(100.0, 100.0),
-                    is_crashed: false,
-                },
-                Drone {
-                    id: "Drone2".to_string(),
-                    position: Vec2::new(300.0, 100.0),
-                    is_crashed: false,
-                },
-                Drone {
-                    id: "Drone3".to_string(),
-                    position: Vec2::new(200.0, 300.0),
-                    is_crashed: false,
-                },
-            ],
-            connections: vec![(0, 1), (1, 2), (2, 0)],
+            drones,
+            connections,
             drone_texture: None,
             log: Vec::new(),
             selected_drone: None,
             dragging_drone: None,
             show_connection_dialog: false,
             new_drone_index: None,
-            connection_selections: vec![false; 3],
+            connection_selections: vec![false; network_graph.len()],
             sim_contr,
         }
     }
+
 
     fn load_drone_image(&mut self, ctx: &Context) {
         if self.drone_texture.is_none() {
@@ -167,14 +182,15 @@ impl SimulationApp {
             // Get the current window size
             let window_size = ui.available_size();
 
-            // Generate random x and y positions within the window
-            let random_x = fastrand::f32() * (window_size.x - 50.0);
-            let random_y = fastrand::f32() * (window_size.y - 50.0);
+            let base_x = window_size.x * 0.75; // Spawn towards the right (75% of panel width)
+            let random_x = base_x + fastrand::f32() * 100.0 - 50.0; // Add small random offsets
+            let random_y = window_size.y / 2.0 + fastrand::f32() * 100.0 - 50.0;
 
             let new_drone = Drone {
                 id: new_id.clone(),
                 position: Vec2::new(random_x, random_y),
                 is_crashed: false,
+                pdr: 0.0, // Temporary default value
             };
 
             self.drones.push(new_drone);
@@ -187,9 +203,8 @@ impl SimulationApp {
             self.show_connection_dialog = true;
             self.log.push(format!("{} added", new_id));
         }
-
-        // ... rest of the existing method remains the same
     }
+
 
     fn handle_selection(&mut self, ui: &mut egui::Ui) {
         if let Some(idx) = self.selected_drone {
@@ -214,6 +229,12 @@ impl SimulationApp {
                         self.connection_selections = vec![false; self.drones.len()];
                     }
 
+                    // Input field for PDR
+                    ui.label("Enter PDR value:");
+                    if let Some(new_drone) = self.drones.get_mut(new_drone_index) {
+                        ui.add(egui::DragValue::new(&mut new_drone.pdr).speed(0.1));
+                    }
+
                     for (idx, drone) in self.drones.iter().enumerate() {
                         if idx != new_drone_index {
                             ui.horizontal(|ui| {
@@ -226,9 +247,11 @@ impl SimulationApp {
                         for (idx, &is_selected) in self.connection_selections.iter().enumerate() {
                             if is_selected && idx != new_drone_index {
                                 self.connections.push((new_drone_index, idx));
-                                self.log.push(format!("Connected {} to {}",
-                                                      self.drones[new_drone_index].id,
-                                                      self.drones[idx].id));
+                                self.log.push(format!(
+                                    "Connected {} to {}",
+                                    self.drones[new_drone_index].id,
+                                    self.drones[idx].id
+                                ));
                             }
                         }
 
@@ -240,6 +263,7 @@ impl SimulationApp {
                 });
         }
     }
+
 }
 
 impl App for SimulationApp {
@@ -273,18 +297,19 @@ impl App for SimulationApp {
         let sim_control_log_vec = &self.sim_contr.log;
 
         egui::TopBottomPanel::bottom("bottom_panel")
-            .min_height(100.0) // Altezza minima
-            .max_height(400.0) // Altezza massima
+            .min_height(100.0) // Minimum height
+            .max_height(400.0) // Maximum height
             .resizable(true)
             .show_separator_line(true)
             .show(ctx, |ui| {
                 ui.label("Simulation controller log:");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for message in sim_control_log_vec {
-                        ui.label(message); // Mostra ciascun messaggio
+                        ui.label(message); // Display each message
                     }
                 });
             });
+
     }
 }
 
