@@ -10,6 +10,7 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::PacketType::FloodRequest;
 use crate::skylink_drone::drone::SkyLinkDrone;
+use crate::test::test_initializer::test_initialize;
 
 /// This function is used to test the packet forward functionality of a drone.
 pub fn my_generic_fragment_forward() {
@@ -36,7 +37,7 @@ pub fn my_generic_fragment_forward() {
         d1_command_receiver,
         d1_packet_receiver,
         neighbour_d1,
-        0.0);
+        1.0);
 
     let d1_handle = thread::spawn(move || {
             drone1.run();
@@ -819,11 +820,11 @@ pub fn test_butterfly_flood(){
     let neighbour_d2 = HashMap::from([(5, d5_flood_sender.clone()), (6, d6_flood_sender.clone())]);
     let neighbour_d3 = HashMap::from([(7, d7_flood_sender.clone()), (8, d8_flood_sender.clone())]);
     let neighbour_d4 = HashMap::from([(7, d7_flood_sender.clone()), (8, d8_flood_sender.clone())]);
-    let neighbour_d5 = HashMap::from([(9, d9_flood_sender.clone()), (1, d1_flood_sender.clone())]);
+    let neighbour_d5 = HashMap::from([(9, d9_flood_sender.clone()), (1, d1_flood_sender.clone()), (2, d2_flood_sender.clone())]);
 
     let neighbour_d6 = HashMap::from([(10, d10_flood_sender.clone()), (1, d1_flood_sender.clone()), (2, d2_flood_sender.clone())]);
     let neighbour_d7 = HashMap::from([(4, d4_flood_sender.clone()),(9, d9_flood_sender.clone()), (3, d3_flood_sender.clone()) ]);
-    let neighbour_d8 = HashMap::from([(4, d4_flood_sender.clone()), (10, d10_flood_sender.clone()) ]);
+    let neighbour_d8 = HashMap::from([(4, d4_flood_sender.clone()), (10, d10_flood_sender.clone()), (3, d3_flood_sender.clone())]);
     let neighbour_d9 = HashMap::from([(10, d10_flood_sender.clone()), (7, d7_flood_sender.clone()), (5, d5_flood_sender.clone())]);
     let neighbour_d10 = HashMap::from([(8, d8_flood_sender.clone()), (6, d6_flood_sender.clone()), (9, d9_flood_sender.clone())]);
 
@@ -1012,6 +1013,60 @@ pub fn test_butterfly_flood(){
     for i in handles {
         i.join().unwrap();
     }
+}
+
+pub fn test_tree_flood(){
+    let (rec, client, mut handles) = test_initialize("input_tree.toml");
+
+    let flood_request = wg_2024::packet::FloodRequest{
+        flood_id: 1,
+        initiator_id: 0,
+        path_trace: vec![],
+    };
+
+    let flood = FloodRequest(flood_request);
+
+    let packet = Packet{
+        pack_type: flood,
+        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+        session_id: 0,
+    };
+    for (i, s) in client.client_send {
+        s.send(packet.clone());
+    }
+
+    let handle_dst = thread::spawn(move || {
+        loop {
+            select! {
+                recv(client.client_recv) -> packet => {
+                    if let Ok(p) = packet {
+                        println!("\nflood received: {:?}", p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_dst);
+    let handle_sc = thread::spawn(move || {
+        loop {
+            select! {
+                recv(rec) -> packet => {
+                    if let Ok(p) = packet {
+                        println!("\nevent received: {:?}", p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_sc);
+
+    println!(".");
+
+    for i in handles {
+        i.join().unwrap();
+    }
+
+
 }
 
 
