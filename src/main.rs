@@ -1,5 +1,5 @@
 use std::thread;
-use crate::test::test_bench::{my_generic_fragment_forward, test_butterfly_flood, test_double_chain_flood, test_flood, test_star_flood};
+use crate::test::test_bench::{my_generic_fragment_forward, test_butterfly_flood, test_double_chain_flood, test_flood, test_star_flood, test_tree_flood};
 use crate::initializer::initialize;
 
 mod sim_app;
@@ -11,9 +11,10 @@ mod test;
 fn main() {
     println!("Hello, world!");
 
-    // Put test = false if you want to use the interface.
-    // Put test = true if you want to use the test_bench.
-    let test = true;
+
+    // Put this to true if you want to use tests
+    // or to false if you want to use the Sim Contr application.
+    let test = false;
     if test {
         //Comment functions we aren't testing
 
@@ -24,14 +25,15 @@ fn main() {
         // test_generic();
         // test_double_chain_flood();
         // test_star_flood();
-        test_butterfly_flood()
+        // test_butterfly_flood()
+        // my_generic_fragment_forward()
+        test_tree_flood();
+
     } else {
         let (sim_contr, handles) = initialize("input.toml");
         sim_app::run_simulation_gui(sim_contr);
-
         for handle in handles.into_iter() {
             handle.join().unwrap();
         }
     }
-
 }
