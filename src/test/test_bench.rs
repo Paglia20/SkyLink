@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
 use wg_2024::controller::DroneCommand::{Crash, RemoveSender};
-use wg_2024::controller::{DroneCommand};
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
@@ -1083,25 +1083,46 @@ pub fn are_path_discovered(dest_path: &Vec<Vec<(NodeId, NodeType)>>) -> bool {
     (1..=10).all(|num| discovered.contains(&num))
 }
 
+fn packet_printer(packet: Packet) {
+    match packet.pack_type.clone() {
+        PacketType::MsgFragment(msg_fragment) => {
+            println!("Fragment received:");
+            println!("source_routing_header: {:?}", packet.routing_header);
+            println!("session id: {:?}", packet.session_id);
+            println!("msg_fragment: {:?}", msg_fragment);
+        },
+        PacketType::Ack(ack) => {
+            println!("Ack received:");
+            println!("source_routing_header: {:?}", packet.routing_header);
+            println!("session id: {:?}", packet.session_id);
+            println!("ack: {:?}", ack);
+        },
+        PacketType::Nack(nack) => {
+            println!("Nack received:");
+            println!("source_routing_header: {:?}", packet.routing_header);
+            println!("session id: {:?}", packet.session_id);
+            println!("nack: {:?}", nack);
+        },
+        PacketType::FloodRequest(flood_request) => {
+            println!("Flood request received:");
+            println!("session id: {:?}", packet.session_id);
+            println!("flood_id: {:?}", flood_request.flood_id);
+            println!("initiator.id: {:?}", flood_request.initiator_id);
+            println!("path_trace: {:?}", flood_request.path_trace);
+        },
+        PacketType::FloodResponse(flood_response) => {
+            println!("Flood response received:");
+            println!("source_routing_header: {:?}", packet.routing_header);
+            println!("session id: {:?}", packet.session_id);
+            println!("flood_id: {:?}", flood_response.flood_id);
+            println!("path_trace: {:?}", flood_response.path_trace);
+        }
+    }
+}
 
+fn event_printer(event: DroneEvent) {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+}
 
 
 /*
