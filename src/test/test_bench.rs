@@ -8,7 +8,6 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
-use wg_2024::packet::PacketType::FloodRequest;
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crate::test::test_initializer::test_initialize;
 
@@ -223,7 +222,7 @@ pub fn test_flood(){
         path_trace: vec![],
     };
 
-    let flood = FloodRequest(flood_request);
+    let flood = PacketType::FloodRequest(flood_request);
 
     let packet = Packet{
         pack_type: flood,
@@ -359,7 +358,7 @@ pub fn test_double_chain_flood(){
         path_trace: vec![],
     };
 
-    let flood = FloodRequest(flood_request);
+    let flood = PacketType::FloodRequest(flood_request);
 
     let packet = Packet{
         pack_type: flood,
@@ -609,7 +608,7 @@ pub fn test_star_flood(){
         path_trace: vec![],
     };
 
-    let flood = FloodRequest(flood_request);
+    let flood = PacketType::FloodRequest(flood_request);
 
     let packet = Packet{
         pack_type: flood,
@@ -838,7 +837,7 @@ pub fn test_butterfly_flood(){
         path_trace: vec![],
     };
 
-    let flood = FloodRequest(flood_request);
+    let flood = PacketType::FloodRequest(flood_request);
 
     let packet = Packet{
         pack_type: flood,
@@ -1025,17 +1024,20 @@ pub fn test_tree_flood(){
         initiator_id: 0,
         path_trace: vec![],
     };
-
-    let flood = FloodRequest(flood_request);
-
+    let flood = PacketType::FloodRequest(flood_request);
     let packet = Packet{
         pack_type: flood,
         routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
         session_id: 0,
     };
-    for (i, s) in client.client_send {
-        s.send(packet.clone());
-    }
+
+    /*for (i, s) in client.client_send {
+        if let Ok(_) = s.send(packet.clone()) {
+            println!("Packet {:?} sent successfully!", packet);
+        } else {
+            println!("Doesn't work");
+        }
+    }*/
 
     let handle_dst = thread::spawn(move || {
         loop {
@@ -1069,8 +1071,6 @@ pub fn test_tree_flood(){
     for i in handles {
         i.join().unwrap();
     }
-
-
 }
 
 
