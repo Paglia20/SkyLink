@@ -14,7 +14,7 @@ pub struct SimulationControl{
     node_recv: Receiver<DroneEvent>,
     channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
     all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn
-    network_graph: HashMap<NodeId, Vec<NodeId>>,
+    pub(crate) network_graph: HashMap<NodeId, Vec<NodeId>>,
     pub(crate) log: Vec<String>,
 }
 
