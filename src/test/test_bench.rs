@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::{thread, vec};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
-use wg_2024::controller::DroneCommand::{Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
@@ -1015,7 +1013,7 @@ pub fn test_butterfly_flood(){
 }
 
 pub fn test_tree_flood(){
-    let (rec, client, mut handles) = test_initialize("input_tree.toml");
+    let (sim_contr, client, mut handles) = test_initialize("input_tree.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -1029,13 +1027,13 @@ pub fn test_tree_flood(){
         session_id: 0,
     };
 
-    /*for (i, s) in client.client_send {
+    for (i, s) in client.client_send {
         if let Ok(_) = s.send(packet.clone()) {
             println!("Packet {:?} sent successfully!", packet);
         } else {
             println!("Doesn't work");
         }
-    }*/
+    }
 
     let handle_dst = thread::spawn(move || {
         loop {
@@ -1052,7 +1050,7 @@ pub fn test_tree_flood(){
     let handle_sc = thread::spawn(move || {
         loop {
             select! {
-                recv(rec) -> packet => {
+                recv(sim_contr.event_recv) -> packet => {
                     if let Ok(p) = packet {
                         println!("\nevent received: {:?}", p);
                     }
