@@ -1060,7 +1060,6 @@ pub fn test_tree_flood(){
     });
     handles.push(handle_sc);
 
-    println!(".");
 
     for i in handles {
         i.join().unwrap();

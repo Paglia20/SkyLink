@@ -5,8 +5,8 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use wg_2024::config::Config;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Packet, PacketType};
+use wg_2024::network::{NodeId};
+use wg_2024::packet::{Packet};
 use crate::skylink_drone::drone::SkyLinkDrone;
 
 pub fn test_initialize(file: &str) -> (MySimContr, MyClient, Vec<JoinHandle<()>>) {
