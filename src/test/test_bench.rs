@@ -105,7 +105,7 @@ fn create_packet(hops: Vec<NodeId>) -> Packet {
 
 /// This function is used to test the packet forward functionality of a drone.
 pub fn test_generic_fragment_forward() {
-    let (sim_contr, clients, mut handles) = test_initialize("input_generic_fragment_forward.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_fragment_forward.toml");
 
     let client_receiver = clients.get(1).unwrap().client_recv.clone();
     let handle = thread::spawn(move || {
@@ -140,7 +140,7 @@ pub fn test_generic_fragment_forward() {
 }
 
 pub fn test_generic_drop(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_generic_nack.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_nack.toml");
 
     let msg = create_packet(vec![1,11,12,21]);
 
@@ -190,110 +190,27 @@ pub fn test_generic_drop(){
     }
 }
 
-fn create_sample_packet() -> Packet {
-    Packet {
-        pack_type: PacketType::MsgFragment(Fragment {
-            fragment_index: 1,
-            total_n_fragments: 1,
-            length: 128,
-            data: [1; 128],
-        }),
-        routing_header: SourceRoutingHeader {
-            hop_index: 1,
-            hops: vec![0,1,2],
-        },
-        session_id: 1,
-    }
-}
-//passed
-pub fn test_flood(){
-    let mut handles = Vec::new();
+pub fn test_generic_nack(){
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_nack.toml");
 
-    let (cl_flood_sender, cl_flood_receiver) = unbounded::<Packet>();
-    let (d1_flood_sender, d1_flood_receiver) = unbounded::<Packet>();
-    let (d2_flood_sender, d2_flood_receiver) = unbounded::<Packet>();
-    let (d3_flood_sender, d3_flood_receiver) = unbounded::<Packet>();
+    let msg = create_packet(vec![1,11,21]);
 
 
-    let (sc_sender, sc_receiver) = unbounded();
-    let (d1_command_sender, d1_command_receiver) = unbounded::<DroneCommand>();
-    let (d2_command_sender, d2_command_receiver) = unbounded::<DroneCommand>();
-    let (d3_command_sender, d3_command_receiver) = unbounded::<DroneCommand>();
-
-    let neighbour_d1 = HashMap::from([(2, d2_flood_sender.clone()), (0, cl_flood_sender.clone())]);
-    let neighbour_d2 = HashMap::from([(1, d1_flood_sender.clone()), (3, d3_flood_sender.clone())]);
-    let neighbour_d3 = HashMap::from([(2, d2_flood_sender.clone())]);
-
-    let flood_request = wg_2024::packet::FloodRequest{
-        flood_id: 1,
-        initiator_id: 0,
-        path_trace: vec![],
+    match clients.get(0).unwrap().client_send.get(&11).unwrap().send(msg){
+        Ok(_) => {println!("Packet sent successfully!")},
+        Err(error) => {println!("{}", error)}
     };
 
-    let flood = PacketType::FloodRequest(flood_request);
-
-    let packet = Packet{
-        pack_type: flood,
-        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
-        session_id: 0,
-    };
-
-    let mut drone1 = SkyLinkDrone::new(
-        1,
-        sc_sender.clone(),
-        d1_command_receiver,
-        d1_flood_receiver,
-        neighbour_d1,
-        0.0);
-
-    let d1_handle = thread::spawn(move || {
-        drone1.run();
-    });
-    handles.push(d1_handle);
-
-    let mut drone2 = SkyLinkDrone::new(
-        2,
-        sc_sender.clone(),
-        d2_command_receiver,
-        d2_flood_receiver,
-        neighbour_d2,
-        0.0);
-
-    let d2_handle = thread::spawn(move || {
-        drone2.run();
-    });
-    handles.push(d2_handle);
-
-    let handle_sc = thread::spawn(move || {
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
+    let handle = thread::spawn(move || {
         loop {
-            select! {
-                recv(sc_receiver) -> event => {
+            select_biased! {
+                recv(sim_contr.event_recv) -> event => {
                     if let Ok(e) = event {
                         event_printer(e);
                     }
                 }
-            }
-        }
-    });
-    handles.push(handle_sc);
-
-    let mut drone3 = SkyLinkDrone::new(
-        3,
-        sc_sender.clone(),
-        d3_command_receiver,
-        d3_flood_receiver,
-        neighbour_d3,
-        0.0);
-
-    let d3_handle = thread::spawn(move || {
-        drone3.run();
-    });
-    handles.push(d3_handle);
-
-    let handle_dst = thread::spawn(move || {
-        loop {
-            select! {
-                recv(cl_flood_receiver) -> packet => {
+                recv(client_receiver) -> packet => {
                     if let Ok(p) = packet {
                         packet_printer(p);
                     }
@@ -301,16 +218,51 @@ pub fn test_flood(){
             }
         }
     });
-    handles.push(handle_dst);
+    handles.push(handle);
 
+    for i in handles {
+        i.join().unwrap();
+    }
+}
 
+pub fn test_flood(){
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_flood.toml");
 
-    match d1_flood_sender.send(packet){
-        Ok(_) => {println!("D1 flood sent successfully!")},
+    let flood_request = wg_2024::packet::FloodRequest{
+        flood_id: 1,
+        initiator_id: 0,
+        path_trace: vec![],
+    };
+    let flood = PacketType::FloodRequest(flood_request);
+    let packet = Packet{
+        pack_type: flood,
+        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![] },
+        session_id: 0,
+    };
+
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
+    let handle = thread::spawn(move || {
+        loop {
+            select_biased! {
+                recv(sim_contr.event_recv) -> event => {
+                    if let Ok(e) = event {
+                        event_printer(e);
+                    }
+                }
+                recv(client_receiver) -> packet => {
+                    if let Ok(p) = packet {
+                        packet_printer(p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle);
+
+    match clients.get(0).unwrap().client_send.get(&1).unwrap().send(packet){
+        Ok(_) => {println!("Packet sent successfully!")},
         Err(error) => {println!("{}", error)}
     };
-    thread::sleep(Duration::from_millis(3000));
-
 
     for i in handles {
         i.join().unwrap();
@@ -567,7 +519,7 @@ pub fn test_double_chain_flood(){
 
 //passed
 pub fn test_star_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_star.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -623,7 +575,7 @@ pub fn test_star_flood(){
 
 //passed
 pub fn test_butterfly_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_butterfly.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_butterfly.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -678,7 +630,7 @@ pub fn test_butterfly_flood(){
 }
 //passed
 pub fn test_tree_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_tree.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_tree.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -733,18 +685,6 @@ pub fn test_tree_flood(){
 
 
 //this function should return true if every node is discovered (in this examples 1->10), but you have to use arc and mutex while threads are still on, so not working YET
-pub fn are_path_discovered(dest_path: &Vec<Vec<(NodeId, NodeType)>>) -> bool {
-
-    let mut discovered = HashSet::new();
-
-    for path in dest_path {
-        for (node_id, _node_type) in path {
-            discovered.insert(node_id);
-        }
-    }
-    (1..=10).all(|num| discovered.contains(&num))
-}
-
 
 pub fn test_drone_commands(){
     let mut handles = Vec::new();
@@ -806,7 +746,7 @@ pub fn test_drone_commands(){
     d1_command_sender.send(SetPacketDropRate(0.5)).unwrap();
     d2_command_sender.send(SetPacketDropRate(0.8)).unwrap();
 
-    let msg = create_sample_packet();
+    let msg = create_packet(vec![0,1,2]);
 
     d1_packet_sender.send(msg).unwrap();
 
