@@ -59,6 +59,8 @@ impl SimulationControl{
 
     fn spawn_drone (&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()>{
         let new_id = self.generate_id();
+        //aggiorna network graph
+        self.network_graph.insert(new_id, connections.clone());
 
         let (control_sender, control_receiver) = unbounded();  //canale per il Sim che manda drone command al drone
         self.node_send.insert(new_id.clone(), control_sender.clone());                                      // do al sim il sender per questo drone
