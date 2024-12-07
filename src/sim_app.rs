@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
 use eframe::{App, Frame, NativeOptions};
 use crate::sim_control::SimulationControl;
@@ -20,13 +22,15 @@ pub struct SimulationApp {
     dragging_drone: Option<usize>, // Track which drone is being dragged
     show_connection_dialog: bool,
     new_drone_index: Option<usize>,
-    sim_contr: SimulationControl,
+    sim_contr: Rc<RefCell<SimulationControl>>,
     connection_selections: Vec<bool>,
+    log_panel_width: f32,        // Width of the log panel
+    control_panel_width: f32,   // Width of the control panel
 }
 
 impl SimulationApp {
-    fn new(sim_contr: SimulationControl) -> Self {
-        let network_graph = sim_contr.network_graph.clone();
+    fn new(sim_contr: Rc<RefCell<SimulationControl>>) -> Self {
+        let network_graph = sim_contr.borrow().network_graph.clone();
 
         let mut drones = Vec::new();
         let mut drone_map = HashMap::new();
@@ -65,6 +69,8 @@ impl SimulationApp {
             new_drone_index: None,
             connection_selections: vec![false; network_graph.len()],
             sim_contr,
+            log_panel_width: 200.0,    // Default guess for the left panel width
+            control_panel_width: 200.0, // Default guess for the right panel width
         }
     }
 
@@ -87,8 +93,10 @@ impl SimulationApp {
     }
 
     fn render_drones(&mut self, ui: &mut egui::Ui, texture: &TextureHandle) {
-
         let window_size = ui.available_size();
+        let left_limit = self.log_panel_width; // Left boundary
+        let right_limit = window_size.x - self.control_panel_width; // Right boundary
+
 
         for (i, drone) in self.drones.iter_mut().enumerate() {
             let color_overlay = if drone.is_crashed {
@@ -121,9 +129,9 @@ impl SimulationApp {
 
                         // Calcola la nuova posizione limitata del drone
                         let new_x = (drone.position.x + response.drag_delta().x)
-                            .clamp(100.0, 465.0); // Limita la posizione orizzontale
+                            .clamp(left_limit, right_limit - size.x); // Limita la posizione orizzontale
                         let new_y = (drone.position.y + response.drag_delta().y)
-                            .clamp(20.0, 330.0); // Limita la posizione verticale
+                            .clamp(20.0, window_size.y - size.y);  // Limita la posizione verticale
 
                         // Assegna la nuova posizione al drone
                         drone.position = Vec2::new(new_x, new_y);
@@ -182,7 +190,7 @@ impl SimulationApp {
             // Get the current window size
             let window_size = ui.available_size();
 
-            let base_x = window_size.x * 0.75; // Spawn towards the right (75% of panel width)
+            let base_x = self.log_panel_width + 10.0;
             let random_x = base_x + fastrand::f32() * 100.0 - 50.0; // Add small random offsets
             let random_y = window_size.y / 2.0 + fastrand::f32() * 100.0 - 50.0;
 
@@ -294,7 +302,7 @@ impl App for SimulationApp {
             self.handle_selection(ui);
         });
 
-        let sim_control_log_vec = &self.sim_contr.log;
+        let sim_control_log_vec = &self.sim_contr.borrow().log;
 
         egui::TopBottomPanel::bottom("bottom_panel")
             .min_height(100.0) // Minimum height
@@ -314,7 +322,7 @@ impl App for SimulationApp {
 }
 
 
-pub fn run_simulation_gui(sim_contr: SimulationControl) {
+pub fn run_simulation_gui(sim_contr: Rc<RefCell<SimulationControl>>) {
     let options = NativeOptions::default();
     eframe::run_native(
         "SkyLink Simulation",
