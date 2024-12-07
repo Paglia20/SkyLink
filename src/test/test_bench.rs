@@ -344,8 +344,6 @@ pub fn test_tree_flood(){
 }
 
 
-//this function should return true if every node is discovered (in this example 1->10), but you have to use arc and mutex while threads are still on, so not working YET
-
 pub fn test_drone_commands(){
     let mut handles = Vec::new();
 
@@ -429,7 +427,7 @@ pub fn test_drone_commands(){
 
 //Use star configuration and test busy network with a full route around the configuration, sending u64::max messages.
 pub fn test_busy_network(){
-    let (_sim_contr, clients, mut handles) = test_initialize("input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
 
     let packet = create_packet(vec![0,1,4,7,10,3,6,9,2,5,8,1,0]);
 
