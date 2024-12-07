@@ -106,7 +106,7 @@ impl SimulationControl{
         unreachable!("No free key found");
     }
 
-    fn crash_drone(&mut self, id: NodeId){
+    pub fn crash_drone(&mut self, id: NodeId){
         if let Some(sender) = self.node_send.get(&id) {
             if let Err(e) = sender.send(DroneCommand::Crash) {
                 println!("error in crashing drone {}: {:?}", id, e);

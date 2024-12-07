@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
 
@@ -32,7 +34,11 @@ fn main() {
 
     } else {
         let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
-        sim_app::run_simulation_gui(sim_contr);
+        let mut pass = Rc::new(RefCell::new(sim_contr));
+        sim_app::run_simulation_gui(pass.clone());
+
+        // pass.borrow_mut().crash_drone(2);
+
         for handle in handles.into_iter() {
             handle.join().unwrap();
         }
