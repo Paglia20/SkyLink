@@ -59,11 +59,20 @@ fn packet_printer(packet: Packet) {
 fn event_printer(event: DroneEvent) {
     match event {
         DroneEvent::PacketSent(packet) => {
-            let index = packet.routing_header.hop_index;
-            let prev = packet.routing_header.hops[index-1];
-            let next = packet.routing_header.hops[index];
-            println!("Packet sent from {} to {}:", prev, next);
-            packet_printer(packet);
+            match packet.pack_type.clone() {
+                PacketType::FloodRequest(mut flood_request) => {
+                    let prev = flood_request.path_trace.pop().unwrap().0;
+                    println!("FloodRequest sent from {}", prev);
+                    packet_printer(packet);
+                },
+                _ => {
+                    let index = packet.routing_header.hop_index;
+                    let prev = packet.routing_header.hops[index-1];
+                    let next = packet.routing_header.hops[index];
+                    println!("Packet sent from {} to {}:", prev, next);
+                    packet_printer(packet);
+                }
+            }
         },
         DroneEvent::PacketDropped(packet) => {
             let id = packet.routing_header.hops[0];
