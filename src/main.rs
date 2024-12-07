@@ -19,8 +19,8 @@ fn main() {
 
         // test_generic_fragment_forward();
         // test_generic_drop();
-        test_generic_nack();
-        test_flood();
+        // test_generic_nack();
+        // test_flood();
 
 
         // generic_chain_fragment_ack();
