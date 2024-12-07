@@ -1,4 +1,4 @@
-use crate::test::test_bench::{test_generic_fragment_forward, test_generic_drop};
+use crate::test::test_bench::*;
 use crate::initializer::initialize;
 
 mod sim_app;
@@ -18,13 +18,13 @@ fn main() {
         //Comment functions we aren't testing
 
         // test_generic_fragment_forward();
-         test_generic_drop();
+        //  test_generic_drop();
         // generic_chain_fragment_ack();
         // generic_fragment_drop();
         // generic_chain_fragment_drop();
 
         // test_double_chain_flood();
-        //test_star_flood();
+        test_star_flood()
         // test_butterfly_flood();
         // my_generic_fragment_forward();
         // test_tree_flood();
