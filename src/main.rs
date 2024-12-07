@@ -18,7 +18,7 @@ fn main() {
     if test {
         //Comment functions we aren't testing
 
-        // my_generic_fragment_forward();
+        my_generic_fragment_forward();
         // generic_chain_fragment_ack();
         // generic_fragment_drop();
         // generic_chain_fragment_drop();
@@ -28,8 +28,10 @@ fn main() {
         // test_butterfly_flood();
         // my_generic_fragment_forward();
         // test_tree_flood();
-        test_drone_commands();
+
+       // test_drone_commands();
         
+
     } else {
         let (sim_contr, handles) = initialize("input_tree.toml");
         sim_app::run_simulation_gui(sim_contr);
