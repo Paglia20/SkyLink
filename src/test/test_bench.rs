@@ -519,7 +519,7 @@ pub fn test_double_chain_flood(){
 
 //passed
 pub fn test_star_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_star.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -575,7 +575,7 @@ pub fn test_star_flood(){
 
 //passed
 pub fn test_butterfly_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_butterfly.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_butterfly.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -630,7 +630,7 @@ pub fn test_butterfly_flood(){
 }
 //passed
 pub fn test_tree_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_tree.toml");
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_tree.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -685,18 +685,6 @@ pub fn test_tree_flood(){
 
 
 //this function should return true if every node is discovered (in this examples 1->10), but you have to use arc and mutex while threads are still on, so not working YET
-pub fn are_path_discovered(dest_path: &Vec<Vec<(NodeId, NodeType)>>) -> bool {
-
-    let mut discovered = HashSet::new();
-
-    for path in dest_path {
-        for (node_id, _node_type) in path {
-            discovered.insert(node_id);
-        }
-    }
-    (1..=10).all(|num| discovered.contains(&num))
-}
-
 
 pub fn test_drone_commands(){
     let mut handles = Vec::new();
