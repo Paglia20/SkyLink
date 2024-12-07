@@ -818,8 +818,55 @@ pub fn test_drone_commands(){
 
 }
 
+//preso configurazione a stella e fatto fare un giro intero fino a tornare a 0, con 0..u64::max manovri quanti pacchetti
+pub fn test_busy_network(){
+    let (sim_contr, clients, mut handles) = test_initialize("input_star.toml");
+
+    let packet = create_packet(vec![0,1,4,7,10,3,6,9,2,5,8,1,0]);
+
+    for i in 0..u8::MAX {
+        for (_, s) in &clients.get(0).unwrap().client_send {
+            if let Ok(_) = s.send(packet.clone()) {
+                // println!("Packet {:?} sent successfully!", packet);
+            } else {
+                println!("Doesn't work");
+            }
+        }
+    }
+
+    let handle_dst = thread::spawn(move || {
+        loop {
+            select! {
+                recv(clients.get(0).unwrap().client_recv) -> packet => {
+                    if let Ok(p) = packet {
+                        println!("Packet received by 0!");
+                        packet_printer(p);
+
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_dst);
+    // let handle_sc = thread::spawn(move || {
+    //     loop {
+    //         select! {
+    //             recv(sim_contr.event_recv) -> packet => {
+    //                 if let Ok(e) = packet {
+    //                     event_printer(e);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // });
+    // handles.push(handle_sc);
 
 
+    for i in handles {
+        i.join().unwrap();
+    }
+
+}
 /*
 NOTES
 
