@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::{thread, vec};
 use std::time::Duration;
-use crossbeam_channel::{select, unbounded};
+use crossbeam_channel::{select, select_biased, unbounded};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::controller::DroneCommand::{Crash, RemoveSender, SetPacketDropRate};
 use wg_2024::drone::Drone;
@@ -10,28 +10,104 @@ use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType, Ac
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crate::test::test_initializer::test_initialize;
 
+fn packet_printer(packet: Packet) {
+    match packet.pack_type.clone() {
+        PacketType::MsgFragment(msg_fragment) => {
+            println!("Fragment received:
+            source_routing_header: {:?}
+            session id: {:?}
+            msg_fragment: {:?}", packet.routing_header, packet.session_id, msg_fragment.fragment_index);
+        },
+        PacketType::Ack(ack) => {
+            println!("Ack received:
+            source_routing_header: {:?}
+            session id: {:?}
+            ack: {:?}", packet.routing_header, packet.session_id, ack);
+        },
+        PacketType::Nack(nack) => {
+            println!("Nack received:
+            source_routing_header: {:?}
+            session id: {:?}
+            nack: {:?}", packet.routing_header, packet.session_id, nack);
+        },
+        PacketType::FloodRequest(flood_request) => {
+            println!("Flood request received:
+            session id: {:?}
+            flood_id: {:?}
+            initiator.id: {:?}
+            path_trace: {:?}", packet.session_id, flood_request.flood_id, flood_request.initiator_id, flood_request.path_trace);
+        },
+
+        PacketType::FloodResponse(flood_response) => {
+
+            println!("Flood response received:");
+            // println!("source_routing_header: {:?}", packet.routing_header);
+            // println!("session id: {:?}", packet.session_id);
+            // println!("flood_id: {:?}", flood_response.flood_id);
+            println!("path_trace: {:?}", flood_response.path_trace);
+
+            println!("Flood response received:
+            source_routing_header: {:?}
+            session id: {:?}
+            flood_id: {:?}
+            path_trace: {:?}", packet.routing_header, packet.session_id, flood_response.flood_id, flood_response.path_trace);
+
+        }
+    }
+}
+
+fn event_printer(event: DroneEvent) {
+    match event {
+        DroneEvent::PacketSent(packet) => {
+            let index = packet.routing_header.hop_index;
+            let prev = packet.routing_header.hops[index-1];
+            let next = packet.routing_header.hops[index];
+            println!("Packet sent from {} to {}:", prev, next);
+            packet_printer(packet);
+        },
+        DroneEvent::PacketDropped(packet) => {
+            let id = packet.routing_header.hops[0];
+            println!("Packet dropped by {}:", id); //Not sure the index is right.
+            packet_printer(packet);
+        },
+        DroneEvent::ControllerShortcut(packet) => {
+            println!("Controller Shortcut used by this packet:");
+            packet_printer(packet);
+        }
+    }
+}
+
+fn create_packet(hops: Vec<NodeId>) -> Packet {
+    Packet {
+        pack_type: PacketType::MsgFragment(Fragment {
+            fragment_index: 0,
+            total_n_fragments: 1,
+            length: 128,
+            data: [1; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops,
+        },
+        session_id: 1,
+    }
+}
+
+
 /// This function is used to test the packet forward functionality of a drone.
-pub fn my_generic_fragment_forward() {
+pub fn test_generic_fragment_forward() {
     let (sim_contr, clients, mut handles) = test_initialize("input_generic_fragment_forward.toml");
 
-    let handle_sc = thread::spawn(move || {
+    let client_receiver = clients.get(1).unwrap().client_recv.clone();
+    let handle = thread::spawn(move || {
         loop {
-            select! {
+            select_biased! {
                 recv(sim_contr.event_recv) -> event => {
                     if let Ok(e) = event {
                         event_printer(e);
                     }
                 }
-            }
-        }
-    });
-    handles.push(handle_sc);
 
-
-    let client_receiver = clients.get(1).unwrap().client_recv.clone();
-    let handle_dst = thread::spawn(move || {
-        loop {
-            select! {
                 recv(client_receiver) -> packet => {
                     if let Ok(p) = packet {
                         packet_printer(p);
@@ -40,7 +116,7 @@ pub fn my_generic_fragment_forward() {
             }
         }
     });
-    handles.push(handle_dst);
+    handles.push(handle);
 
     let msg = create_packet(vec![0,1,2,3]);
 
@@ -54,72 +130,24 @@ pub fn my_generic_fragment_forward() {
     }
 }
 
-pub fn test_generic(){
-    // Client 1 channels
-    let (c_send, c_recv) = unbounded();
-    // Server 21 channels
-    let (s_send, _s_recv) = unbounded();
-    // Drone 11
-    let (d_send, d_recv) = unbounded();
-    // Drone 12
-    let (d12_send, d12_recv) = unbounded();
-    // SC - needed to not make the drone crash
-    let (_d_command_send, d_command_recv) = unbounded();
+pub fn test_generic_drop(){
+    let (sim_contr, clients, mut handles) = test_initialize("input_generic_nack.toml");
 
-    // Drone 11
-    let neighbours11 = HashMap::from([(12, d12_send.clone()), (1, c_send.clone())]);
-    let mut drone = SkyLinkDrone::new(
-        11,
-        unbounded().0,
-        d_command_recv.clone(),
-        d_recv.clone(),
-        neighbours11,
-        0.0,
-    );
-    // Drone 12
-    let neighbours12 = HashMap::from([(11, d_send.clone()), (21, s_send.clone())]);
-    let mut drone2 = SkyLinkDrone::new(
-        12,
-        unbounded().0,
-        d_command_recv.clone(),
-        d12_recv.clone(),
-        neighbours12,
-        1.0,
-    );
+    let msg = create_packet(vec![1,11,12,21]);
 
-    // Spawn the drone's run method in a separate thread
-    thread::spawn(move || {
-        drone.run();
-    });
+    // "Client 1" sends packet to the drone
+    match clients.get(0).unwrap().client_send.get(&11).unwrap().send(msg){
+        Ok(_) => {println!("Packet sent successfully!")},
+        Err(error) => {println!("{}", error)}
+    };
 
-    thread::spawn(move || {
-        drone2.run();
-    });
-
-    let msg = create_packet(vec![0,1,2,3]); // !!!!!!!!!!!!!
-
-    // "Client" sends packet to the drone
-    d_send.send(msg.clone()).unwrap();
-
-    // Client receive an ACK originated from 'd'
-    // assert_eq!(
-    //     c_recv.recv().unwrap(),
-    //     Packet {
-    //         pack_type: PacketType::Ack(Ack { fragment_index: 1 }),
-    //         routing_header: SourceRoutingHeader {
-    //             hop_index: 1,
-    //             hops: vec![11, 1],
-    //         },
-    //         session_id: 1,
-    //     }
-    // );
-
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
     // Client receive an NACK originated from 'd2'
     assert_eq!(
-        c_recv.recv().unwrap(),
+        client_receiver.clone().recv().unwrap(),
         Packet {
             pack_type: PacketType::Nack(Nack {
-                fragment_index: 1,
+                fragment_index: 0,
                 nack_type: NackType::Dropped,
             }),
             routing_header: SourceRoutingHeader {
@@ -129,6 +157,28 @@ pub fn test_generic(){
             session_id: 1,
         }
     );
+
+    /*let handle = thread::spawn(move || {
+        loop {
+            select_biased! {
+                recv(sim_contr.event_recv) -> event => {
+                    if let Ok(e) = event {
+                        event_printer(e);
+                    }
+                }
+                recv(client_receiver) -> packet => {
+                    if let Ok(p) = packet {
+                        packet_printer(p);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle);*/
+
+    for i in handles {
+        i.join().unwrap();
+    }
 }
 
 fn create_sample_packet() -> Packet {
@@ -859,72 +909,6 @@ pub fn are_path_discovered(dest_path: &Vec<Vec<(NodeId, NodeType)>>) -> bool {
     (1..=10).all(|num| discovered.contains(&num))
 }
 
-fn packet_printer(packet: Packet) {
-    match packet.pack_type.clone() {
-        PacketType::MsgFragment(msg_fragment) => {
-            println!("Fragment received:
-            source_routing_header: {:?}
-            session id: {:?}
-            msg_fragment: {:?}", packet.routing_header, packet.session_id, msg_fragment.fragment_index);
-        },
-        PacketType::Ack(ack) => {
-            println!("Ack received:
-            source_routing_header: {:?}
-            session id: {:?}
-            ack: {:?}", packet.routing_header, packet.session_id, ack);
-        },
-        PacketType::Nack(nack) => {
-            println!("Nack received:
-            source_routing_header: {:?}
-            session id: {:?}
-            nack: {:?}", packet.routing_header, packet.session_id, nack);
-        },
-        PacketType::FloodRequest(flood_request) => {
-            println!("Flood request received:
-            session id: {:?}
-            flood_id: {:?}
-            initiator.id: {:?}
-            path_trace: {:?}", packet.session_id, flood_request.flood_id, flood_request.initiator_id, flood_request.path_trace);
-        },
-
-        PacketType::FloodResponse(flood_response) => {
-
-            println!("Flood response received:");
-            // println!("source_routing_header: {:?}", packet.routing_header);
-            // println!("session id: {:?}", packet.session_id);
-            // println!("flood_id: {:?}", flood_response.flood_id);
-            println!("path_trace: {:?}", flood_response.path_trace);
-
-            println!("Flood response received:
-            source_routing_header: {:?}
-            session id: {:?}
-            flood_id: {:?}
-            path_trace: {:?}", packet.routing_header, packet.session_id, flood_response.flood_id, flood_response.path_trace);
-
-        }
-    }
-}
-
-fn event_printer(event: DroneEvent) {
-    match event {
-        DroneEvent::PacketSent(packet) => {
-            let index = packet.routing_header.hop_index;
-            //  let prev = packet.routing_header[index-1];
-            let next = packet.routing_header.hops[index];
-            println!("Packet sent to {}:", next);
-            packet_printer(packet);
-        },
-        DroneEvent::PacketDropped(packet) => {
-            let id = packet.routing_header.hops[0];
-            println!("Packet dropped by {}:", id); //Not sure the index is right.
-            packet_printer(packet);
-        },
-        DroneEvent::ControllerShortcut(packet) => {
-            println!("Controller Shortcut used by this packet:");
-            packet_printer(packet);
-        }
-    }
-}
 
 pub fn test_drone_commands(){
     let mut handles = Vec::new();
@@ -1008,22 +992,6 @@ pub fn test_drone_commands(){
 }
 
 
-
-fn create_packet(hops: Vec<NodeId>) -> Packet {
-    Packet {
-        pack_type: PacketType::MsgFragment(Fragment {
-            fragment_index: 0,
-            total_n_fragments: 1,
-            length: 128,
-            data: [1; 128],
-        }),
-        routing_header: SourceRoutingHeader {
-            hop_index: 1,
-            hops,
-        },
-        session_id: 1,
-    }
-}
 
 /*
 NOTES
