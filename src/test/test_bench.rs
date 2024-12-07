@@ -131,7 +131,7 @@ pub fn test_generic(){
     );
 }
 
-fn create_packet() -> Packet {
+fn create_sample_packet() -> Packet {
     Packet {
         pack_type: PacketType::MsgFragment(Fragment {
             fragment_index: 1,
@@ -1159,7 +1159,7 @@ pub fn test_drone_commands(){
     d1_command_sender.send(SetPacketDropRate(0.5)).unwrap();
     d2_command_sender.send(SetPacketDropRate(0.8)).unwrap();
 
-    let msg = create_packet();
+    let msg = create_sample_packet();
 
     d1_packet_sender.send(msg).unwrap();
 
