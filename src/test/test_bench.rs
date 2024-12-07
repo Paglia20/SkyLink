@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::{thread, vec};
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
-use egui::accesskit::Node;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
