@@ -1,12 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::{thread, vec};
-use std::time::Duration;
-use crossbeam_channel::{select, select_biased, unbounded};
+use std::thread::JoinHandle;
+use crossbeam_channel::{select, select_biased, unbounded, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
-use wg_2024::controller::DroneCommand::{Crash, RemoveSender, SetPacketDropRate};
+use wg_2024::controller::DroneCommand::{SetPacketDropRate};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType, Ack};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crate::test::test_initializer::test_initialize;
 
@@ -94,21 +94,22 @@ fn create_packet(hops: Vec<NodeId>) -> Packet {
     }
 }
 
+fn send_packet(packet: Packet, sender: &Sender<Packet>) {
+    match sender.send(packet){
+        Ok(_) => {println!("Packet sent successfully!")},
+        Err(error) => {println!("{}", error)}
+    };
+}
 
-/// This function is used to test the packet forward functionality of a drone.
-pub fn test_generic_fragment_forward() {
-    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_fragment_forward.toml");
-
-    let client_receiver = clients.get(1).unwrap().client_recv.clone();
-    let handle = thread::spawn(move || {
+fn listen_handle(sim_recv: Receiver<DroneEvent>, client_receiver: Receiver<Packet>) -> JoinHandle<()>{
+    thread::spawn(move || {
         loop {
             select_biased! {
-                recv(sim_contr.event_recv) -> event => {
+                recv(sim_recv) -> event => {
                     if let Ok(e) = event {
                         event_printer(e);
                     }
                 }
-
                 recv(client_receiver) -> packet => {
                     if let Ok(p) = packet {
                         packet_printer(p);
@@ -116,15 +117,20 @@ pub fn test_generic_fragment_forward() {
                 }
             }
         }
-    });
-    handles.push(handle);
+    })
+}
+
+
+/// This function is used to test the packet forward functionality of a drone.
+pub fn test_generic_fragment_forward() {
+    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_fragment_forward.toml");
+
+    let client_receiver = clients.get(1).unwrap().client_recv.clone();
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
     let msg = create_packet(vec![0,1,2,3]);
 
-    match clients.get(0).unwrap().client_send.get(&1).unwrap().send(msg){
-        Ok(_) => {println!("Packet sent successfully!")},
-        Err(error) => {println!("{}", error)}
-    };
+    send_packet(msg, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
     for i in handles {
         i.join().unwrap();
@@ -133,15 +139,12 @@ pub fn test_generic_fragment_forward() {
 //passed
 
 pub fn test_generic_drop(){
-    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_nack.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_generic_nack.toml");
 
     let msg = create_packet(vec![1,11,12,21]);
 
     // "Client 1" sends packet to the drone
-    match clients.get(0).unwrap().client_send.get(&11).unwrap().send(msg){
-        Ok(_) => {println!("Packet sent successfully!")},
-        Err(error) => {println!("{}", error)}
-    };
+    send_packet(msg, clients.get(0).unwrap().client_send.get(&11).unwrap());
 
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
     // Client receive an NACK originated from 'd2'
@@ -160,23 +163,7 @@ pub fn test_generic_drop(){
         }
     );
 
-    /*let handle = thread::spawn(move || {
-        loop {
-            select_biased! {
-                recv(sim_contr.event_recv) -> event => {
-                    if let Ok(e) = event {
-                        event_printer(e);
-                    }
-                }
-                recv(client_receiver) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle);*/
+    // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
 
     for i in handles {
         i.join().unwrap();
@@ -189,30 +176,10 @@ pub fn test_generic_nack(){
 
     let msg = create_packet(vec![1,11,21]);
 
-
-    match clients.get(0).unwrap().client_send.get(&11).unwrap().send(msg){
-        Ok(_) => {println!("Packet sent successfully!")},
-        Err(error) => {println!("{}", error)}
-    };
+    send_packet(msg, clients.get(0).unwrap().client_send.get(&11).unwrap());
 
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
-    let handle = thread::spawn(move || {
-        loop {
-            select_biased! {
-                recv(sim_contr.event_recv) -> event => {
-                    if let Ok(e) = event {
-                        event_printer(e);
-                    }
-                }
-                recv(client_receiver) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle);
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
     for i in handles {
         i.join().unwrap();
@@ -236,28 +203,9 @@ pub fn test_flood(){
     };
 
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
-    let handle = thread::spawn(move || {
-        loop {
-            select_biased! {
-                recv(sim_contr.event_recv) -> event => {
-                    if let Ok(e) = event {
-                        event_printer(e);
-                    }
-                }
-                recv(client_receiver) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle);
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
-    match clients.get(0).unwrap().client_send.get(&1).unwrap().send(packet){
-        Ok(_) => {println!("Packet sent successfully!")},
-        Err(error) => {println!("{}", error)}
-    };
+    send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
     for i in handles {
         i.join().unwrap();
@@ -266,7 +214,7 @@ pub fn test_flood(){
 //passed
 
 pub fn test_double_chain_flood(){
-    let (sim_contr, clients, mut handles) = test_initialize("inputs/input_double_chain_flood.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_double_chain_flood.toml");
 
     let flood_request = wg_2024::packet::FloodRequest{
         flood_id: 1,
@@ -285,7 +233,7 @@ pub fn test_double_chain_flood(){
     let handle = thread::spawn(move || {
         loop {
             select_biased! {
-                /*recv(sim_contr.event_recv) -> event => {
+                /*recv(_sim_contr.event_recv) -> event => {
                     if let Ok(e) = event {
                         event_printer(e);
                     }
@@ -305,11 +253,7 @@ pub fn test_double_chain_flood(){
     });
     handles.push(handle);
 
-    match clients.get(0).unwrap().client_send.get(&1).unwrap().send(packet){
-        Ok(_) => {println!("Packet sent successfully!")},
-        Err(error) => {println!("{}", error)}
-    };
-
+    send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
     for i in handles {
         i.join().unwrap();
@@ -334,47 +278,19 @@ pub fn test_star_flood(){
         session_id: 0,
     };
 
-    for (_, s) in &clients.get(0).unwrap().client_send {
-        if let Ok(_) = s.send(packet.clone()) {
-            println!("Packet {:?} sent successfully!", packet);
-        } else {
-            println!("Doesn't work");
-        }
-    }
+    send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
-    let handle_dst = thread::spawn(move || {
-        loop {
-            select! {
-                recv(clients.get(0).unwrap().client_recv) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
 
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_dst);
-    let handle_sc = thread::spawn(move || {
-        loop {
-            select! {
-                recv(sim_contr.event_recv) -> packet => {
-                    if let Ok(e) = packet {
-                        event_printer(e);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_sc);
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
 
     for i in handles {
         i.join().unwrap();
     }
 }
-
 //passed
+
 pub fn test_butterfly_flood(){
     let (sim_contr, clients, mut handles) = test_initialize("inputs/input_butterfly.toml");
 
@@ -390,39 +306,10 @@ pub fn test_butterfly_flood(){
         session_id: 0,
     };
 
-    for (_, s) in &clients.get(0).unwrap().client_send {
-        if let Ok(_) = s.send(packet.clone()) {
-            println!("Packet {:?} sent successfully!", packet);
-        } else {
-            println!("Doesn't work");
-        }
-    }
+    send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
-    let handle_dst = thread::spawn(move || {
-        loop {
-            select! {
-                recv(clients.get(0).unwrap().client_recv) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
-
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_dst);
-    let handle_sc = thread::spawn(move || {
-        loop {
-            select! {
-                recv(sim_contr.event_recv) -> packet => {
-                    if let Ok(e) = packet {
-                        event_printer(e);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_sc);
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
 
     for i in handles {
@@ -445,38 +332,10 @@ pub fn test_tree_flood(){
         session_id: 0,
     };
 
-    for (_, s) in &clients.get(0).unwrap().client_send {
-        if let Ok(_) = s.send(packet.clone()) {
-            println!("Packet {:?} sent successfully!", packet);
-        } else {
-            println!("Doesn't work");
-        }
-    }
+    send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
-    let handle_dst = thread::spawn(move || {
-        loop {
-            select! {
-                recv(clients.get(0).unwrap().client_recv) -> packet => {
-                    if let Ok(p) = packet {
-                        packet_printer(p);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_dst);
-    let handle_sc = thread::spawn(move || {
-        loop {
-            select! {
-                recv(sim_contr.event_recv) -> packet => {
-                    if let Ok(e) = packet {
-                        event_printer(e);
-                    }
-                }
-            }
-        }
-    });
-    handles.push(handle_sc);
+    let client_receiver = clients.get(0).unwrap().client_recv.clone();
+    handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
 
     for i in handles {
@@ -485,7 +344,7 @@ pub fn test_tree_flood(){
 }
 
 
-//this function should return true if every node is discovered (in this examples 1->10), but you have to use arc and mutex while threads are still on, so not working YET
+//this function should return true if every node is discovered (in this example 1->10), but you have to use arc and mutex while threads are still on, so not working YET
 
 pub fn test_drone_commands(){
     let mut handles = Vec::new();
@@ -568,13 +427,13 @@ pub fn test_drone_commands(){
 
 }
 
-//preso configurazione a stella e fatto fare un giro intero fino a tornare a 0, con 0..u64::max manovri quanti pacchetti
+//Use star configuration and test busy network with a full route around the configuration, sending u64::max messages.
 pub fn test_busy_network(){
-    let (sim_contr, clients, mut handles) = test_initialize("input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("input_star.toml");
 
     let packet = create_packet(vec![0,1,4,7,10,3,6,9,2,5,8,1,0]);
 
-    for i in 0..u8::MAX {
+    for _i in 0..u8::MAX {
         for (_, s) in &clients.get(0).unwrap().client_send {
             if let Ok(_) = s.send(packet.clone()) {
                 // println!("Packet {:?} sent successfully!", packet);
@@ -601,7 +460,7 @@ pub fn test_busy_network(){
     // let handle_sc = thread::spawn(move || {
     //     loop {
     //         select! {
-    //             recv(sim_contr.event_recv) -> packet => {
+    //             recv(_sim_contr.event_recv) -> packet => {
     //                 if let Ok(e) = packet {
     //                     event_printer(e);
     //                 }
@@ -617,12 +476,3 @@ pub fn test_busy_network(){
     }
 
 }
-/*
-NOTES
-
-- By using #test, it won't print until all the threads finish.
-
-- Q: maybe you should drop channels also in sim control
-- A: Yea probably
-
-*/
