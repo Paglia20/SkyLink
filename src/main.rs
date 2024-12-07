@@ -35,9 +35,10 @@ fn main() {
     } else {
         let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
         let mut pass = Rc::new(RefCell::new(sim_contr));
+        pass.borrow_mut().crash_drone(2);
         sim_app::run_simulation_gui(pass.clone());
 
-        // pass.borrow_mut().crash_drone(2);
+
 
         for handle in handles.into_iter() {
             handle.join().unwrap();
