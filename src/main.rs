@@ -18,11 +18,14 @@ fn main() {
         //Comment functions we aren't testing
 
         // test_generic_fragment_forward();
-        //  test_generic_drop();
+        // test_generic_drop();
+        test_generic_nack();
+        test_flood();
+
+
         // generic_chain_fragment_ack();
         // generic_fragment_drop();
         // generic_chain_fragment_drop();
-
         // test_double_chain_flood();
         test_star_flood()
         // test_butterfly_flood();
