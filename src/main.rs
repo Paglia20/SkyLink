@@ -15,7 +15,7 @@ fn main() {
 
     // Put this to true if you want to use tests
     // or to false if you want to use the Sim Contr application.
-    let test = false;
+    let test = true;
     if test {
         //Comment functions we aren't testing
 
