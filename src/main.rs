@@ -1,5 +1,5 @@
 use std::thread;
-use crate::test::test_bench::{my_generic_fragment_forward, test_butterfly_flood, test_double_chain_flood, test_flood, test_star_flood, test_tree_flood};
+use crate::test::test_bench::{my_generic_fragment_forward, test_butterfly_flood, test_double_chain_flood, test_drone_commands, test_flood, test_star_flood, test_tree_flood};
 use crate::initializer::initialize;
 
 mod sim_app;
@@ -29,8 +29,11 @@ fn main() {
         // my_generic_fragment_forward();
         // test_tree_flood();
 
+       // test_drone_commands();
+        
+
     } else {
-        let (sim_contr, handles) = initialize("input.toml");
+        let (sim_contr, handles) = initialize("input_tree.toml");
         sim_app::run_simulation_gui(sim_contr);
         for handle in handles.into_iter() {
             handle.join().unwrap();

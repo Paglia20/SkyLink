@@ -3,6 +3,7 @@ use std::{thread, vec};
 use std::time::Duration;
 use crossbeam_channel::{select, unbounded};
 use wg_2024::controller::{DroneCommand, DroneEvent};
+use wg_2024::controller::DroneCommand::{Crash, RemoveSender, SetPacketDropRate};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType, Ack};
@@ -130,6 +131,22 @@ pub fn test_generic(){
     );
 }
 
+fn create_packet() -> Packet {
+    Packet {
+        pack_type: PacketType::MsgFragment(Fragment {
+            fragment_index: 1,
+            total_n_fragments: 1,
+            length: 128,
+            data: [1; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0,1,2],
+        },
+        session_id: 1,
+    }
+}
+//passed
 pub fn test_flood(){
     let mut handles = Vec::new();
 
@@ -1042,12 +1059,21 @@ fn packet_printer(packet: Packet) {
             initiator.id: {:?}
             path_trace: {:?}", packet.session_id, flood_request.flood_id, flood_request.initiator_id, flood_request.path_trace);
         },
+      
         PacketType::FloodResponse(flood_response) => {
+
+            println!("Flood response received:");
+           // println!("source_routing_header: {:?}", packet.routing_header);
+           // println!("session id: {:?}", packet.session_id);
+           // println!("flood_id: {:?}", flood_response.flood_id);
+            println!("path_trace: {:?}", flood_response.path_trace);
+
             println!("Flood response received:
             source_routing_header: {:?}
             session id: {:?}
             flood_id: {:?}
             path_trace: {:?}", packet.routing_header, packet.session_id, flood_response.flood_id, flood_response.path_trace);
+
         }
     }
 }
@@ -1056,9 +1082,9 @@ fn event_printer(event: DroneEvent) {
     match event {
         DroneEvent::PacketSent(packet) => {
             let index = packet.routing_header.hop_index;
-            let prev = packet.routing_header.hops[index-1];
+          //  let prev = packet.routing_header[index-1];
             let next = packet.routing_header.hops[index];
-            println!("Packet sent from {} to {}:", prev, next);
+            println!("Packet sent to {}:", next);
             packet_printer(packet);
         },
         DroneEvent::PacketDropped(packet) => {
@@ -1071,6 +1097,87 @@ fn event_printer(event: DroneEvent) {
             packet_printer(packet);
         }
     }
+}
+
+pub fn test_drone_commands(){
+    let mut handles = Vec::new();
+
+    let (d1_packet_sender, d1_packet_receiver) = unbounded::<Packet>();
+    let (d2_packet_sender, d2_packet_receiver) = unbounded::<Packet>();
+
+
+    let (sc_sender, sc_receiver) = unbounded();
+
+    let (d1_command_sender, d1_command_receiver) = unbounded::<DroneCommand>();
+    let (d2_command_sender, d2_command_receiver) = unbounded::<DroneCommand>();
+
+
+    let neighbour_d1 = HashMap::from([(2, d2_packet_sender.clone())]);
+    let neighbour_d2 = HashMap::from([(1, d1_packet_sender.clone())]);
+
+    let mut drone1 = SkyLinkDrone::new(
+        1,
+        sc_sender.clone(),
+        d1_command_receiver,
+        d1_packet_receiver,
+        neighbour_d1,
+        0.0);
+
+    let d1_handle = thread::spawn(move || {
+        drone1.run();
+    });
+    handles.push(d1_handle);
+
+    let mut drone2 = SkyLinkDrone::new(
+        2,
+        sc_sender.clone(),
+        d2_command_receiver,
+        d2_packet_receiver,
+        neighbour_d2,
+        0.0);
+
+    let d2_handle = thread::spawn(move || {
+        drone2.run();
+    });
+    handles.push(d2_handle);
+
+    let handle_sc = thread::spawn(move || {
+        loop {
+            select! {
+                recv(sc_receiver) -> event => {
+                    if let Ok(e) = event {
+                        event_printer(e);
+                    }
+                }
+            }
+        }
+    });
+    handles.push(handle_sc);
+
+    // d1_command_sender.send(Crash).unwrap();
+    // d2_command_sender.send(Crash).unwrap();
+    d1_command_sender.send(SetPacketDropRate(0.5)).unwrap();
+    d2_command_sender.send(SetPacketDropRate(0.8)).unwrap();
+
+    let msg = create_packet();
+
+    d1_packet_sender.send(msg).unwrap();
+
+
+    // d1_command_sender.send(RemoveSender(2)).unwrap();
+    // d2_command_sender.send(RemoveSender(1)).unwrap();
+    // //
+    // drop(d1_packet_sender);
+    // drop(d2_packet_sender);
+
+
+
+    for i in handles {
+        i.join().unwrap();
+    }
+
+
+
 }
 
 
