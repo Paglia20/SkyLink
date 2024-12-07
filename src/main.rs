@@ -13,7 +13,7 @@ fn main() {
 
     // Put this to true if you want to use tests
     // or to false if you want to use the Sim Contr application.
-    let test = true;
+    let test = false;
     if test {
         //Comment functions we aren't testing
 
@@ -31,7 +31,7 @@ fn main() {
         
 
     } else {
-        let (sim_contr, handles) = initialize("input_tree.toml");
+        let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
         sim_app::run_simulation_gui(sim_contr);
         for handle in handles.into_iter() {
             handle.join().unwrap();
