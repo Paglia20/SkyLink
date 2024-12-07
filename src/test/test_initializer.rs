@@ -9,7 +9,7 @@ use wg_2024::network::{NodeId};
 use wg_2024::packet::{Packet};
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-pub fn test_initialize(file: &str) -> (MySimContr, MyClient, Vec<JoinHandle<()>>) {
+pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
     let mut handles = Vec::new();
     //I'll return the handles of the threads, and join them to the main thread.
@@ -61,20 +61,22 @@ pub fn test_initialize(file: &str) -> (MySimContr, MyClient, Vec<JoinHandle<()>>
         }));
     }
 
-    let client = config.client.get(0).unwrap();
-    let client_recv = packet_receivers.remove(&client.id).unwrap();
-    let client_send = client.clone()
-        .connected_drone_ids
-        .into_iter()
-        .map(|id| (id, packet_senders[&id].clone()))
-        .collect();
-    println!("Client {} - channels:\n{:?}",client.id, client_send);
+    let mut my_clients = Vec::new();
+    for client in config.client.into_iter() {
+        let client_recv = packet_receivers.remove(&client.id).unwrap();
+        let client_send = client.clone()
+            .connected_drone_ids
+            .into_iter()
+            .map(|id| (id, packet_senders[&id].clone()))
+            .collect();
+        //println!("Client {} - channels:\n{:?}", client.id, client_send);
 
-    let my_client = MyClient {
-        id: client.id,
-        client_send,
-        client_recv
-    };
+        my_clients.push(MyClient {
+            id: client.id,
+            client_send,
+            client_recv
+        });
+    }
 
     let sim_contr = MySimContr {
         command_send,
@@ -85,7 +87,7 @@ pub fn test_initialize(file: &str) -> (MySimContr, MyClient, Vec<JoinHandle<()>>
     };
 
 
-    (sim_contr, my_client, handles)
+    (sim_contr, my_clients, handles)
 }
 
 fn parse_config(file: &str) -> Config {

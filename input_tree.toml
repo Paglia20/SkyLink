@@ -54,5 +54,5 @@ id = 0
 connected_drone_ids = [1]
 
 [[server]]
-id = 14
+id = 100
 connected_drone_ids = []
