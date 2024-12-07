@@ -1,5 +1,4 @@
-use std::thread;
-use crate::test::test_bench::{my_generic_fragment_forward, test_butterfly_flood, test_double_chain_flood, test_flood, test_star_flood, test_tree_flood};
+use crate::test::test_bench::{test_generic_fragment_forward, test_generic_drop};
 use crate::initializer::initialize;
 
 mod sim_app;
@@ -9,7 +8,7 @@ mod skylink_drone;
 mod test;
 
 fn main() {
-    println!("Hello, world!");
+    // println!("Hello, world!");
 
 
     // Put this to true if you want to use tests
@@ -18,11 +17,12 @@ fn main() {
     if test {
         //Comment functions we aren't testing
 
-        my_generic_fragment_forward();
+        // test_generic_fragment_forward();
+         test_generic_drop();
         // generic_chain_fragment_ack();
         // generic_fragment_drop();
         // generic_chain_fragment_drop();
-        // test_generic();
+
         // test_double_chain_flood();
         //test_star_flood();
         // test_butterfly_flood();
