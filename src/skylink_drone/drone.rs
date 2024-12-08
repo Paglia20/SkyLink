@@ -240,7 +240,10 @@ impl SkyLinkDrone {
             .rev()
             .map(|(id, _)| *id)
             .collect::<Vec<NodeId>>(); //I take only the ID's from the path trace and reverse them.
-        hops.push(flood.initiator_id);
+        if flood.path_trace[0].0 != flood.initiator_id {
+            hops.push(flood.initiator_id);
+        }
+
         let resp = Packet {
             pack_type: PacketType::FloodResponse(flood_resp),
             routing_header: SourceRoutingHeader {
