@@ -26,7 +26,7 @@ impl Drone for SkyLinkDrone {
            controller_recv: Receiver<DroneCommand>,
            packet_recv: Receiver<Packet>,
            packet_send: HashMap<NodeId, Sender<Packet>>,
-           pdr: f32) -> Self{
+           pdr: f32) -> Self {
         let mut pdr = pdr;
         if pdr > 1.00 {
             pdr = 1.00;
