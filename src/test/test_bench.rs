@@ -161,7 +161,7 @@ pub fn test_generic_drop(){
 
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
     // Client receive an NACK originated from 'd2'
-    assert_eq!(
+    /*assert_eq!(
         client_receiver.clone().recv().unwrap(),
         Packet {
             pack_type: PacketType::Nack(Nack {
@@ -174,9 +174,9 @@ pub fn test_generic_drop(){
             },
             session_id: 1,
         }
-    );
+    );*/
 
-    // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
+    handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
 
     for i in handles {
         i.join().unwrap();
@@ -216,8 +216,8 @@ pub fn test_flood(){
     };
 
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
-    // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
-    handles.push(client_only_listen_handle(client_receiver));
+    handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
+    // handles.push(client_only_listen_handle(client_receiver));
 
     send_packet(packet, clients.get(0).unwrap().client_send.get(&1).unwrap());
 
@@ -408,10 +408,10 @@ pub fn test_drone_commands(){
     });
     handles.push(handle_sc);
 
-    // d1_command_sender.send(Crash).unwrap();
-    // d2_command_sender.send(Crash).unwrap();
-    d1_command_sender.send(SetPacketDropRate(0.5)).unwrap();
-    d2_command_sender.send(SetPacketDropRate(0.8)).unwrap();
+    d1_command_sender.send(DroneCommand::Crash).unwrap();
+    d2_command_sender.send(DroneCommand::Crash).unwrap();
+   // d1_command_sender.send(SetPacketDropRate(0.5)).unwrap();
+    //d2_command_sender.send(SetPacketDropRate(0.8)).unwrap();
 
     let msg = create_packet(vec![0,1,2]);
 

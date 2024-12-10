@@ -23,11 +23,11 @@ fn main() {
         // test_generic_drop();
         // test_generic_nack();
         // test_flood();
-        test_double_chain_flood();
+        // test_double_chain_flood();
         // test_star_flood();
         // test_butterfly_flood();
         // test_tree_flood();
-        // test_drone_commands();
+         test_drone_commands();
         // test_busy_network();
 
         
