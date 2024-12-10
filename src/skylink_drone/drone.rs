@@ -26,7 +26,14 @@ impl Drone for SkyLinkDrone {
            controller_recv: Receiver<DroneCommand>,
            packet_recv: Receiver<Packet>,
            packet_send: HashMap<NodeId, Sender<Packet>>,
-           pdr: f32) -> Self {
+           pdr: f32) -> Self{
+        let mut pdr = pdr;
+        if pdr > 1.00 {
+            pdr = 1.00;
+        }
+        if pdr < 0.00 {
+            pdr = 0.00;
+        }
         SkyLinkDrone {
             id,
             controller_send,
@@ -90,21 +97,28 @@ impl SkyLinkDrone {
         match command {
             DroneCommand::AddSender(node_id, sender) => {
                 self.packet_send.insert(node_id, sender);
-                println!("Drone {} added a channel to {}!", self.id, node_id);
+                //println!("Drone {} added a channel to {}!", self.id, node_id);
             },
             DroneCommand::SetPacketDropRate(pdr) => {
+                let mut pdr = pdr;
+                if pdr > 1.00 {
+                    pdr = 1.00;
+                }
+                if pdr < 0.00 {
+                    pdr = 0.00;
+                }
                 self.pdr = (pdr * 100.0) as u32;
-                println!("Drone {} new pdr: {}%!", self.id, self.pdr);
+                //println!("Drone {} new pdr: {}%!", self.id, self.pdr);
             },
             DroneCommand::Crash => {
                 self.crashing = true;
-                println!("Drone {} crashed!", self.id);
+                //println!("Drone {} crashed!", self.id);
             },
             DroneCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id) {
                     if let Some(to_be_dropped) = self.packet_send.remove(&node_id) {
                         drop(to_be_dropped);
-                        println!("Drone {} no more has a connection to {}!", self.id, node_id);
+                        //println!("Drone {} no more has a connection to {}!", self.id, node_id);
                     }
                 }
             }
