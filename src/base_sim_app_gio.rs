@@ -1,8 +1,8 @@
 
 use std::cmp::Ordering;
 use eframe::egui;
-use eframe::egui::{CentralPanel, Color32, Frame, Grid, Layout, SidePanel, TopBottomPanel, Vec2, Shape, Painter, Rect, Pos2};
-use egui::Rangef;
+use eframe::egui::{CentralPanel, Color32, Frame, SidePanel};
+// use egui::Rangef;
 use wg_2024::network::NodeId;
 
 
@@ -29,7 +29,7 @@ impl PartialOrd<Self> for MyNodes {
 }
 
 impl Ord for MyNodes {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
 }
@@ -105,7 +105,7 @@ impl eframe::App for MyApp {
             });
 
         // SidePanel sulla sinistra
-        egui::SidePanel::left("side_panel")
+        SidePanel::left("side_panel")
             .resizable(true)
             .show(ctx, |ui| {
                 ui.heading("Pannello laterale");
@@ -165,8 +165,8 @@ impl eframe::App for MyApp {
 
 
         // Pannello centrale
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
+        CentralPanel::default().show(ctx, |ui| {
+            Frame::dark_canvas(ui.style()).show(ui, |ui| {
                 ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
                 ui.set_height(ui.available_height());
 
@@ -201,9 +201,9 @@ impl eframe::App for MyApp {
                         // Disegna il cerchio
                         let painter = ui.painter();
                         let circle_color = if self.selected_nodes[index] {
-                            egui::Color32::YELLOW
+                            Color32::YELLOW
                         } else {
-                            egui::Color32::GREEN
+                            Color32::GREEN
                         };
 
                         painter.circle_filled(rect.center(), 15.0, circle_color);
@@ -214,7 +214,7 @@ impl eframe::App for MyApp {
                             egui::Align2::CENTER_CENTER,
                             value.id.to_string(),
                             egui::FontId::proportional(16.0),
-                            egui::Color32::BLUE,
+                            Color32::BLUE,
                         );
 
                         // Gestisci il clic
@@ -236,7 +236,7 @@ impl eframe::App for MyApp {
 fn add_drone(checked_indices: &Vec<NodeId>) {
     println!("Checked items indices: {:?}", checked_indices);
 
-    ///todo
+    //todo
 }
 
 
