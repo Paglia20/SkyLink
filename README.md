@@ -1,6 +1,7 @@
 # SkyLink
-se leo è il wgc, e io sono il wg di leo, chi sono io?
 
-to add our drone to your network, add this to the dependencies 
+# Ready to go
+to add our drone to your network:
 
-skylink = { git = "https://github.com/Paglia20/SkyLink.git" }
+[dependencies]
+skylink = { git = "https://github.com/Paglia20/SkyLink" }
