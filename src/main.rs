@@ -1,58 +1,65 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::base_sim_app_gio::MyApp;
+use crate::sim_daniel::*;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
+use crate::sim_control::SimulationControl;
 
-mod sim_app;
+mod sim_sam;
 mod sim_control;
 mod initializer;
 mod skylink_drone;
 mod test;
-mod base_sim_app_gio;
+mod sim_daniel;
+
 
 fn main() {
     // println!("Hello, world!");
+    //change switch to change the run
+    let switch = Switch::SimSam;
 
+    match switch {
+        Switch::SimDaniel => {
+            let (sim_contr, handles) = initialize("inputs/input_star.toml");
+            let mut pass = Rc::new(RefCell::new(sim_contr));
+            run_sim_dan(pass).expect("TODO: panic message");
 
-    // Put this to true if you want to use tests
-    // or to false if you want to use the Sim Contr application.
-    let test = true;
-    if test {
-        //Comment functions we aren't testing
+            for handle in handles.into_iter() {
+                handle.join().unwrap();
+            }
+        }
+        Switch::SimSam => {
+            let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
+            let mut pass = Rc::new(RefCell::new(sim_contr));
+            pass.borrow_mut().crash_drone(2);
+            sim_sam::run_simulation_gui(pass.clone());
 
-        // test_generic_fragment_forward();
-        // test_generic_drop();
-        // test_generic_nack();
-        // test_flood();
-        // test_double_chain_flood();
-        // test_star_flood();
-        // test_butterfly_flood();
-        // test_tree_flood();
-        // test_drone_commands();
-        // test_busy_network();
+            for handle in handles.into_iter() {
+                handle.join().unwrap();
+            }
+        }
+        Switch::Test => {
+            //Comment functions we aren't testing
 
-        run_sim_gio().expect("TODO: panic message");
-
-    } else {
-        let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
-        let mut pass = Rc::new(RefCell::new(sim_contr));
-        pass.borrow_mut().crash_drone(2);
-        sim_app::run_simulation_gui(pass.clone());
-
-
-
-        for handle in handles.into_iter() {
-            handle.join().unwrap();
+            // test_generic_fragment_forward();
+            // test_generic_drop();
+            // test_generic_nack();
+            // test_flood();
+            // test_double_chain_flood();
+            // test_star_flood();
+            // test_butterfly_flood();
+            // test_tree_flood();
+            // test_drone_commands();
+            // test_busy_network();
         }
     }
 }
 
-fn run_sim_gio() -> Result<(), eframe::Error>{
-    let options = eframe::NativeOptions::default();
-    eframe::run_native(
-        "Interfaccia con layout adattabile",
-        options,
-        Box::new(|_cc| Box::new(MyApp::new())),
-    )
+
+
+enum Switch {
+    Test,
+    SimDaniel,
+    SimSam,
 }
+

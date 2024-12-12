@@ -57,7 +57,7 @@ impl SimulationControl{
         }
     }
 
-    fn spawn_drone (&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()>{
+    pub fn spawn_drone (&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()>{
         let new_id = self.generate_id();
         //aggiorna network graph
         self.network_graph.insert(new_id, connections.clone());
