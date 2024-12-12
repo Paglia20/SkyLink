@@ -5,4 +5,4 @@ to add our drone to your network:
 
 ```rust
 [dependencies]
-skylink = { git = "https://github.com/Paglia20/SkyLink" }
+skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }
