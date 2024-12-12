@@ -16,7 +16,7 @@ mod sim_daniel;
 fn main() {
     // println!("Hello, world!");
     //change switch to change the run
-    let switch = Switch::SimSam;
+    let switch = Switch::SimDaniel;
 
     match switch {
         Switch::SimDaniel => {
