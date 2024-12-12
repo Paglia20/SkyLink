@@ -322,7 +322,7 @@ pub fn run_sim_dan(sim_control: Rc<RefCell<SimulationControl>>) -> Result<(), ef
     eframe::run_native(
         "Interfaccia con layout adattabile",
         options,
-        Box::new(|_cc| Box::new(MyApp::new(sim_control))),
+        Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
     )
 }
 

@@ -328,6 +328,6 @@ pub fn run_simulation_gui(sim_contr: Rc<RefCell<SimulationControl>>) {
     eframe::run_native(
         "SkyLink Simulation",
         options,
-        Box::new(|_cc| Box::new(SimulationApp::new(sim_contr))),
+        Box::new(|_cc| Ok(Box::new(SimulationApp::new(sim_contr)))),
     ).expect("Failed to start GUI");
 }
