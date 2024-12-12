@@ -342,12 +342,16 @@ STRICTLY FOR SIM CONTROL PART:
 
 STRICTLY FOR SIM APP PART:
 0) add field in MyNodes that tell the Type of the Node (NodeType), and change creation of the Circles depending on the Nodetype.
-1) make a field for a rc<refcell<simcontroll>
-2) make that the vectors in MyApp get filled from the informations on simcontroll.network_graph
+2) add in each pop up what type the node is (client/server)
 3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone
 4) add simulation controller log in bottom panel.
-5) add connections between nodes
 
+the field node type is important because the pop up has to have different buttons depending on the type:
+
+//please help me here:
+drone: crash? /...
+client: send flood req / send message to (open a manage) / ..
+server:...
 
 --test everything, then continue with other things
 
