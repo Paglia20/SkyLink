@@ -323,7 +323,8 @@ impl App for SimulationApp {
 
 
 pub fn run_simulation_gui(sim_contr: Rc<RefCell<SimulationControl>>) {
-    let options = NativeOptions::default();
+    let mut options = NativeOptions::default();
+    options.run_and_return = false;
     eframe::run_native(
         "SkyLink Simulation",
         options,
