@@ -23,7 +23,7 @@ fn main() {
             let (sim_contr, handles) = initialize("inputs/input_star.toml");
             let mut pass = Rc::new(RefCell::new(sim_contr));
             run_sim_dan(pass).expect("TODO: panic message");
-
+            println!("yes");
             for handle in handles.into_iter() {
                 handle.join().unwrap();
             }

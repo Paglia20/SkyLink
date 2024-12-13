@@ -17,3 +17,6 @@ fungi_drone = { git = "https://github.com/Fungi-B-D/Fungi-Drone.git" }
 wg_2024-rust = { git = "https://github.com/LuigiMiazzo17/unitn-advancedProgramming-WGL_2024-drone.git" }
 lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
 rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git"}
+flexi_logger = "0.29.6"
+log = "0.4"
+getdroned = { git = "https://github.com/GetDroned/Drone.git", features = ["log"] }

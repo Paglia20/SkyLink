@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
 use eframe::egui;
+use egui::{FontId, RichText};
 use wg_2024::network::NodeId;
 use crate::sim_control::SimulationControl;
 
@@ -83,12 +84,20 @@ impl MyApp {
         app
     }
 
-    pub fn update_topology(&mut self, sim_contr: Rc<RefCell<SimulationControl>>) {
-        let network_graph = sim_contr.borrow().network_graph.clone();
+    pub fn update_topology(&mut self) {
+        //clear it
+        self.nodes.clear();
+        self.checked.clear();
+
+        let network_graph = self.sim_contr.borrow().network_graph.clone();
         for (node_id, neighbors) in network_graph {
             self.nodes.push(MyNodes{id : node_id, connections: neighbors});
             self.checked.push(false);
-            self.selected_nodes.push(false);
+
+            if (self.nodes.len() == self.selected_nodes.len() +1){
+                self.selected_nodes.push(false);
+            }
+
         }
     }
 
@@ -123,7 +132,6 @@ impl MyApp {
             self.checked.push(false);
             self.selected_nodes.push(false);
         }
-
         self.generate_random_connections();
         println!("len: {:?} vec: {:?}", self.nodes.len(), self.nodes.clone());
     }
@@ -139,13 +147,24 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
+        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
+        let enable_constant_read = true;
+        if enable_constant_read {
+            self.update_topology();
+        }
+
         // BottomPanel ridimensionabile
         egui::TopBottomPanel::bottom("bottom_panel")
             .height_range(100.0..=200.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Pannello inferiore (ridimensionabile)");
+                    ui.label(RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)));
+                });
+                ui.vertical(|ui| {
+                    for s in &self.sim_contr.borrow().log {
+                        ui.label(s);
+                    }
                 });
             });
 
@@ -320,7 +339,7 @@ pub fn run_sim_dan(sim_control: Rc<RefCell<SimulationControl>>) -> Result<(), ef
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
     eframe::run_native(
-        "Interfaccia con layout adattabile",
+        "SkyLink Interface 1",
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
     )
@@ -339,14 +358,20 @@ STRICTLY FOR SIM CONTROL PART:
 2) change accordingly to sim app parts
 3) probably is in great part to be redone, but it's a good start i think
 
+- change log to a vecdeque of LogEntry
+struct LogEntry {
+    node_id: usize,
+    message: String,
+}
+faster and easier than to print all the smaller windows
 
 STRICTLY FOR SIM APP PART:
-0) add field in MyNodes that tell the Type of the Node (NodeType), and change creation of the Circles depending on the Nodetype.
+0) add field in MyNodes that tell the Type of the Node (NodeType).
 2) add in each pop up what type the node is (client/server)
-3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone
+3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone, you can use the change you made to log -> vecdeque of logentry
 4) add simulation controller log in bottom panel.
 
-the field node type is important because the pop up has to have different buttons depending on the type:
+the field node type is important also because the pop up has to have different buttons depending on the type:
 
 //please help me here:
 drone: crash? /...
@@ -357,7 +382,7 @@ server:...
 
 6) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
 7) add bottons in the pop ups for clients/servers that send flood req or certain messages
-8) at the end, change the circles in drones/clients/server small entities
+8) at the end, change the circles in drones/clients/server small entities, so you have to change the creation accordingly to nodetype (matches again)
 
 (.. more to come)
 
