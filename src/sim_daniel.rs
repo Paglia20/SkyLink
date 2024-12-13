@@ -85,15 +85,17 @@ impl MyApp {
     }
 
     pub fn update_topology(&mut self) {
-        //clear it
+        //clear it, other wise you keep adding
         self.nodes.clear();
-        self.checked.clear();
 
         let network_graph = self.sim_contr.borrow().network_graph.clone();
         for (node_id, neighbors) in network_graph {
             self.nodes.push(MyNodes{id : node_id, connections: neighbors});
-            self.checked.push(false);
 
+            //only if there are new elements, make those checkable and selectionable.
+            if (self.nodes.len() == self.checked.len() +1){
+                self.checked.push(false);
+            }
             if (self.nodes.len() == self.selected_nodes.len() +1){
                 self.selected_nodes.push(false);
             }
@@ -366,6 +368,10 @@ struct LogEntry {
 faster and easier than to print all the smaller windows
 
 STRICTLY FOR SIM APP PART:
+
+//now that i think about it, we can obtain same effect of the checkable and selectioned drones by putting two bool in each Mydrone instead of those vector of u8..
+
+
 0) add field in MyNodes that tell the Type of the Node (NodeType).
 2) add in each pop up what type the node is (client/server)
 3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone, you can use the change you made to log -> vecdeque of logentry
