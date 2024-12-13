@@ -9,7 +9,9 @@ use crate::sim_control::SimulationControl;
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id : NodeId,
-    connections: Vec<NodeId>
+    connections: Vec<NodeId>,
+
+    selected: bool
 }
 
 impl Eq for MyNodes {
@@ -45,7 +47,6 @@ pub struct MyApp {
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
-    selected_nodes: Vec<bool>, // Salva l'indice del drone selezionato
     pdr: f32
 }
 
@@ -67,7 +68,7 @@ impl MyApp {
         } */
 
         for (node_id, neighbors) in network_graph {
-            vec.push(MyNodes{id : node_id, connections: neighbors});
+            vec.push(MyNodes{id : node_id, connections: neighbors, selected: false});
             checked.push(false);
             selected_nodes.push(false);
         }
@@ -76,7 +77,6 @@ impl MyApp {
             nodes: vec,
             scene: Scene::Start,
             checked,
-            selected_nodes,
             sim_contr,
             pdr: 0.0
         };
@@ -85,21 +85,22 @@ impl MyApp {
     }
 
     pub fn update_topology(&mut self) {
-        //clear it, other wise you keep adding
-        self.nodes.clear();
+        let id_to_selected = self.nodes.iter().map(|x|(x.id,x.selected)).collect::<Vec<(NodeId,bool)>>();
 
+        self.nodes.clear();
         let network_graph = self.sim_contr.borrow().network_graph.clone();
         for (node_id, neighbors) in network_graph {
-            self.nodes.push(MyNodes{id : node_id, connections: neighbors});
-
-            //only if there are new elements, make those checkable and selectionable.
-            if (self.nodes.len() == self.checked.len() +1){
+            if id_to_selected.contains(&(node_id, true)) {
+                self.nodes.push(MyNodes { id: node_id, connections: neighbors, selected: true });
+            }
+            else if id_to_selected.contains(&(node_id, false)) {
+                self.nodes.push(MyNodes{id: node_id, connections: neighbors, selected: false});
+            }
+            else {
+                //if there are new elements, add and make those checkable
+                self.nodes.push(MyNodes{id: node_id, connections: neighbors, selected: false});
                 self.checked.push(false);
             }
-            if (self.nodes.len() == self.selected_nodes.len() +1){
-                self.selected_nodes.push(false);
-            }
-
         }
     }
 
@@ -129,10 +130,10 @@ impl MyApp {
             let new_drone = MyNodes {
                 id: fastrand::u8(0..255),
                 connections: Vec::new(),
+                selected: false,
             };
             self.nodes.push(new_drone);
             self.checked.push(false);
-            self.selected_nodes.push(false);
         }
         self.generate_random_connections();
         println!("len: {:?} vec: {:?}", self.nodes.len(), self.nodes.clone());
@@ -238,22 +239,22 @@ impl eframe::App for MyApp {
                 }
             });
 
-        for (index, is_selected) in self.selected_nodes.iter_mut().enumerate() {
-            if *is_selected {
-                egui::Window::new(format!("Log for Node {}", self.nodes[index].id))
+        for node in self.nodes.iter_mut() {
+            if node.selected {
+                egui::Window::new(format!("Log for Node {}", node.id))
                     .resizable(true) // Permetti il ridimensionamento
                     .collapsible(true)
                     .min_height(500.0)
                     .min_width(500.0)
                     .show(ctx, |ui| {
-                        ui.label(format!("Dettagli del nodo {}:", self.nodes[index].id));
+                        ui.label(format!("Dettagli del nodo {}:", node.id));
 
                         // Qui puoi aggiungere ulteriori informazioni o controlli
                         ui.label("Log:");
 
                         //insert log of the drone (idk how)
                         if ui.button("Chiudi").clicked() {
-                            *is_selected = false; // Chiudi il popup
+                            node.selected = false; // Chiudi il popup
                         }
                     });
             }
@@ -296,11 +297,11 @@ impl eframe::App for MyApp {
                     }
                 }
 
-                for (index, value) in self.nodes.iter().enumerate() {
+                for (index, value) in self.nodes.iter_mut().enumerate() {
                     let rect = egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
                     let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
 
-                    let circle_color = if self.selected_nodes[index] {
+                    let circle_color = if value.selected {
                         egui::Color32::BLUE
                     } else {
                         egui::Color32::from_rgb(216, 100, 56)
@@ -318,8 +319,8 @@ impl eframe::App for MyApp {
 
                     // Gestisci il clic
                     if response.clicked() {
-                        self.selected_nodes[index] = true;
-                        println!("Drone selezionato: {:?}", self.nodes[index]);
+                        value.selected = true;
+                        println!("Drone selezionato: {:?}", value.id);
                     }
                 }
             });
