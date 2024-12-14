@@ -312,8 +312,8 @@ impl App for SimulationApp {
             .show(ctx, |ui| {
                 ui.label("Simulation controller log:");
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for message in sim_control_log_vec {
-                        ui.label(message); // Display each message
+                    for s in sim_control_log_vec {
+                        ui.label(format!("{}", s)); // Display each message
                     }
                 });
             });

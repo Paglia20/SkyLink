@@ -1,5 +1,7 @@
 use std::collections::{HashMap};
 use std::{thread, vec};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::thread::JoinHandle;
 use crossbeam_channel::{select, select_biased, unbounded, Receiver, Sender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
@@ -7,6 +9,9 @@ use wg_2024::controller::DroneCommand::{SetPacketDropRate};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
+use crate::initializer::initialize;
+use crate::sim_control::{LogEntry, SimulationControl};
+use crate::sim_daniel::run_sim_dan;
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crate::test::test_initializer::test_initialize;
 
@@ -87,7 +92,7 @@ fn create_packet(hops: Vec<NodeId>) -> Packet {
             data: [1; 128],
         }),
         routing_header: SourceRoutingHeader {
-            hop_index: 1,
+            hop_index: 0,
             hops,
         },
         session_id: 1,
@@ -455,4 +460,22 @@ pub fn test_busy_network(){
     for i in handles {
         i.join().unwrap();
     }
+}
+
+
+pub fn test_log(){
+    // println!("Simulation of test log");
+    // let (sim_contr, handles) = initialize("inputs/input_star.toml");
+    // let mut sim = Rc::new(RefCell::new(sim_contr));
+    //
+    // // sim.borrow_mut().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
+    // let packet = create_packet(vec![1,4,7,10]); //should send a destination is drone
+    //
+    // send_packet(packet, sim.borrow_mut().all_sender_packets.get(&1).unwrap());
+    //
+    // // run_sim_dan(sim).expect("TODO: panic message");
+    //
+    // for handle in handles.into_iter() {
+    //     handle.join().unwrap();
+    // }
 }

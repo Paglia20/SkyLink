@@ -1,6 +1,7 @@
 use crossbeam_channel::{select, unbounded, Receiver, Sender};
 use std::thread::JoinHandle;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::fmt::{Display, Formatter};
 use std::thread;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
@@ -13,9 +14,9 @@ pub struct SimulationControl{
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
     node_recv: Receiver<DroneEvent>,
     channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
-    all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn
+    pub all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, Vec<NodeId>>,
-    pub(crate) log: Vec<String>,
+    pub(crate) log: VecDeque<LogEntry>,
 }
 
 impl SimulationControl{
@@ -26,7 +27,7 @@ impl SimulationControl{
             channel_for_drone,
             all_sender_packets,
             network_graph,
-            log: Vec::new(),
+            log: VecDeque::new(),
         }
     }
 
@@ -42,17 +43,31 @@ impl SimulationControl{
         }
     }
 
-    fn add_to_log(&mut self, e: DroneEvent){
+    pub(crate) fn add_to_log(&mut self, e: DroneEvent){
         match e {
             DroneEvent::PacketSent(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
-                self.log.push( format!("Drone {} sent fragment {:?} of type: {:?}",id_drone ,packet.session_id, packet.pack_type))}
+                let new_log = LogEntry{
+                    node_id: *id_drone,
+                    message: format!("Sent fragment {:?} of type: {:?}",packet.session_id, packet.pack_type),
+                };
+                self.log.push_back(new_log);
+            }
             DroneEvent::PacketDropped(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
-                self.log.push( format!("Drone {} dropped fragment {:?} of type: {:?}",id_drone ,packet.session_id, packet.pack_type))}
+                let new_log = LogEntry{
+                    node_id: *id_drone,
+                    message: format!("Dropped fragment {:?} of type: {:?}",packet.session_id, packet.pack_type)
+                };
+                self.log.push_back(new_log);
+            }
             DroneEvent::ControllerShortcut(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
-                self.log.push( format!("Received {:?} from drone {:?}", packet.pack_type, id_drone));
+                let new_log = LogEntry{
+                    node_id: *id_drone,
+                    message: format!("Sent shortcut {:?}", packet.pack_type)
+                };
+                self.log.push_back(new_log);
             }
         }
     }
@@ -125,7 +140,7 @@ impl SimulationControl{
                 if let Some(to_be_dropped) = self.node_send.remove(&id){
                     drop(to_be_dropped);
                 }
-                self.log.push(format!("drone {} crashed.", id));
+                self.log.push_back(LogEntry::new(id, "Node crashed".to_string()));
             }
         } else {
             println!("drone {} not found in the network.", id);
@@ -137,7 +152,7 @@ impl SimulationControl{
                 println!("error in removing drone {} from drone {} senders", id_to_remove, id);
             } else {
                 println!("drone {} removed from drone {} senders", id_to_remove, id);
-                self.log.push(format!("drone {} removed from drone {} senders", id_to_remove, id));
+                self.log.push_back(LogEntry::new(id, format!("drone {} removed from senders", id_to_remove)));
             }
         }
     }
@@ -149,7 +164,7 @@ impl SimulationControl{
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
                     println!("drone {} added to drone {} senders", id_to_add, id);
-                    self.log.push(format!("drone {} added to drone {} senders", id_to_add, id));
+                    self.log.push_back(LogEntry::new(id, format!("drone {} added to senders", id_to_add)));
                 }
             }
         }
@@ -161,10 +176,28 @@ impl SimulationControl{
                 println!("error in setting drone {} pdr to {}", id, pdr);
             } else {
                 println!("setting drone {} pdr to {}", id, pdr);
-                self.log.push(format!("drone {} now has pdr set to {}", id, pdr));
+                self.log.push_back(LogEntry::new(id, format!("drone now has pdr set to {}", pdr)));
             }
         }
     }
 
 }
 
+pub struct LogEntry {
+    node_id: NodeId,
+    message: String,
+}
+impl LogEntry {
+    pub fn new(node_id: NodeId, message: String) -> LogEntry {
+        LogEntry{node_id, message}
+    }
+    pub fn get_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl Display for LogEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Node {} notified {}", self.node_id, self.message)
+    }
+}

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use eframe::egui;
 use egui::{FontId, RichText};
 use wg_2024::network::NodeId;
-use crate::sim_control::SimulationControl;
+use crate::sim_control::{LogEntry, SimulationControl};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -87,6 +87,7 @@ impl MyApp {
     pub fn update_topology(&mut self) {
         let id_to_selected = self.nodes.iter().map(|x|(x.id,x.selected)).collect::<Vec<(NodeId,bool)>>();
 
+
         self.nodes.clear();
         let network_graph = self.sim_contr.borrow().network_graph.clone();
         for (node_id, neighbors) in network_graph {
@@ -139,6 +140,7 @@ impl MyApp {
         println!("len: {:?} vec: {:?}", self.nodes.len(), self.nodes.clone());
     }
 
+
     fn reset_check(&mut self) {
         self.checked.clear();
         for _ in 0..self.nodes.len() {
@@ -158,16 +160,20 @@ impl eframe::App for MyApp {
 
         // BottomPanel ridimensionabile
         egui::TopBottomPanel::bottom("bottom_panel")
-            .height_range(100.0..=200.0)
+            .height_range(100.0..=300.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)));
                 });
                 ui.vertical(|ui| {
-                    for s in &self.sim_contr.borrow().log {
-                        ui.label(s);
-                    }
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                        .show(ui, |ui| {
+                            for s in &self.sim_contr.borrow().log {
+                                ui.label(format!("{}", s));
+                            }
+                        });
                 });
             });
 
@@ -180,6 +186,9 @@ impl eframe::App for MyApp {
                     Scene::Start => {
                         if ui.button("Retest!").clicked() {
                             self.retest();
+                        }
+                        if ui.button("test log!").clicked() {
+                            self.sim_contr.borrow_mut().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
                         }
                         if ui.button("Add Drone!").clicked() {
                             self.scene = Scene::ManageAdd;
@@ -251,7 +260,13 @@ impl eframe::App for MyApp {
 
                         // Qui puoi aggiungere ulteriori informazioni o controlli
                         ui.label("Log:");
-
+                        ui.vertical(|ui| {
+                            for s in &self.sim_contr.borrow().log {
+                                if s.get_id() == node.id {
+                                ui.label(format!("{}", s));
+                                }
+                            }
+                        });
                         //insert log of the drone (idk how)
                         if ui.button("Chiudi").clicked() {
                             node.selected = false; // Chiudi il popup
@@ -313,7 +328,7 @@ impl eframe::App for MyApp {
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         value.id.to_string(),
-                        egui::FontId::proportional(16.0),
+                        FontId::proportional(16.0),
                         egui::Color32::WHITE,
                     );
 
@@ -332,8 +347,9 @@ impl eframe::App for MyApp {
 
 fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
     // SimulationControl::spawn_node(&mut , pdr, checked_indices.clone());
-
 }
+
+
 
 
 
@@ -361,22 +377,11 @@ STRICTLY FOR SIM CONTROL PART:
 2) change accordingly to sim app parts
 3) probably is in great part to be redone, but it's a good start i think
 
-- change log to a vecdeque of LogEntry
-struct LogEntry {
-    node_id: usize,
-    message: String,
-}
-faster and easier than to print all the smaller windows
 
 STRICTLY FOR SIM APP PART:
-
-//now that i think about it, we can obtain same effect of the checkable and selectioned drones by putting two bool in each Mydrone instead of those vector of u8..
-
-
+- TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
 0) add field in MyNodes that tell the Type of the Node (NodeType).
 2) add in each pop up what type the node is (client/server)
-3) make the pop up bigger and such that it display the NodeEvent sent to the sim controll by that drone, you can use the change you made to log -> vecdeque of logentry
-4) add simulation controller log in bottom panel.
 
 the field node type is important also because the pop up has to have different buttons depending on the type:
 
