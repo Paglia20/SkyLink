@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use crate::sim_daniel::*;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
@@ -21,18 +22,15 @@ fn main() {
     match switch {
         Switch::SimDaniel => {
             let (sim_contr, handles) = initialize("inputs/input_star.toml");
-            let mut pass = Rc::new(RefCell::new(sim_contr));
-            run_sim_dan(pass).expect("TODO: panic message");
+
+            run_sim_dan(sim_contr.clone()).expect("TODO: panic message");
             for handle in handles.into_iter() {
                 handle.join().unwrap();
             }
         }
         Switch::SimSam => {
             let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
-            let mut pass = Rc::new(RefCell::new(sim_contr));
-            pass.borrow_mut().crash_drone(2);
-            sim_sam::run_simulation_gui(pass.clone());
-
+           // sim_sam::run_simulation_gui(sim_contr.clone()).expect("TODO: panic message");
             for handle in handles.into_iter() {
                 handle.join().unwrap();
             }

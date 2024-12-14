@@ -1,13 +1,15 @@
 use std::{fs, thread};
+use std::cell::RefCell;
 use std::thread::JoinHandle;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use crossbeam_channel::unbounded;
 use wg_2024::config::Config;
 use wg_2024::drone::Drone;
 use crate::sim_control::SimulationControl;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
+pub fn initialize(file: &str) -> (Arc<Mutex<SimulationControl>>, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
     let mut handles = Vec::new();
     //I'll return the handles of the threads, and join them to the main thread.
@@ -75,10 +77,16 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
         //implementation of other groups drones in our network.
     }
 
+    let mut sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
+    let mut arc_sim = Arc::new(Mutex::new(sim_contr));
+    let new_out = Arc::clone(&arc_sim);
+    handles.push(thread::spawn(move || {
+       // new_out.lock().unwrap().run();
+        //andrebbe scommentato, ma se lo commenti non riesci ad accedere alle cose del thread (tipo al network graph per costruire il sim app)
+        //capisci meglio, magari dopo gli esami
+    }));
 
-    let sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
-
-    (sim_contr, handles)
+    (arc_sim, handles)
 }
 
 fn parse_config(file: &str) -> Config {

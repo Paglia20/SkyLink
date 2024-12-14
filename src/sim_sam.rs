@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
 use eframe::{App, Frame, NativeOptions};
 use crate::sim_control::SimulationControl;
@@ -22,14 +23,14 @@ pub struct SimulationApp {
     dragging_drone: Option<usize>, // Track which drone is being dragged
     show_connection_dialog: bool,
     new_drone_index: Option<usize>,
-    sim_contr: Rc<RefCell<SimulationControl>>,
+    sim_contr: Arc<RefCell<SimulationControl>>,
     connection_selections: Vec<bool>,
     log_panel_width: f32,        // Width of the log panel
     control_panel_width: f32,   // Width of the control panel
 }
 
 impl SimulationApp {
-    fn new(sim_contr: Rc<RefCell<SimulationControl>>) -> Self {
+    fn new(sim_contr: Arc<RefCell<SimulationControl>>) -> Self {
         let network_graph = sim_contr.borrow().network_graph.clone();
 
         let mut drones = Vec::new();
@@ -322,7 +323,7 @@ impl App for SimulationApp {
 }
 
 
-pub fn run_simulation_gui(sim_contr: Rc<RefCell<SimulationControl>>) {
+pub fn run_simulation_gui(sim_contr: Arc<RefCell<SimulationControl>>) {
     let mut options = NativeOptions::default();
     options.run_and_return = false;
     eframe::run_native(

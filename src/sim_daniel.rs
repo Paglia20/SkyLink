@@ -1,6 +1,5 @@
-use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use eframe::egui;
 use egui::{FontId, RichText};
 use wg_2024::network::NodeId;
@@ -43,7 +42,7 @@ pub enum Scene{
     ManageCrash,
 }
 pub struct MyApp {
-    sim_contr: Rc<RefCell<SimulationControl>>,
+    sim_contr: Arc<Mutex<SimulationControl>>,
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
@@ -51,21 +50,14 @@ pub struct MyApp {
 }
 
 impl MyApp {
-    pub(crate) fn new(sim_contr: Rc<RefCell<SimulationControl>>) -> Self {
-        let network_graph = sim_contr.borrow().network_graph.clone();
+    pub(crate) fn new(sim_contr: Arc<Mutex<SimulationControl>>) -> Self {
+
+        let network_graph = sim_contr.clone().lock().unwrap().network_graph.clone();
+        println!("i work ghere2");
+
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
         let mut selected_nodes = Vec::new();
-
-        /*for _ in 0..fastrand::usize(12..18) {
-            let new_drone = MyNodes {
-                id: fastrand::u8(0..255),
-                connections: Vec::new(),
-            };
-            vec.push(new_drone);
-            checked.push(false);
-            selected_nodes.push(false);
-        } */
 
         for (node_id, neighbors) in network_graph {
             vec.push(MyNodes{id : node_id, connections: neighbors, selected: false});
@@ -89,7 +81,7 @@ impl MyApp {
 
 
         self.nodes.clear();
-        let network_graph = self.sim_contr.borrow().network_graph.clone();
+        let network_graph = self.sim_contr.lock().unwrap().network_graph.clone();
         for (node_id, neighbors) in network_graph {
             if id_to_selected.contains(&(node_id, true)) {
                 self.nodes.push(MyNodes { id: node_id, connections: neighbors, selected: true });
@@ -170,7 +162,7 @@ impl eframe::App for MyApp {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                         .show(ui, |ui| {
-                            for s in &self.sim_contr.borrow().log {
+                            for s in &self.sim_contr.lock().unwrap().log{
                                 ui.label(format!("{}", s));
                             }
                         });
@@ -188,7 +180,7 @@ impl eframe::App for MyApp {
                             self.retest();
                         }
                         if ui.button("test log!").clicked() {
-                            self.sim_contr.borrow_mut().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
+                            self.sim_contr.lock().unwrap().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
                         }
                         if ui.button("Add Drone!").clicked() {
                             self.scene = Scene::ManageAdd;
@@ -261,7 +253,7 @@ impl eframe::App for MyApp {
                         // Qui puoi aggiungere ulteriori informazioni o controlli
                         ui.label("Log:");
                         ui.vertical(|ui| {
-                            for s in &self.sim_contr.borrow().log {
+                            for s in &self.sim_contr.lock().unwrap().log {
                                 if s.get_id() == node.id {
                                 ui.label(format!("{}", s));
                                 }
@@ -354,7 +346,7 @@ fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
 
 
 
-pub fn run_sim_dan(sim_control: Rc<RefCell<SimulationControl>>) -> Result<(), eframe::Error>{
+pub fn run_sim_dan(sim_control: Arc<Mutex<SimulationControl>>) -> Result<(), eframe::Error>{
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
     eframe::run_native(
