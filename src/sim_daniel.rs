@@ -1,21 +1,18 @@
 use std::cmp::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use eframe::egui;
 use egui::{FontId, RichText};
 use wg_2024::network::NodeId;
-use crate::sim_control::{LogEntry, SimulationControl};
+use crate::sim_control::{LogEntry, SimBuilder, SimulationControl};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id : NodeId,
     connections: Vec<NodeId>,
-
     selected: bool
 }
 
-impl Eq for MyNodes {
-
-}
+impl Eq for MyNodes {}
 
 impl PartialEq<Self> for MyNodes {
     fn eq(&self, other: &Self) -> bool {
@@ -41,8 +38,10 @@ pub enum Scene{
     ManageAdd,
     ManageCrash,
 }
+
 pub struct MyApp {
-    sim_contr: Arc<Mutex<SimulationControl>>,
+    builder: Arc<RwLock<SimBuilder>>,
+
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
@@ -50,26 +49,15 @@ pub struct MyApp {
 }
 
 impl MyApp {
-    pub(crate) fn new(sim_contr: Arc<Mutex<SimulationControl>>) -> Self {
-
-        let network_graph = sim_contr.clone().lock().unwrap().network_graph.clone();
-        println!("i work ghere2");
-
+    pub(crate) fn new(builder: Arc<RwLock<SimBuilder>>) -> Self {
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
-        let mut selected_nodes = Vec::new();
-
-        for (node_id, neighbors) in network_graph {
-            vec.push(MyNodes{id : node_id, connections: neighbors, selected: false});
-            checked.push(false);
-            selected_nodes.push(false);
-        }
 
         let mut app = Self {
+            builder,
             nodes: vec,
             scene: Scene::Start,
             checked,
-            sim_contr,
             pdr: 0.0
         };
         //app.generate_random_connections();
@@ -81,7 +69,7 @@ impl MyApp {
 
 
         self.nodes.clear();
-        let network_graph = self.sim_contr.lock().unwrap().network_graph.clone();
+        let network_graph = self.builder.read().unwrap().network_graph.clone();
         for (node_id, neighbors) in network_graph {
             if id_to_selected.contains(&(node_id, true)) {
                 self.nodes.push(MyNodes { id: node_id, connections: neighbors, selected: true });
@@ -162,7 +150,7 @@ impl eframe::App for MyApp {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                         .show(ui, |ui| {
-                            for s in &self.sim_contr.lock().unwrap().log{
+                            for s in &self.builder.read().unwrap().log{
                                 ui.label(format!("{}", s));
                             }
                         });
@@ -180,7 +168,7 @@ impl eframe::App for MyApp {
                             self.retest();
                         }
                         if ui.button("test log!").clicked() {
-                            self.sim_contr.lock().unwrap().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
+                            self.builder.write().unwrap().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
                         }
                         if ui.button("Add Drone!").clicked() {
                             self.scene = Scene::ManageAdd;
@@ -253,9 +241,9 @@ impl eframe::App for MyApp {
                         // Qui puoi aggiungere ulteriori informazioni o controlli
                         ui.label("Log:");
                         ui.vertical(|ui| {
-                            for s in &self.sim_contr.lock().unwrap().log {
+                            for s in &self.builder.read().unwrap().log {
                                 if s.get_id() == node.id {
-                                ui.label(format!("{}", s));
+                                    ui.label(format!("{}", s));
                                 }
                             }
                         });
@@ -346,13 +334,13 @@ fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
 
 
 
-pub fn run_sim_dan(sim_control: Arc<Mutex<SimulationControl>>) -> Result<(), eframe::Error>{
+pub fn run_sim_dan(builder: Arc<RwLock<SimBuilder>>) -> Result<(), eframe::Error>{
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
     eframe::run_native(
         "SkyLink Interface 1",
         options,
-        Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
+        Box::new(|_cc| Ok(Box::new(MyApp::new(builder)))),
     )
 }
 
