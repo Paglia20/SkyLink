@@ -1,21 +1,19 @@
-use std::cmp::Ordering;
-use std::sync::{Arc, Mutex};
+use std::cmp::{Ordering, PartialEq};
 use eframe::egui;
 use egui::{FontId, RichText};
+use wg_2024::controller::DroneEvent;
 use wg_2024::network::NodeId;
-use crate::sim_control::{LogEntry, SimulationControl};
+use crate::sim_control::{LogEntry, SimulationControl, Cause};
+use crate::sim_daniel::Scene::*;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id : NodeId,
     connections: Vec<NodeId>,
-
     selected: bool
 }
 
-impl Eq for MyNodes {
-
-}
+impl Eq for MyNodes {}
 
 impl PartialEq<Self> for MyNodes {
     fn eq(&self, other: &Self) -> bool {
@@ -40,9 +38,11 @@ pub enum Scene{
     Start,
     ManageAdd,
     ManageCrash,
+    ManageDrop,
+    ManageShortcut,
 }
 pub struct MyApp {
-    sim_contr: Arc<Mutex<SimulationControl>>,
+    sim_contr: SimulationControl,
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
@@ -50,9 +50,9 @@ pub struct MyApp {
 }
 
 impl MyApp {
-    pub(crate) fn new(sim_contr: Arc<Mutex<SimulationControl>>) -> Self {
+    pub(crate) fn new(sim_contr: SimulationControl) -> Self {
 
-        let network_graph = sim_contr.clone().lock().unwrap().network_graph.clone();
+        let network_graph = sim_contr.network_graph.clone();
         println!("i work ghere2");
 
         let mut vec: Vec<MyNodes> = Vec::new();
@@ -67,7 +67,7 @@ impl MyApp {
 
         let mut app = Self {
             nodes: vec,
-            scene: Scene::Start,
+            scene: Start,
             checked,
             sim_contr,
             pdr: 0.0
@@ -78,10 +78,8 @@ impl MyApp {
 
     pub fn update_topology(&mut self) {
         let id_to_selected = self.nodes.iter().map(|x|(x.id,x.selected)).collect::<Vec<(NodeId,bool)>>();
-
-
         self.nodes.clear();
-        let network_graph = self.sim_contr.lock().unwrap().network_graph.clone();
+        let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, neighbors) in network_graph {
             if id_to_selected.contains(&(node_id, true)) {
                 self.nodes.push(MyNodes { id: node_id, connections: neighbors, selected: true });
@@ -97,41 +95,6 @@ impl MyApp {
         }
     }
 
-    fn generate_random_connections(&mut self) {
-        let total_nodes = self.nodes.len();
-
-        for i in 0..total_nodes {
-            let num_connections = fastrand::usize(1..=3);
-            let mut connections = Vec::new();
-
-            while connections.len() < num_connections {
-                let random_index = fastrand::usize(0..total_nodes);
-
-                if random_index != i && !connections.contains(&self.nodes[random_index].id) {
-                    connections.push(self.nodes[random_index].id);
-                }
-            }
-
-            self.nodes[i].connections = connections;
-        }
-    }
-
-    fn retest(&mut self) {
-        self.nodes.clear();
-        self.checked.clear();
-        for _ in 0..fastrand::usize(12..18) {
-            let new_drone = MyNodes {
-                id: fastrand::u8(0..255),
-                connections: Vec::new(),
-                selected: false,
-            };
-            self.nodes.push(new_drone);
-            self.checked.push(false);
-        }
-        self.generate_random_connections();
-        println!("len: {:?} vec: {:?}", self.nodes.len(), self.nodes.clone());
-    }
-
 
     fn reset_check(&mut self) {
         self.checked.clear();
@@ -139,11 +102,25 @@ impl MyApp {
             self.checked.push(false);
         }
     }
+
+    pub fn manage_event(&mut self, event: DroneEvent) {
+        self.sim_contr.add_to_log(event.clone());
+        match event {
+            DroneEvent::PacketDropped(_packet) => {
+                self.scene = ManageDrop;
+            }
+            DroneEvent::ControllerShortcut(_packet) => {
+                self.scene = ManageShortcut;
+            }
+            _ => {},
+        }
+    }
 }
+
+
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
         let enable_constant_read = true;
         if enable_constant_read {
@@ -162,7 +139,7 @@ impl eframe::App for MyApp {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                         .show(ui, |ui| {
-                            for s in &self.sim_contr.lock().unwrap().log{
+                            for s in &self.sim_contr.log{
                                 ui.label(format!("{}", s));
                             }
                         });
@@ -172,26 +149,34 @@ impl eframe::App for MyApp {
         // SidePanel sulla sinistra
         egui::SidePanel::left("side_panel")
             .resizable(true)
+            .min_width(300.0)
             .show(ctx, |ui| {
                 ui.heading("Actions");
                 match self.scene {
-                    Scene::Start => {
-                        if ui.button("Retest!").clicked() {
-                            self.retest();
-                        }
+                    Start => {
                         if ui.button("test log!").clicked() {
-                            self.sim_contr.lock().unwrap().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
+                            self.sim_contr.log.push_back(LogEntry::new(Cause::Sent, fastrand::u8(0..10), "ciao".to_string()));
                         }
                         if ui.button("Add Drone!").clicked() {
-                            self.scene = Scene::ManageAdd;
+                            self.scene = ManageAdd;
                         }
                         if ui.button("remove Drone!").clicked() {
-                            self.scene = Scene::ManageCrash;
+                            self.scene = ManageCrash;
+                        }
+
+                        // for testing
+                        if ui.button("Test Drop").clicked() {
+                            self.sim_contr.log.push_back(LogEntry::new(Cause::Dropped, fastrand::u8(0..10), "ciao".to_string()));
+                            self.scene = ManageDrop;
+                        }
+                        if ui.button("Test Shortcut").clicked() {
+                            self.sim_contr.log.push_back(LogEntry::new(Cause::Shortcut, fastrand::u8(0..10), "ciao".to_string()));
+                            self.scene = ManageShortcut;
                         }
                     }
-                    Scene::ManageAdd => {
+                    ManageAdd => {
                         if ui.button("back").clicked() {
-                            self.scene = Scene::Start;
+                            self.scene = Start;
                             self.reset_check();
                             self.pdr = 0.0;
                         }
@@ -214,10 +199,10 @@ impl eframe::App for MyApp {
                                 .collect();
                             add_node(&checked_indices, self.pdr);
                             self.reset_check();
-                            self.scene = Scene::Start;
+                            self.scene = Start;
                         }
                     }
-                    Scene::ManageCrash => {
+                    ManageCrash => {
                         ui.separator();
                         ui.label("select drones to crash:");
                         ui.separator();
@@ -234,8 +219,35 @@ impl eframe::App for MyApp {
                                 .collect();
                             //add_node(&checked_indices);
                             self.reset_check();
-                            self.scene = Scene::Start;
+                            self.scene = Start;
                         }
+                    }
+                    ManageDrop => {
+                        ui.label("Packet has been dropped!");
+                        // Attempt to find the last dropped packet in the log
+                        if let Some(dropped_packet) = self.sim_contr.log.iter().rev()
+                            .find(|item| matches!(item.cause, Cause::Dropped))
+                        {
+                            // Display the dropped packet
+                            ui.label(format!("Here is the packet: {}", dropped_packet));
+
+                            // Options for handling the packet
+                            if ui.button("Resend it").clicked() {
+                                // TODO: Implement packet resend logic
+                            }
+                            if ui.button("Lose it").clicked() {
+                                self.scene = Start; // Navigate back to the start
+                            }
+                        } else {
+                            // Inform the user if recovery is not possible
+                            ui.label("Impossible to recover the packet.");
+                            if ui.button("Close").clicked() {
+                                self.scene = Start; // Close the alert
+                            }
+                        }
+                    }
+                    ManageShortcut => {
+                        //todo not sure wtf a shortcut does
                     }
                 }
             });
@@ -253,7 +265,7 @@ impl eframe::App for MyApp {
                         // Qui puoi aggiungere ulteriori informazioni o controlli
                         ui.label("Log:");
                         ui.vertical(|ui| {
-                            for s in &self.sim_contr.lock().unwrap().log {
+                            for s in &self.sim_contr.log {
                                 if s.get_id() == node.id {
                                 ui.label(format!("{}", s));
                                 }
@@ -332,6 +344,16 @@ impl eframe::App for MyApp {
                 }
             });
         });
+
+        match self.sim_contr.node_recv.try_recv(){
+            Ok(event) => {
+                //manage event
+                self.manage_event(event);
+            }
+            Err(_) => {
+                // println!("clearly not stucked");
+            }
+        }
     }
 
 
@@ -346,7 +368,7 @@ fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
 
 
 
-pub fn run_sim_dan(sim_control: Arc<Mutex<SimulationControl>>) -> Result<(), eframe::Error>{
+pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
     eframe::run_native(

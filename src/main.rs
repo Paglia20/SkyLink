@@ -23,7 +23,7 @@ fn main() {
         Switch::SimDaniel => {
             let (sim_contr, handles) = initialize("inputs/input_star.toml");
 
-            run_sim_dan(sim_contr.clone()).expect("TODO: panic message");
+            run_sim_dan(sim_contr).expect("TODO: panic message");
             for handle in handles.into_iter() {
                 handle.join().unwrap();
             }

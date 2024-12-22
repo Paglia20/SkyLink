@@ -1,4 +1,4 @@
-use crossbeam_channel::{select, unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::thread::JoinHandle;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
@@ -12,12 +12,13 @@ use crate::skylink_drone::drone::SkyLinkDrone;
 
 pub struct SimulationControl{
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
-    node_recv: Receiver<DroneEvent>,
+    pub(crate) node_recv: Receiver<DroneEvent>,
     channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
-    pub all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
+    pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, Vec<NodeId>>,
     pub(crate) log: VecDeque<LogEntry>,
 }
+
 
 impl SimulationControl{
     pub fn new(node_send: HashMap<NodeId, Sender<DroneCommand>>, node_recv: Receiver<DroneEvent>, channel_for_drone :Sender<DroneEvent> , all_sender_packets: HashMap<NodeId, Sender<Packet>>, network_graph: HashMap<NodeId, Vec<NodeId>>)->Self{
@@ -31,23 +32,13 @@ impl SimulationControl{
         }
     }
 
-    pub fn run(&mut self){
-        loop{
-            select! {
-            recv(self.node_recv) -> e =>{
-                    if let Ok(event) = e {
-                        self.add_to_log(event);
-                    }
-                }
-            }
-        }
-    }
 
     pub(crate) fn add_to_log(&mut self, e: DroneEvent){
         match e {
             DroneEvent::PacketSent(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
                 let new_log = LogEntry{
+                    cause: Cause::Sent,
                     node_id: *id_drone,
                     message: format!("Sent fragment {:?} of type: {:?}",packet.session_id, packet.pack_type),
                 };
@@ -56,6 +47,7 @@ impl SimulationControl{
             DroneEvent::PacketDropped(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
                 let new_log = LogEntry{
+                    cause: Cause::Dropped,
                     node_id: *id_drone,
                     message: format!("Dropped fragment {:?} of type: {:?}",packet.session_id, packet.pack_type)
                 };
@@ -64,8 +56,9 @@ impl SimulationControl{
             DroneEvent::ControllerShortcut(packet) => {
                 let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
                 let new_log = LogEntry{
+                    cause: Cause::Shortcut,
                     node_id: *id_drone,
-                    message: format!("Sent shortcut {:?}", packet.pack_type)
+                    message: format!("Sent shortcut for type {:?}", packet.pack_type)
                 };
                 self.log.push_back(new_log);
             }
@@ -140,7 +133,7 @@ impl SimulationControl{
                 if let Some(to_be_dropped) = self.node_send.remove(&id){
                     drop(to_be_dropped);
                 }
-                self.log.push_back(LogEntry::new(id, "Node crashed".to_string()));
+                self.log.push_back(LogEntry::new(Cause::Managing ,id, "Node crashed".to_string()));
             }
         } else {
             println!("drone {} not found in the network.", id);
@@ -152,7 +145,7 @@ impl SimulationControl{
                 println!("error in removing drone {} from drone {} senders", id_to_remove, id);
             } else {
                 println!("drone {} removed from drone {} senders", id_to_remove, id);
-                self.log.push_back(LogEntry::new(id, format!("drone {} removed from senders", id_to_remove)));
+                self.log.push_back(LogEntry::new(Cause::Managing, id, format!("drone {} removed from senders", id_to_remove)));
             }
         }
     }
@@ -164,7 +157,7 @@ impl SimulationControl{
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
                     println!("drone {} added to drone {} senders", id_to_add, id);
-                    self.log.push_back(LogEntry::new(id, format!("drone {} added to senders", id_to_add)));
+                    self.log.push_back(LogEntry::new(Cause::Managing, id, format!("drone {} added to senders", id_to_add)));
                 }
             }
         }
@@ -176,20 +169,29 @@ impl SimulationControl{
                 println!("error in setting drone {} pdr to {}", id, pdr);
             } else {
                 println!("setting drone {} pdr to {}", id, pdr);
-                self.log.push_back(LogEntry::new(id, format!("drone now has pdr set to {}", pdr)));
+                self.log.push_back(LogEntry::new(Cause::Managing, id, format!("drone now has pdr set to {}", pdr)));
             }
         }
     }
 
 }
 
+pub enum Cause{
+    Dropped,
+    Sent,
+    Shortcut,
+    Managing, //this cause is for the log entry "caused" by manipulation of the SC
+}
+
+
 pub struct LogEntry {
-    node_id: NodeId,
-    message: String,
+   pub cause: Cause,
+   pub node_id: NodeId,
+   pub message: String,
 }
 impl LogEntry {
-    pub fn new(node_id: NodeId, message: String) -> LogEntry {
-        LogEntry{node_id, message}
+    pub fn new(cause: Cause, node_id: NodeId, message: String) -> LogEntry {
+        LogEntry{cause, node_id, message}
     }
     pub fn get_id(&self) -> NodeId {
         self.node_id

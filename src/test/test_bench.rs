@@ -83,7 +83,7 @@ fn event_printer(event: DroneEvent) {
     }
 }
 
-fn create_packet(hops: Vec<NodeId>) -> Packet {
+pub fn create_packet(hops: Vec<NodeId>) -> Packet {
     Packet {
         pack_type: PacketType::MsgFragment(Fragment {
             fragment_index: 0,
