@@ -4,6 +4,7 @@ use egui::{FontId, RichText, Vec2};
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
+use wg_2024::packet::NodeType;
 use crate::sim_control::{LogEntry, SimulationControl, Cause};
 use crate::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
@@ -55,7 +56,6 @@ impl MyApp {
     pub(crate) fn new(sim_contr: SimulationControl) -> Self {
 
         let network_graph = sim_contr.network_graph.clone();
-        println!("i work ghere2");
 
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
@@ -397,29 +397,3 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
 
 
 
-
-/*
-feel free to update this list.
-STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
-
-STRICTLY FOR SIM APP PART:
-- TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
-0) add field in MyNodes that tell the Type of the Node (NodeType).
-2) add in each pop up what type the node is (client/server)
-
-the field node type is important also because the pop up has to have different buttons depending on the type:
-
-//please help me here:
-drone: crash? /...
-client: send flood req / send message to (open a manage) / ..
-server:...
-
---test everything, then continue with other things
-
-6) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
-7) add bottons in the pop ups for clients/servers that send flood req or certain messages
-8) at the end, change the circles in drones/clients/server small entities, so you have to change the creation accordingly to nodetype (matches again)
-
-(.. more to come)
-
- */

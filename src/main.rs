@@ -1,18 +1,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use crate::sim_daniel::*;
 use crate::test::test_bench::*;
 use crate::initializer::initialize;
-use crate::sim_control::SimulationControl;
+use crate::simulation_control::*;
+use crate::simulation_control::sim_daniel::run_sim_dan;
 
-mod sim_sam;
-mod sim_control;
+mod simulation_control;
 mod initializer;
 mod skylink_drone;
 mod test;
-mod sim_daniel;
-
 
 fn main() {
     // println!("Hello, world!");

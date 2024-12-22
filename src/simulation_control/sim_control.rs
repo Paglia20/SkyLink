@@ -159,6 +159,7 @@ impl SimulationControl{
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
                     println!("drone {} added to drone {} senders", id_to_add, id);
+                    //add sender in network_graph hashmap too !!
                     self.log.push_back(LogEntry::new(Cause::Managing, id, format!("drone {} added to senders", id_to_add)));
                 }
             }
