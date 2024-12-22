@@ -4,21 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-toml = "0.8.19"
+# AP main library.
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
+# All the imported drones
+d-r-o-n-e_drone = { git = "https://github.com/AP-2024-25-D-R-O-N-E/drone.git"}
+fungi_drone = { git = "https://github.com/Fungi-B-D/Fungi-Drone.git" }
+wg_2024-rust = { git = "https://github.com/LuigiMiazzo17/unitn-advancedProgramming-WGL_2024-drone.git" }
+lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
+rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git"}
+getdroned = { git = "https://github.com/GetDroned/Drone.git", features = ["log"] }
+# Other dependencies
+toml = "0.8.19"
 crossbeam-channel = "0.5.13"
 fastrand = "2.2.0"
 egui = "0.29.1"
 eframe = "0.29.1"
 winapi = { version = "0.3", features = ["winuser"] }
 image = "0.25.5"
-d-r-o-n-e_drone = { git = "https://github.com/AP-2024-25-D-R-O-N-E/drone.git"}
-fungi_drone = { git = "https://github.com/Fungi-B-D/Fungi-Drone.git" }
-wg_2024-rust = { git = "https://github.com/LuigiMiazzo17/unitn-advancedProgramming-WGL_2024-drone.git" }
-lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
-rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git"}
 flexi_logger = "0.29.6"
 log = "0.4"
-getdroned = { git = "https://github.com/GetDroned/Drone.git", features = ["log"] }
 serde = "1.0.216"
 serde_json = "1.0.134"

@@ -1,10 +1,10 @@
-use crate::message::{ChatRequest, ChatResponse, MessageType, Message, Request, Response};
+use crate::message::{ChatRequest, ChatResponse, Message, MessageType, Request, Response};
 use wg_2024::network::*;
 
 pub enum ServerType {
     Chat,
     Content,
-    Media //I'm not 100% sure these were the right ones.
+    Media, //I'm not 100% sure these were the right ones.
 }
 
 pub trait Server {

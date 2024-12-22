@@ -1,9 +1,7 @@
 use crate::message::{ChatRequest, ChatResponse};
 use crate::server_trait::{Server, ServerType};
 
-pub struct ChatServer{
-
-}
+pub struct ChatServer {}
 
 impl Server for ChatServer {
     type RequestType = ChatRequest;
