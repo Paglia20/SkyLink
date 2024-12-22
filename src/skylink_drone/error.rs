@@ -6,20 +6,24 @@ pub fn create_error(starting_id: NodeId, packet: Packet, nack_type: NackType) ->
     if let PacketType::MsgFragment(msg_fragment) = packet.pack_type {
         fragment_index = msg_fragment.fragment_index;
     }
-    let position = packet.routing_header.hops
+    let position = packet
+        .routing_header
+        .hops
         .iter()
-        .position(|x| *x == starting_id).unwrap();
+        .position(|x| *x == starting_id)
+        .unwrap();
     Packet {
-        pack_type: PacketType::Nack(Nack{
+        pack_type: PacketType::Nack(Nack {
             fragment_index,
             nack_type,
         }),
-        routing_header: SourceRoutingHeader{
+        routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: packet.routing_header.hops[0..position + 1].to_vec()
+            hops: packet.routing_header.hops[0..position + 1]
+                .to_vec()
                 .into_iter()
                 .rev()
-                .collect::<Vec<NodeId>>()
+                .collect::<Vec<NodeId>>(),
         },
         session_id: packet.session_id,
     }

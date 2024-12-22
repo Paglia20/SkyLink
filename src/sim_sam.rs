@@ -1,10 +1,10 @@
+use crate::sim_control::SimulationControl;
+use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
+use eframe::{App, Frame, NativeOptions};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use eframe::egui::{self, Color32, Context, TextureHandle, Vec2};
-use eframe::{App, Frame, NativeOptions};
-use crate::sim_control::SimulationControl;
 
 struct Drone {
     id: String,
@@ -12,7 +12,6 @@ struct Drone {
     is_crashed: bool,
     pdr: f32,
 }
-
 
 pub struct SimulationApp {
     drones: Vec<Drone>,
@@ -25,8 +24,8 @@ pub struct SimulationApp {
     new_drone_index: Option<usize>,
     sim_contr: Arc<RefCell<SimulationControl>>,
     connection_selections: Vec<bool>,
-    log_panel_width: f32,        // Width of the log panel
-    control_panel_width: f32,   // Width of the control panel
+    log_panel_width: f32,     // Width of the log panel
+    control_panel_width: f32, // Width of the control panel
 }
 
 impl SimulationApp {
@@ -46,7 +45,6 @@ impl SimulationApp {
             });
             drone_map.insert(node_id.clone(), index);
         }
-
 
         let mut connections = Vec::new();
         for (node_id, neighbors) in &network_graph {
@@ -70,11 +68,10 @@ impl SimulationApp {
             new_drone_index: None,
             connection_selections: vec![false; network_graph.len()],
             sim_contr,
-            log_panel_width: 200.0,    // Default guess for the left panel width
+            log_panel_width: 200.0, // Default guess for the left panel width
             control_panel_width: 200.0, // Default guess for the right panel width
         }
     }
-
 
     fn load_drone_image(&mut self, ctx: &Context) {
         if self.drone_texture.is_none() {
@@ -97,7 +94,6 @@ impl SimulationApp {
         let window_size = ui.available_size();
         let left_limit = self.log_panel_width; // Left boundary
         let right_limit = window_size.x - self.control_panel_width; // Right boundary
-
 
         for (i, drone) in self.drones.iter_mut().enumerate() {
             let color_overlay = if drone.is_crashed {
@@ -127,12 +123,11 @@ impl SimulationApp {
 
                 if let Some(dragging_idx) = self.dragging_drone {
                     if dragging_idx == i {
-
                         // Calcola la nuova posizione limitata del drone
                         let new_x = (drone.position.x + response.drag_delta().x)
                             .clamp(left_limit, right_limit - size.x); // Limita la posizione orizzontale
                         let new_y = (drone.position.y + response.drag_delta().y)
-                            .clamp(20.0, window_size.y - size.y);  // Limita la posizione verticale
+                            .clamp(20.0, window_size.y - size.y); // Limita la posizione verticale
 
                         // Assegna la nuova posizione al drone
                         drone.position = Vec2::new(new_x, new_y);
@@ -147,10 +142,7 @@ impl SimulationApp {
             ui.painter().image(
                 texture.id(),
                 rect,
-                egui::Rect::from_min_size(
-                    egui::Pos2::new(0.0, 0.0),
-                    Vec2::new(1.0, 1.0),
-                ),
+                egui::Rect::from_min_size(egui::Pos2::new(0.0, 0.0), Vec2::new(1.0, 1.0)),
                 color_overlay,
             );
 
@@ -170,7 +162,10 @@ impl SimulationApp {
             let pos2 = self.drones[j].position + Vec2::new(25.0, 25.0);
 
             ui.painter().line_segment(
-                [egui::Pos2::new(pos1.x, pos1.y), egui::Pos2::new(pos2.x, pos2.y)],
+                [
+                    egui::Pos2::new(pos1.x, pos1.y),
+                    egui::Pos2::new(pos2.x, pos2.y),
+                ],
                 (2.0, Color32::GREEN),
             );
         }
@@ -213,7 +208,6 @@ impl SimulationApp {
             self.log.push(format!("{} added", new_id));
         }
     }
-
 
     fn handle_selection(&mut self, ui: &mut egui::Ui) {
         if let Some(idx) = self.selected_drone {
@@ -258,8 +252,7 @@ impl SimulationApp {
                                 self.connections.push((new_drone_index, idx));
                                 self.log.push(format!(
                                     "Connected {} to {}",
-                                    self.drones[new_drone_index].id,
-                                    self.drones[idx].id
+                                    self.drones[new_drone_index].id, self.drones[idx].id
                                 ));
                             }
                         }
@@ -272,7 +265,6 @@ impl SimulationApp {
                 });
         }
     }
-
 }
 
 impl App for SimulationApp {
@@ -318,10 +310,8 @@ impl App for SimulationApp {
                     }
                 });
             });
-
     }
 }
-
 
 pub fn run_simulation_gui(sim_contr: Arc<RefCell<SimulationControl>>) {
     let mut options = NativeOptions::default();
@@ -330,5 +320,6 @@ pub fn run_simulation_gui(sim_contr: Arc<RefCell<SimulationControl>>) {
         "SkyLink Simulation",
         options,
         Box::new(|_cc| Ok(Box::new(SimulationApp::new(sim_contr)))),
-    ).expect("Failed to start GUI");
+    )
+    .expect("Failed to start GUI");
 }

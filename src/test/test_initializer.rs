@@ -1,13 +1,13 @@
-use std::{fs, thread};
-use std::thread::JoinHandle;
-use std::collections::HashMap;
+use crate::skylink_drone::drone::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use std::collections::HashMap;
+use std::thread::JoinHandle;
+use std::{fs, thread};
 use wg_2024::config::Config;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId};
-use wg_2024::packet::{Packet};
-use crate::skylink_drone::drone::SkyLinkDrone;
+use wg_2024::network::NodeId;
+use wg_2024::packet::Packet;
 
 pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
@@ -34,7 +34,6 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
         packet_receivers.insert(client.id, recv);
     }
 
-
     for drone in config.drone.into_iter() {
         //Adding the sender to this drone to the senders of the Sim Contr.
         let (contr_send, contr_recv) = unbounded();
@@ -53,10 +52,16 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
 
         //println!("Drone {} - channels:\n{:?}",drone.id, drone_send);
 
-
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
-            let mut drone = SkyLinkDrone::new(drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr);
+            let mut drone = SkyLinkDrone::new(
+                drone.id,
+                node_event_send,
+                contr_recv,
+                drone_recv,
+                drone_send,
+                drone.pdr,
+            );
             drone.run();
         }));
     }
@@ -64,7 +69,8 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
     let mut my_clients = Vec::new();
     for client in config.client.into_iter() {
         let client_recv = packet_receivers.remove(&client.id).unwrap();
-        let client_send = client.clone()
+        let client_send = client
+            .clone()
             .connected_drone_ids
             .into_iter()
             .map(|id| (id, packet_senders[&id].clone()))
@@ -74,7 +80,7 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
         my_clients.push(MyClient {
             id: client.id,
             client_send,
-            client_recv
+            client_recv,
         });
     }
 
@@ -85,7 +91,6 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
         // packet_senders,
         // network_graph
     };
-
 
     (sim_contr, my_clients, handles)
 }
@@ -99,10 +104,10 @@ fn parse_config(file: &str) -> Config {
 pub struct MyClient {
     pub id: NodeId,
     pub client_send: HashMap<NodeId, Sender<Packet>>,
-    pub client_recv: Receiver<Packet>
+    pub client_recv: Receiver<Packet>,
 }
 pub struct MySimContr {
-    pub command_send: HashMap<NodeId,Sender<DroneCommand>>,
+    pub command_send: HashMap<NodeId, Sender<DroneCommand>>,
     pub event_recv: Receiver<DroneEvent>,
     // pub event_send: Sender<DroneEvent>,
     // pub packet_senders,
