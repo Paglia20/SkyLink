@@ -92,7 +92,7 @@ pub fn create_packet(hops: Vec<NodeId>) -> Packet {
             data: [1; 128],
         }),
         routing_header: SourceRoutingHeader {
-            hop_index: 0,
+            hop_index: 1,
             hops,
         },
         session_id: 1,

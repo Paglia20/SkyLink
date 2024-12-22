@@ -13,7 +13,7 @@ use crate::skylink_drone::drone::SkyLinkDrone;
 pub struct SimulationControl{
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
     pub(crate) node_recv: Receiver<DroneEvent>,
-    channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo
+    pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, Vec<NodeId>>,
     pub(crate) log: VecDeque<LogEntry>,
@@ -35,8 +35,10 @@ impl SimulationControl{
 
     pub(crate) fn add_to_log(&mut self, e: DroneEvent){
         match e {
+
+            //index of the get might be wrong, either hop_index -1 either hop_index... double check please
             DroneEvent::PacketSent(packet) => {
-                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap();
                 let new_log = LogEntry{
                     cause: Cause::Sent,
                     node_id: *id_drone,
@@ -45,7 +47,7 @@ impl SimulationControl{
                 self.log.push_back(new_log);
             }
             DroneEvent::PacketDropped(packet) => {
-                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap();
                 let new_log = LogEntry{
                     cause: Cause::Dropped,
                     node_id: *id_drone,
@@ -54,7 +56,7 @@ impl SimulationControl{
                 self.log.push_back(new_log);
             }
             DroneEvent::ControllerShortcut(packet) => {
-                let id_drone = packet.routing_header.hops.get(packet.routing_header.hops.len() -1).unwrap();
+                let id_drone = packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap();
                 let new_log = LogEntry{
                     cause: Cause::Shortcut,
                     node_id: *id_drone,

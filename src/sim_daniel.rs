@@ -2,9 +2,11 @@ use std::cmp::{Ordering, PartialEq};
 use eframe::egui;
 use egui::{FontId, RichText};
 use wg_2024::controller::DroneEvent;
+use wg_2024::controller::DroneEvent::PacketDropped;
 use wg_2024::network::NodeId;
 use crate::sim_control::{LogEntry, SimulationControl, Cause};
 use crate::sim_daniel::Scene::*;
+use crate::test::test_bench::create_packet;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -166,8 +168,12 @@ impl eframe::App for MyApp {
 
                         // for testing
                         if ui.button("Test Drop").clicked() {
-                            self.sim_contr.log.push_back(LogEntry::new(Cause::Dropped, fastrand::u8(0..10), "ciao".to_string()));
-                            self.scene = ManageDrop;
+                            let msg = create_packet(vec![0,1,8]);
+                            let drop = PacketDropped(msg);
+                            match self.sim_contr.channel_for_drone.try_send(drop){
+                                Ok(_) => {println!("sent dropping")},
+                                Err(_) => {println!("error dropping packet");}
+                            }
                         }
                         if ui.button("Test Shortcut").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(Cause::Shortcut, fastrand::u8(0..10), "ciao".to_string()));
@@ -385,12 +391,6 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
 /*
 feel free to update this list.
 STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
-
-STRICTLY FOR SIM CONTROL PART:
-1) correct spawn, and remove NODES. not only drones anymore
-2) change accordingly to sim app parts
-3) probably is in great part to be redone, but it's a good start i think
-
 
 STRICTLY FOR SIM APP PART:
 - TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
