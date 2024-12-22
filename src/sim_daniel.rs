@@ -385,7 +385,6 @@ fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
 pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
-    options.viewport.
     // options.viewport.fullscreen = Option::from(true);
     options.viewport.min_inner_size = Option::from(Vec2::new(1400.0, 800.0));
     eframe::run_native(
