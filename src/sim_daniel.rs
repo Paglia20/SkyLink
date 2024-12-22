@@ -1,8 +1,8 @@
 use std::cmp::{Ordering, PartialEq};
 use eframe::egui;
-use egui::{FontId, RichText};
+use egui::{FontId, RichText, Vec2};
 use wg_2024::controller::DroneEvent;
-use wg_2024::controller::DroneEvent::PacketDropped;
+use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use crate::sim_control::{LogEntry, SimulationControl, Cause};
 use crate::sim_daniel::Scene::*;
@@ -176,8 +176,12 @@ impl eframe::App for MyApp {
                             }
                         }
                         if ui.button("Test Shortcut").clicked() {
-                            self.sim_contr.log.push_back(LogEntry::new(Cause::Shortcut, fastrand::u8(0..10), "ciao".to_string()));
-                            self.scene = ManageShortcut;
+                            let msg = create_packet(vec![0,1,8]);
+                            let cs_shortcut = ControllerShortcut(msg);
+                            match self.sim_contr.channel_for_drone.try_send(cs_shortcut){
+                                Ok(_) => {println!("sent through shortcut")},
+                                Err(_) => {println!("error through shortcut");}
+                            }
                         }
                     }
                     ManageAdd => {
@@ -254,6 +258,10 @@ impl eframe::App for MyApp {
                     }
                     ManageShortcut => {
                         //todo not sure wtf a shortcut does
+
+                        if ui.button("Close").clicked() {
+                            self.scene = Start; // Close the alert
+                        }
                     }
                 }
             });
@@ -377,6 +385,9 @@ fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
 pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
+    options.viewport.
+    // options.viewport.fullscreen = Option::from(true);
+    options.viewport.min_inner_size = Option::from(Vec2::new(1400.0, 800.0));
     eframe::run_native(
         "SkyLink Interface 1",
         options,
