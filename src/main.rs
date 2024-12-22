@@ -12,7 +12,9 @@ mod initializer;
 mod skylink_drone;
 mod test;
 mod sim_daniel;
-
+mod message;
+mod server_trait;
+mod server_chat;
 
 fn main() {
     // println!("Hello, world!");
