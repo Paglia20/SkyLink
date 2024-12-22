@@ -1,15 +1,17 @@
+use crate::initializer::initialize;
+use crate::simulation_control::{sim_control, sim_daniel::*};
+use crate::test::test_bench::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use crate::test::test_bench::*;
-use crate::initializer::initialize;
-use crate::simulation_control::*;
-use crate::simulation_control::sim_daniel::run_sim_dan;
 
-mod simulation_control;
 mod initializer;
+mod message;
+mod server_chat;
+mod server_trait;
 mod skylink_drone;
 mod test;
+mod simulation_control;
 
 fn main() {
     // println!("Hello, world!");
@@ -27,7 +29,7 @@ fn main() {
         }
         Switch::SimSam => {
             let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
-           // sim_sam::run_simulation_gui(sim_contr.clone()).expect("TODO: panic message");
+            // sim_sam::run_simulation_gui(sim_contr.clone()).expect("TODO: panic message");
             for handle in handles.into_iter() {
                 handle.join().unwrap();
             }
@@ -50,11 +52,8 @@ fn main() {
     }
 }
 
-
-
 enum Switch {
     Test,
     SimDaniel,
     SimSam,
 }
-

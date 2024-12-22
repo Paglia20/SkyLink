@@ -1,19 +1,18 @@
-use std::cmp::{Ordering, PartialEq};
+use crate::sim_control::{Cause, LogEntry, SimulationControl};
+use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
+use std::cmp::{Ordering, PartialEq};
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
-use wg_2024::packet::NodeType;
-use crate::sim_control::{LogEntry, SimulationControl, Cause};
-use crate::sim_daniel::Scene::*;
-use crate::test::test_bench::create_packet;
+use crate::simulation_control::sim_daniel::Scene::*;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
-    id : NodeId,
+    id: NodeId,
     connections: Vec<NodeId>,
-    selected: bool
+    selected: bool,
 }
 
 impl Eq for MyNodes {}
@@ -31,13 +30,12 @@ impl PartialOrd<Self> for MyNodes {
 }
 
 impl Ord for MyNodes {
-    fn cmp(&self, other: &Self) ->Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.id.cmp(&other.id)
     }
 }
 
-
-pub enum Scene{
+pub enum Scene {
     Start,
     ManageAdd,
     ManageCrash,
@@ -49,20 +47,24 @@ pub struct MyApp {
     nodes: Vec<MyNodes>,
     scene: Scene,
     checked: Vec<bool>,
-    pdr: f32
+    pdr: f32,
 }
 
 impl MyApp {
     pub(crate) fn new(sim_contr: SimulationControl) -> Self {
-
         let network_graph = sim_contr.network_graph.clone();
+        println!("i work ghere2");
 
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
         let mut selected_nodes = Vec::new();
 
         for (node_id, neighbors) in network_graph {
-            vec.push(MyNodes{id : node_id, connections: neighbors, selected: false});
+            vec.push(MyNodes {
+                id: node_id,
+                connections: neighbors,
+                selected: false,
+            });
             checked.push(false);
             selected_nodes.push(false);
         }
@@ -72,31 +74,44 @@ impl MyApp {
             scene: Start,
             checked,
             sim_contr,
-            pdr: 0.0
+            pdr: 0.0,
         };
         //app.generate_random_connections();
         app
     }
 
     pub fn update_topology(&mut self) {
-        let id_to_selected = self.nodes.iter().map(|x|(x.id,x.selected)).collect::<Vec<(NodeId,bool)>>();
+        let id_to_selected = self
+            .nodes
+            .iter()
+            .map(|x| (x.id, x.selected))
+            .collect::<Vec<(NodeId, bool)>>();
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, neighbors) in network_graph {
             if id_to_selected.contains(&(node_id, true)) {
-                self.nodes.push(MyNodes { id: node_id, connections: neighbors, selected: true });
-            }
-            else if id_to_selected.contains(&(node_id, false)) {
-                self.nodes.push(MyNodes{id: node_id, connections: neighbors, selected: false});
-            }
-            else {
+                self.nodes.push(MyNodes {
+                    id: node_id,
+                    connections: neighbors,
+                    selected: true,
+                });
+            } else if id_to_selected.contains(&(node_id, false)) {
+                self.nodes.push(MyNodes {
+                    id: node_id,
+                    connections: neighbors,
+                    selected: false,
+                });
+            } else {
                 //if there are new elements, add and make those checkable
-                self.nodes.push(MyNodes{id: node_id, connections: neighbors, selected: false});
+                self.nodes.push(MyNodes {
+                    id: node_id,
+                    connections: neighbors,
+                    selected: false,
+                });
                 self.checked.push(false);
             }
         }
     }
-
 
     fn reset_check(&mut self) {
         self.checked.clear();
@@ -114,12 +129,10 @@ impl MyApp {
             DroneEvent::ControllerShortcut(_packet) => {
                 self.scene = ManageShortcut;
             }
-            _ => {},
+            _ => {}
         }
     }
 }
-
-
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -135,13 +148,15 @@ impl eframe::App for MyApp {
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)));
+                    ui.label(
+                        RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)),
+                    );
                 });
                 ui.vertical(|ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                         .show(ui, |ui| {
-                            for s in &self.sim_contr.log{
+                            for s in &self.sim_contr.log {
                                 ui.label(format!("{}", s));
                             }
                         });
@@ -157,7 +172,11 @@ impl eframe::App for MyApp {
                 match self.scene {
                     Start => {
                         if ui.button("test log!").clicked() {
-                            self.sim_contr.log.push_back(LogEntry::new(Cause::Sent, fastrand::u8(0..10), "ciao".to_string()));
+                            self.sim_contr.log.push_back(LogEntry::new(
+                                Cause::Sent,
+                                fastrand::u8(0..10),
+                                "ciao".to_string(),
+                            ));
                         }
                         if ui.button("Add Drone!").clicked() {
                             self.scene = ManageAdd;
@@ -168,19 +187,27 @@ impl eframe::App for MyApp {
 
                         // for testing
                         if ui.button("Test Drop").clicked() {
-                            let msg = create_packet(vec![0,1,8]);
+                            let msg = create_packet(vec![0, 1, 8]);
                             let drop = PacketDropped(msg);
-                            match self.sim_contr.channel_for_drone.try_send(drop){
-                                Ok(_) => {println!("sent dropping")},
-                                Err(_) => {println!("error dropping packet");}
+                            match self.sim_contr.channel_for_drone.try_send(drop) {
+                                Ok(_) => {
+                                    println!("sent dropping")
+                                }
+                                Err(_) => {
+                                    println!("error dropping packet");
+                                }
                             }
                         }
                         if ui.button("Test Shortcut").clicked() {
-                            let msg = create_packet(vec![0,1,8]);
+                            let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);
-                            match self.sim_contr.channel_for_drone.try_send(cs_shortcut){
-                                Ok(_) => {println!("sent through shortcut")},
-                                Err(_) => {println!("error through shortcut");}
+                            match self.sim_contr.channel_for_drone.try_send(cs_shortcut) {
+                                Ok(_) => {
+                                    println!("sent through shortcut")
+                                }
+                                Err(_) => {
+                                    println!("error through shortcut");
+                                }
                             }
                         }
                     }
@@ -205,7 +232,13 @@ impl eframe::App for MyApp {
                                 .checked
                                 .iter()
                                 .enumerate()
-                                .filter_map(|(i, &is_checked)| if is_checked { Some(self.nodes[i].id) } else { None })
+                                .filter_map(|(i, &is_checked)| {
+                                    if is_checked {
+                                        Some(self.nodes[i].id)
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .collect();
                             add_node(&checked_indices, self.pdr);
                             self.reset_check();
@@ -225,7 +258,13 @@ impl eframe::App for MyApp {
                                 .checked
                                 .iter()
                                 .enumerate()
-                                .filter_map(|(i, &is_checked)| if is_checked { Some(self.nodes[i].id) } else { None })
+                                .filter_map(|(i, &is_checked)| {
+                                    if is_checked {
+                                        Some(self.nodes[i].id)
+                                    } else {
+                                        None
+                                    }
+                                })
                                 .collect();
                             //add_node(&checked_indices);
                             self.reset_check();
@@ -235,7 +274,11 @@ impl eframe::App for MyApp {
                     ManageDrop => {
                         ui.label("Packet has been dropped!");
                         // Attempt to find the last dropped packet in the log
-                        if let Some(dropped_packet) = self.sim_contr.log.iter().rev()
+                        if let Some(dropped_packet) = self
+                            .sim_contr
+                            .log
+                            .iter()
+                            .rev()
                             .find(|item| matches!(item.cause, Cause::Dropped))
                         {
                             // Display the dropped packet
@@ -281,7 +324,7 @@ impl eframe::App for MyApp {
                         ui.vertical(|ui| {
                             for s in &self.sim_contr.log {
                                 if s.get_id() == node.id {
-                                ui.label(format!("{}", s));
+                                    ui.label(format!("{}", s));
                                 }
                             }
                         });
@@ -331,7 +374,8 @@ impl eframe::App for MyApp {
                 }
 
                 for (index, value) in self.nodes.iter_mut().enumerate() {
-                    let rect = egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
+                    let rect =
+                        egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
                     let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
 
                     let circle_color = if value.selected {
@@ -359,7 +403,7 @@ impl eframe::App for MyApp {
             });
         });
 
-        match self.sim_contr.node_recv.try_recv(){
+        match self.sim_contr.node_recv.try_recv() {
             Ok(event) => {
                 //manage event
                 self.manage_event(event);
@@ -369,20 +413,13 @@ impl eframe::App for MyApp {
             }
         }
     }
-
-
 }
 
 fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
     // SimulationControl::spawn_node(&mut , pdr, checked_indices.clone());
 }
 
-
-
-
-
-
-pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
+pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> {
     let mut options = eframe::NativeOptions::default();
     options.run_and_return = false;
     // options.viewport.fullscreen = Option::from(true);
@@ -394,6 +431,28 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error>{
     )
 }
 
+/*
+feel free to update this list.
+STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
 
+STRICTLY FOR SIM APP PART:
+- TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
+0) add field in MyNodes that tell the Type of the Node (NodeType).
+2) add in each pop up what type the node is (client/server)
 
+the field node type is important also because the pop up has to have different buttons depending on the type:
 
+//please help me here:
+drone: crash? /...
+client: send flood req / send message to (open a manage) / ..
+server:...
+
+--test everything, then continue with other things
+
+6) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
+7) add bottons in the pop ups for clients/servers that send flood req or certain messages
+8) at the end, change the circles in drones/clients/server small entities, so you have to change the creation accordingly to nodetype (matches again)
+
+(.. more to come)
+
+ */
