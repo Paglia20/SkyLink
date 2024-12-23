@@ -49,8 +49,9 @@ pub enum TextResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
     MediaList(Vec<u64>),
-    Media(Vec<u8>), // should we use some other type?
+    Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway i don't get the type inside MediaList
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
     ClientList(Vec<NodeId>),
