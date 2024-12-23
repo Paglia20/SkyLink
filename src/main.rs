@@ -12,6 +12,7 @@ mod server_trait;
 mod skylink_drone;
 mod test;
 mod simulation_control;
+mod clients_gio;
 
 fn main() {
     // println!("Hello, world!");
@@ -47,7 +48,7 @@ fn main() {
             // test_tree_flood();
             // test_drone_commands();
             // test_busy_network();
-            test_log()
+            // test_log()  //todo
         }
     }
 }
