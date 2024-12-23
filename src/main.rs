@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 mod initializer;
 mod message;
-mod server_chat;
-mod server_trait;
 mod skylink_drone;
 mod test;
 mod simulation_control;
 mod clients_gio;
+mod server;
+mod network_edge;
 
 fn main() {
     // println!("Hello, world!");

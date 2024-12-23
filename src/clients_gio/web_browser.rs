@@ -3,9 +3,9 @@ use crossbeam_channel::{Receiver, Sender};
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 use crate::clients_gio::client_trait::{Client, ClientType};
-use crate::clients_gio::command::{ClientCommand, ClientEvent};
-use crate::message::{ChatRequest, ChatResponse, Request, Response, TextRequest, TextResponse};
-use crate::server_trait::ServerType;
+use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::message::{TextRequest, TextResponse};
+use crate::network_edge::NetworkEdge;
 
 pub struct WebBrowser {
     client_type: ClientType,
@@ -19,10 +19,11 @@ pub struct WebBrowser {
     paths: HashMap<NodeId, Vec<NodeId>>, //lui ha bisogno di parlare solo con content server, di cui non occorre specificare il type visto che sarà un textserver
 }
 
-impl Client for WebBrowser {
+impl NetworkEdge for WebBrowser {
     type RequestType = TextRequest;
     type ResponseType = TextResponse;
-
+}
+impl Client for WebBrowser {
     fn new(id: NodeId, event_send: Sender<ClientEvent>, command_recv: Receiver<ClientCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
         WebBrowser{
             client_type: ClientType::WebBrowser,

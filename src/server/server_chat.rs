@@ -1,12 +1,16 @@
 use crate::message::{ChatRequest, ChatResponse};
-use crate::server_trait::{Server, ServerType};
+use crate::network_edge::NetworkEdge;
+use crate::server::server_trait::{Server};
+use crate::server::server_type::ServerType;
 
 pub struct ChatServer {}
 
-impl Server for ChatServer {
+impl NetworkEdge for ChatServer {
     type RequestType = ChatRequest;
     type ResponseType = ChatResponse;
 
+}
+impl Server for ChatServer {
     fn handle_request(&mut self, request: Self::RequestType) -> Self::ResponseType {
         match request {
             ChatRequest::ClientList => {

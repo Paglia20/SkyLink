@@ -1,29 +1,8 @@
-use crate::message::{ChatRequest, ChatResponse, Message, MessageType, Request, Response};
 use wg_2024::network::*;
+use crate::network_edge::NetworkEdge;
+use crate::server::server_type::ServerType;
 
-pub enum ServerType {
-    Chat,
-    Content,
-    Media, //I'm not 100% sure these were the right ones.
-}
-
-pub trait Server {
-    type RequestType: Request;
-    type ResponseType: Response;
-
-    fn compose_message(
-        source_id: NodeId,
-        session_id: u64,
-        raw_content: String,
-    ) -> Result<Message<Self::RequestType>, String> {
-        let content = Self::RequestType::from_string(raw_content)?;
-        Ok(Message {
-            session_id,
-            source_id,
-            content,
-        })
-    }
-
+pub trait Server: NetworkEdge {
     fn on_request_arrived(&mut self, source_id: NodeId, session_id: u64, raw_content: String) {
         if raw_content == "ServerType" {
             let _server_type = Self::get_sever_type();
