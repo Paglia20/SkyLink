@@ -13,6 +13,7 @@ mod simulation_control;
 mod clients_gio;
 mod server;
 mod network_edge;
+mod routing;
 
 fn main() {
     // println!("Hello, world!");
