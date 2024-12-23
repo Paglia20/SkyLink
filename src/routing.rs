@@ -45,8 +45,8 @@ impl RouteList {
     }
 
     pub fn remove_faulty_node(&mut self, node_id: NodeId) {
-        self.routes = self.routes
-            .iter()
+        self.routes = self.routes.clone()
+            .into_iter()
             .filter(|x| !x.1.contains_node(&node_id))
             .collect();
         // If I made this correct, I only keep stuff that doesn't contain
