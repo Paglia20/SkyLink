@@ -22,6 +22,9 @@ impl Route {
             hops: self.path.clone(),
         }
     }
+    pub fn contains_node(&self, node_id: &NodeId) -> bool {
+        self.path.contains(node_id)
+    }
 }
 
 impl RouteList {
@@ -41,8 +44,13 @@ impl RouteList {
         }
     }
 
-    pub fn remove_route(&mut self, route_id: u8) {
-        self.routes.remove(&route_id);
+    pub fn remove_faulty_node(&mut self, node_id: NodeId) {
+        self.routes = self.routes
+            .iter()
+            .filter(|x| !x.1.contains_node(&node_id))
+            .collect();
+        // If I made this correct, I only keep stuff that doesn't contain
+        // the node that gives error.
     }
 
     pub fn get_fastest_route(&self) -> Option<Route> {
@@ -50,7 +58,7 @@ impl RouteList {
         for (_, route) in self.routes.iter() {
             if res.is_none() {
                 res = Some(route.clone());
-            } else if (route.get_cost() < res.as_ref()?.get_cost()) {
+            } else if route.get_cost() < res.as_ref()?.get_cost() {
                 res = Some(route.clone());
             }
         }
