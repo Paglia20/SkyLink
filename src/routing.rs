@@ -48,7 +48,9 @@ impl RouteList {
     pub fn get_fastest_route(&self) -> Option<Route> {
         let mut res = None;
         for (_, route) in self.routes.iter() {
-            if res.is_none() || (route.get_cost() < res.as_ref()?.get_cost()) {
+            if res.is_none() {
+                res = Some(route.clone());
+            } else if (route.get_cost() < res.as_ref()?.get_cost()) {
                 res = Some(route.clone());
             }
         }
