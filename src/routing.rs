@@ -1,25 +1,32 @@
 use std::collections::HashMap;
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 
 #[derive(Clone)]
 pub struct Route {
     path: Vec<NodeId>,
 }
 pub struct RouteList {
-    node: NodeId,
     routes: HashMap<u8,Route>,
 }
 
 impl Route {
+    pub fn new(path: Vec<NodeId>) -> Route {
+        Route { path }
+    }
     pub fn get_cost(&self) -> usize {
         self.path.len()
+    }
+    pub fn to_source_routing_header(&self) -> SourceRoutingHeader {
+        SourceRoutingHeader {
+            hop_index: 1,
+            hops: self.path.clone(),
+        }
     }
 }
 
 impl RouteList {
-    pub fn new(node: NodeId) -> RouteList {
+    pub fn new() -> RouteList {
         RouteList {
-            node,
             routes: HashMap::new(),
         }
     }
