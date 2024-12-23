@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 use crossbeam_channel::{Receiver, Sender};
-use crate::message::{ChatRequest, ChatResponse, Message, MessageType, Request, Response};
 use wg_2024::network::*;
 use wg_2024::packet::Packet;
-use crate::clients_gio::command::{ClientCommand, ClientEvent};
+use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::network_edge::NetworkEdge;
 
 pub enum ClientType{
     WebBrowser,
     ChatClient,
 }
 
-pub trait Client {
-    type RequestType: Request;
-    type ResponseType: Response;
-
+pub trait Client: NetworkEdge {
     fn new(
         id: NodeId,
         event_send: Sender<ClientEvent>,
@@ -21,19 +18,6 @@ pub trait Client {
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     )-> Self;
-
-    fn compose_message(
-        source_id: NodeId,
-        session_id: u64,
-        raw_content: String,
-    ) -> Result<Message<Self::RequestType>, String> {
-        let content = Self::RequestType::from_string(raw_content)?;
-        Ok(Message {
-            session_id,
-            source_id,
-            content,
-        })
-    }
 
     fn send_request(&mut self, _request: Self::RequestType);
 
