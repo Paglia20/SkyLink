@@ -5,15 +5,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+mod clients_gio;
 mod initializer;
 mod message;
-mod skylink_drone;
-mod test;
-mod simulation_control;
-mod clients_gio;
-mod server;
 mod network_edge;
 mod routing;
+mod server;
+mod simulation_control;
+mod skylink_drone;
+mod test;
 
 fn main() {
     // println!("Hello, world!");

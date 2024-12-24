@@ -6,7 +6,7 @@ pub struct Route {
     path: Vec<NodeId>,
 }
 pub struct RouteList {
-    routes: HashMap<u8,Route>, //do we still need that u8?
+    routes: Vec<Route>,
 }
 
 impl Route {
@@ -29,25 +29,18 @@ impl Route {
 
 impl RouteList {
     pub fn new() -> RouteList {
-        RouteList {
-            routes: HashMap::new(),
-        }
+        RouteList { routes: Vec::new() }
     }
     pub fn add_route(&mut self, route: Route) {
-        let mut i = 0;
-        loop {
-            if self.routes.insert(i, route.clone()).is_some() {
-                break;
-            }else {
-                i += 1;
-            }
-        }
+        self.routes.push(route);
     }
 
     pub fn remove_faulty_node(&mut self, node_id: NodeId) {
-        self.routes = self.routes.clone()
+        self.routes = self
+            .routes
+            .clone()
             .into_iter()
-            .filter(|x| !x.1.contains_node(&node_id))
+            .filter(|x| !x.contains_node(&node_id))
             .collect();
         // If I made this correct, I only keep stuff that doesn't contain
         // the node that gives error.
@@ -55,13 +48,13 @@ impl RouteList {
 
     pub fn get_fastest_route(&self) -> Option<Route> {
         let mut res = None;
-        for (_, route) in self.routes.iter() {
+        for (route) in self.routes.iter() {
             if res.is_none() {
                 res = Some(route.clone());
             } else if route.get_cost() < res.as_ref()?.get_cost() {
                 res = Some(route.clone());
             }
         }
-        res //sarà None se ad esempio sono state rimosse tutte a causa di crash
+        res // Will result as None if there are no more routes cut of errors.
     }
 }

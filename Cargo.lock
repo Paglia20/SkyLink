@@ -279,9 +279,9 @@ dependencies = [
 
 [[package]]
 name = "async-broadcast"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20cd0e2e25ea8e5f7e9df04578dc6cf5c83577fd09b1a46aaf5c85e1c33f2a7e"
+checksum = "435a87a52755b8f27fcf321ac4f04b2802e337c8c4872923137471ec39c37532"
 dependencies = [
  "event-listener",
  "event-listener-strategy",
@@ -801,17 +801,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-source = "git+https://github.com/Dr-Ones/common.git#6b08030219384cea3131724f8ea9a72476562ce7"
-dependencies = [
- "crossbeam-channel",
- "indexmap",
- "rand 0.8.5",
- "wg_2024",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1038,11 +1027,11 @@ checksum = "f25c0e292a7ca6d6498557ff1df68f32c99850012b6ea401cf8daf771f22ff53"
 [[package]]
 name = "dr_ones"
 version = "0.1.0"
-source = "git+https://github.com/Dr-Ones/drone#f7570176dbffcf40da45622be26f87734e648b5e"
+source = "git+https://github.com/Dr-Ones/drone#7e789fe807b4bbb9bc5353db47616bd5d4c4708b"
 dependencies = [
- "common",
  "crossbeam-channel",
  "indexmap",
+ "network_node",
  "rand 0.8.5",
  "wg_2024",
 ]
@@ -2277,6 +2266,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "network_node"
+version = "0.1.0"
+source = "git+https://github.com/Dr-Ones/common.git#6379ef17d4009e210d94e0ea643324e47e4a615a"
+dependencies = [
+ "crossbeam-channel",
+ "indexmap",
+ "rand 0.8.5",
+ "wg_2024",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2875,7 +2875,7 @@ checksum = "c8478de76992f2825a1052cc2ae9d1401cdb62687761d4100ddd69a73dc3dc48"
 dependencies = [
  "rand_chacha 0.9.0-beta.1",
  "rand_core 0.9.0-beta.1",
- "zerocopy 0.8.13",
+ "zerocopy 0.8.14",
 ]
 
 [[package]]
@@ -2914,7 +2914,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a98fa0b8309344136abe6244130311e76997e546f76fae8054422a7539b43df7"
 dependencies = [
  "getrandom 0.3.0-rc.0",
- "zerocopy 0.8.13",
+ "zerocopy 0.8.14",
 ]
 
 [[package]]
@@ -3118,7 +3118,7 @@ dependencies = [
 [[package]]
 name = "rusty_drones"
 version = "0.0.0"
-source = "git+https://github.com/matteo-dinoia/rusty-drones.git?branch=main#8f71a0c2b306785f0fbbc5b73a5df5ad77cce7c6"
+source = "git+https://github.com/rusty-drone-2024/rusty-drone.git?branch=main#b658609f83c5235129034800dbc158d4b9640d05"
 dependencies = [
  "crossbeam-channel",
  "rand 0.8.5",
@@ -4729,11 +4729,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.13"
+version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67914ab451f3bfd2e69e5e9d2ef3858484e7074d63f204fd166ec391b54de21d"
+checksum = "a367f292d93d4eab890745e75a778da40909cab4d6ff8173693812f79c4a2468"
 dependencies = [
- "zerocopy-derive 0.8.13",
+ "zerocopy-derive 0.8.14",
 ]
 
 [[package]]
@@ -4749,9 +4749,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.13"
+version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7988d73a4303ca289df03316bc490e934accf371af6bc745393cf3c2c5c4f25d"
+checksum = "d3931cb58c62c13adec22e38686b559c86a30565e16ad6e8510a337cedc611e1"
 dependencies = [
  "proc-macro2",
  "quote",

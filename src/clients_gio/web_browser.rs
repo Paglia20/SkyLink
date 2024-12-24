@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
-use crossbeam_channel::{Receiver, Sender, TrySendError};
-use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
-use crate::clients_gio::client_trait::{Client};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{Message, MessageType, TextRequest, TextResponse};
 use crate::network_edge::NetworkEdge;
+use crossbeam_channel::{Receiver, Sender};
+use std::collections::{HashMap, HashSet};
+use wg_2024::network::NodeId;
+use wg_2024::packet::Packet;
 
 pub struct WebBrowser {
     client_type: ClientType,
@@ -15,16 +14,20 @@ pub struct WebBrowser {
     event_send: Sender<ClientEvent>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
-    flood_ids: HashSet<(u64, NodeId)>, //just like drones
+    flood_ids: HashSet<(u64, NodeId)>, // Just like drones
 
-    paths: HashMap<NodeId, Vec<NodeId>>, //lui ha bisogno di parlare solo con content server, di cui non occorre specificare il type visto che sarà un textserver
+    paths: HashMap<NodeId, Vec<NodeId>>, // NodeId will only be content Servers (text servers).
 }
 
 impl NetworkEdge for WebBrowser {
     type RequestType = TextRequest;
     type ResponseType = TextResponse;
 
-    fn send_message<M: MessageType>(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
+    fn send_message<M: MessageType>(
+        &mut self,
+        _message: Message<M>,
+        _destination: NodeId, // Remove the _ before message and destination when you'll use them.
+    ) -> Result<(), String> {
         todo!()
     }
 }
