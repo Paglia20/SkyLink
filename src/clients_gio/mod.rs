@@ -1,4 +1,5 @@
 mod client_trait;
 mod web_browser;
-mod chat_client;
+mod client_chat;
 mod client_command;
+mod client_type;

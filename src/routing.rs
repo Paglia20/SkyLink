@@ -6,7 +6,7 @@ pub struct Route {
     path: Vec<NodeId>,
 }
 pub struct RouteList {
-    routes: HashMap<u8,Route>,
+    routes: HashMap<u8,Route>, //do we still need that u8?
 }
 
 impl Route {
@@ -62,6 +62,6 @@ impl RouteList {
                 res = Some(route.clone());
             }
         }
-        res
+        res //sarà None se ad esempio sono state rimosse tutte a causa di crash
     }
 }
