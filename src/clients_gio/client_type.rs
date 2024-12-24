@@ -1,4 +1,4 @@
-pub enum ClientType{
+pub enum ClientType {
     WebBrowser,
     ChatClient,
 }

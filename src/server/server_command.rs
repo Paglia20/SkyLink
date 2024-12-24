@@ -6,7 +6,7 @@ pub enum ServerCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
     SendPacket(Packet),
-}
+} // I copied the one from client, but I need to change these
 
 pub enum ServerEvent {
     PacketSent(Packet),

@@ -1,4 +1,5 @@
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
+use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
@@ -6,7 +7,6 @@ use std::cmp::{Ordering, PartialEq};
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
-use crate::simulation_control::sim_daniel::Scene::*;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {

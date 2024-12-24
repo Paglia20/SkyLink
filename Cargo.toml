@@ -15,7 +15,7 @@ rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git"}
 getdroned = { git = "https://github.com/GetDroned/Drone.git", features = ["log"] }
 dr_ones = { git = "https://github.com/Dr-Ones/drone" }
 rustastic-drone = { git = "https://github.com/Rustastic/RustasticDrone.git" }
-rusty_drones = { git = "https://github.com/matteo-dinoia/rusty-drones.git", branch = "main" }
+rusty_drones = { git = "https://github.com/rusty-drone-2024/rusty-drone.git", branch = "main" }
 rust_do_it = { git = "https://github.com/RustDoIt/Drone.git" }
 # Other dependencies
 toml = "0.8.19"
