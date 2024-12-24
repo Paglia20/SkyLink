@@ -1,4 +1,5 @@
-use crate::message::{ChatRequest, ChatResponse};
+use wg_2024::network::NodeId;
+use crate::message::{ChatRequest, ChatResponse, Message, MessageType};
 use crate::network_edge::NetworkEdge;
 use crate::server::server_trait::{Server};
 use crate::server::server_type::ServerType;
@@ -9,6 +10,9 @@ impl NetworkEdge for ChatServer {
     type RequestType = ChatRequest;
     type ResponseType = ChatResponse;
 
+    fn send_message<M: MessageType>(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
+        todo!()
+    }
 }
 impl Server for ChatServer {
     fn handle_request(&mut self, request: Self::RequestType) -> Self::ResponseType {
