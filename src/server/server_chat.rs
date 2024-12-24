@@ -50,7 +50,7 @@ impl Server for ChatServer {
             packet_send,
             flood_ids: HashSet::new(),
             paths: HashMap::new(),
-            fragments: Default::default(),
+            fragments: HashMap::new(),
         }
     }
 
