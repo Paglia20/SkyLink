@@ -5,8 +5,9 @@ use crossbeam_channel::{Receiver, Sender};
 use dr_ones::Packet;
 use std::collections::HashMap;
 use wg_2024::network::*;
+use crate::message::MessageType;
 
-pub trait Server: NetworkEdge {
+pub trait Server<M: MessageType>: NetworkEdge<M> {
     fn new(
         id: NodeId,
         command_recv: Receiver<ServerCommand>,
@@ -16,8 +17,6 @@ pub trait Server: NetworkEdge {
     ) -> Self;
 
     fn run(&mut self);
-
-    fn handle_packet(&mut self, packet: Packet);
 
     fn handle_command(&mut self, command: ServerCommand);
 

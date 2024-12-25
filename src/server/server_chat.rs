@@ -22,19 +22,30 @@ pub struct ChatServer {
     fragments: HashMap<u64, Vec<Fragment>>, // The u64 is the session id.
 }
 
-impl NetworkEdge for ChatServer {
+impl<M: MessageType> NetworkEdge<M> for ChatServer {
     type RequestType = ChatRequest;
     type ResponseType = ChatResponse;
 
-    fn send_message<M: MessageType>(
+    fn send_message(
         &mut self,
         _message: Message<M>,
         _destination: NodeId,
     ) -> Result<(), String> {
         todo!()
     }
+
+    fn handle_packet(&mut self, packet: Packet) {
+        match packet.pack_type {
+            PacketType::MsgFragment(_) => {}
+            PacketType::Ack(_) => {}
+            PacketType::Nack(_) => {}
+            PacketType::FloodRequest(_) => {}
+            PacketType::FloodResponse(_) => {}
+        }
+    }
+
 }
-impl Server for ChatServer {
+impl <M: MessageType> Server<M> for ChatServer{
     fn new(
         node_id: NodeId,
         command_recv: Receiver<ServerCommand>,
@@ -54,32 +65,27 @@ impl Server for ChatServer {
         }
     }
 
+    //i had to comment them because of the M: MessageType i added to network_edge trait, but i don't understand why he complains,
+    // in the client one it doesnt complain!
+    //only difference is that ChatClient<M: MessageType>..
     fn run(&mut self) {
         loop {
             select_biased! {
                 recv(self.command_recv) -> cmd => {
-                    if let Ok(command) = cmd {
-                        self.handle_command(command);
+                    if let Ok(_command) = cmd {
+                       // self.handle_command(command);
                     }
                 }
                 recv(self.packet_recv) -> pkt => {
-                    if let Ok(packet) = pkt {
-                        self.handle_packet(packet);
+                    if let Ok(_packet) = pkt {
+                        //self.handle_packet(packet);
                     }
                 }
             }
         }
     }
 
-    fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
-            PacketType::MsgFragment(_) => {}
-            PacketType::Ack(_) => {}
-            PacketType::Nack(_) => {}
-            PacketType::FloodRequest(_) => {}
-            PacketType::FloodResponse(_) => {}
-        }
-    }
+
 
     fn handle_command(&mut self, command: ServerCommand) {
         match command {

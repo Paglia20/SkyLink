@@ -3,15 +3,15 @@ use crate::clients_gio::client_trait::Client;
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{ChatRequest, ChatResponse, Message, MessageType};
 use crate::network_edge::NetworkEdge;
-use crate::routing::RouteList;
+use crate::routing::{Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Packet, PacketType};
+use wg_2024::packet::{Fragment, NodeType, Packet, PacketType};
 
-pub struct ChatClient {
+pub struct ChatClient<M: MessageType> {
     node_id: NodeId,
-    command_recv: Receiver<ClientCommand>,
+    command_recv: Receiver<ClientCommand<M>>,
     event_send: Sender<ClientEvent>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -23,26 +23,136 @@ pub struct ChatClient {
     fragments: HashMap<u64, Vec<Fragment>>,
 }
 
-impl NetworkEdge for ChatClient {
+impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
     type RequestType = ChatRequest; // Still questioning if we need this lol -Leo
     type ResponseType = ChatResponse;
 
-    fn send_message<M: MessageType>(
-        &mut self,
-        message: Message<M>,
-        _destination: NodeId, // Remove the _ before destination when you'll use it.
-    ) -> Result<(), String> {
-        self.fragments
-            .insert(message.session_id, Self::fragment_message(&message));
+    fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
+        let session_id = message.session_id;
+        let frags= Self::fragment_message(&message);
+        self.fragments.insert(session_id, frags.clone());
+
+        for fragment in frags {
+            //create SRH
+            let srh = match self.paths.get(&destination) {
+                None => {
+                    return Err("Destination not found".to_string());
+                },
+                Some(route_list) => {
+                    match route_list.get_fastest_route(){
+                        None => {return Err("Destination not found".to_string())}
+                        Some(route) => {
+                            route.to_source_routing_header()
+                        }
+                    }
+                }
+            };
+
+            let first_dst = srh.hops[0];
+            let packet = Packet::new_fragment(
+                srh,
+                session_id,
+                fragment
+            );
+
+            match self.packet_send.get(&first_dst){
+                None => {
+                    self.event_send.try_send(ClientEvent::PacketSendingError(packet)).map_err(|e| e.to_string())?; // i only need it here i think...
+                    return Err("First step not found".to_string())},
+                Some(sender) => {
+                    sender.try_send(packet).map_err(|err| {err.to_string()})?
+                }
+            }
+        }
 
         Ok(())
     }
+
+    fn handle_packet(&mut self, mut packet: Packet) {
+        match packet.pack_type.clone() {
+            PacketType::MsgFragment(_fragment) => {
+                unimplemented!()
+                //wait for all the frag
+                //recreate message
+                //handle message
+                //send response
+            }
+            PacketType::Ack(_ack) => {}
+            PacketType::Nack(_nack) => {}
+            PacketType::FloodRequest(mut flood_request) => {
+                flood_request.path_trace.push((self.node_id, NodeType::Client));
+
+                if self.flood_ids.insert((
+                    flood_request.flood_id.clone(),
+                    flood_request.initiator_id.clone(),
+                )) {
+                    if self.packet_send.len() == 1 {
+                        self.send_flood_response(flood_request);
+                    } else {
+                        let mut prev = flood_request.initiator_id.clone();
+                        if flood_request.path_trace.clone().len() > 1 {
+                            prev = flood_request
+                                .path_trace
+                                .get(flood_request.path_trace.len() - 2)
+                                .unwrap()
+                                .0;
+                        }
+                        //I update the path_trace in the packet.
+                        packet.pack_type = PacketType::FloodRequest(flood_request);
+                        for (key, _) in self.packet_send.iter() {
+                            //println!("Previous: {}", prev);
+                            //println!("Key: {}", key);
+                            if *key != prev {
+                                //I send the flooding to everyone except the node I received it from.
+                                if let Ok(_) = self.packet_send.get(key).unwrap().send(packet.clone()) {
+                                    self.event_send
+                                        .send(ClientEvent::PacketSent(packet.clone()))
+                                        .unwrap();
+                                    //If the message was sent, I also notify the sim controller.
+                                } //There's no else, since I don't care of nodes which can't be reached.
+                            }
+                        }
+                    }
+                } else {
+                    self.send_flood_response(flood_request);
+                }
+            }
+            PacketType::FloodResponse(flood_resp) => {
+                let mut current_path = Vec::new();
+
+                for (node_id, node_type) in flood_resp.path_trace {
+                    current_path.push(node_id);
+
+                    if node_type == NodeType::Server {
+                        if !self.paths.contains_key(&node_id) {
+                            //if it's first time this server gets seen
+                            self.paths.insert(node_id.clone(), RouteList::new());
+                        }
+
+                        // Clone the current path for the server and insert it into the route list
+                        match self.paths.get_mut(&node_id){
+                            None => {
+                                unreachable!()
+                                //i hope it's unreachable
+                            }
+                            Some(rl) => {
+                                rl.add_route(Route::new(current_path.clone()));
+                            }
+                        }
+
+                    }
+                }
+
+            }
+        }
+    }
 }
 
-impl Client for ChatClient {
-    fn new(
+
+impl <M:MessageType> Client<M> for ChatClient<M> {
+    fn new (
         node_id: NodeId,
-        command_recv: Receiver<ClientCommand>,
+        command_recv: Receiver<ClientCommand<M>>,
         event_send: Sender<ClientEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -78,21 +188,27 @@ impl Client for ChatClient {
         }
     }
 
-    fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
-            PacketType::MsgFragment(_) => {}
-            PacketType::Ack(_) => {}
-            PacketType::Nack(_) => {}
-            PacketType::FloodRequest(_) => {}
-            PacketType::FloodResponse(_) => {}
-        }
-    }
-
-    fn handle_command(&mut self, command: ClientCommand) {
+    fn handle_command(&mut self, command: ClientCommand<M>) {
         match command {
-            ClientCommand::RemoveSender(_) => {}
-            ClientCommand::AddSender(_, _) => {}
-            ClientCommand::SendPacket(_packet) => {} // Remove the _ before packet when you'll use it.
+            ClientCommand::RemoveSender(node_id) => {
+                if self.packet_send.contains_key(&node_id) {
+                    if let Some(to_be_dropped) = self.packet_send.remove(&node_id) {
+                        drop(to_be_dropped);
+                        //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
+                    }
+                }
+            }
+            ClientCommand::AddSender(node_id, sender) => {
+                self.packet_send.insert(node_id, sender);
+            }
+            ClientCommand::SendMessage(node_id, message) => {
+                match self.send_message(message, node_id){
+                    Err(_err) => {
+                        //il sc è già stato notificato credo
+                    }
+                    _ => {},
+                }
+            }
         }
     }
 
