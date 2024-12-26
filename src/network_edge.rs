@@ -3,15 +3,11 @@ use std::collections::HashMap;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 
-pub trait NetworkEdge <M: MessageType> {
+pub trait NetworkEdge<M: MessageType> {
     type RequestType: Request;
     type ResponseType: Response;
 
-    fn send_message(
-        &mut self,
-        message: Message<M>,
-        destination: NodeId,
-    ) -> Result<(), String>;
+    fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String>;
 
     fn fragment_message(message: &Message<M>) -> Vec<Fragment> {
         let all_bytes = message.content.stringify().into_bytes();
@@ -109,6 +105,4 @@ pub trait NetworkEdge <M: MessageType> {
         self.handle_packet(resp);
         //self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap(); //Should be set by handle_packet.
     }
-
-
 }

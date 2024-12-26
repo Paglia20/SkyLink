@@ -100,7 +100,6 @@ impl SkyLinkDrone {
         match command {
             DroneCommand::AddSender(node_id, sender) => {
                 self.packet_send.insert(node_id, sender);
-                //println!("Drone {} added a channel to {}!", self.id, node_id);
             }
             DroneCommand::SetPacketDropRate(pdr) => {
                 let mut pdr = pdr;
@@ -111,17 +110,14 @@ impl SkyLinkDrone {
                     pdr = 0.00;
                 }
                 self.pdr = (pdr * 100.0) as u32;
-                //println!("Drone {} new pdr: {}%!", self.id, self.pdr);
             }
             DroneCommand::Crash => {
                 self.crashing = true;
-                //println!("Drone {} crashed!", self.id);
             }
             DroneCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id) {
                     if let Some(to_be_dropped) = self.packet_send.remove(&node_id) {
                         drop(to_be_dropped);
-                        //println!("Drone {} no more has a connection to {}!", self.id, node_id);
                     }
                 }
             }
@@ -191,22 +187,33 @@ impl SkyLinkDrone {
                 //Otherwise the error is already the right one to send.
                 Err(err) => {
                     if let PacketType::Nack(nack) = err.pack_type.clone() {
-                        if let NackType::UnexpectedRecipient(_) = nack.nack_type {
-                            //If my drone isn't the one that should have received the message, I've to
-                            //route the message differently, since I'm not the first id in the routing header.
-                            self.send_nack(&err.routing_header.hops[0].clone(), err);
-                        } else {
-                            match packet.pack_type {
-                                PacketType::FloodRequest(_) => {
-                                    unreachable!()
-                                }
-                                PacketType::MsgFragment(_) => {
-                                    self.handle_packet(err);
-                                }
-                                _ => {
-                                    self.controller_send.send(ControllerShortcut(err)).unwrap();
-                                    //If I had got an error from the checks of the routing of an
-                                    //Ack, Nack or FloodResponse, I just forward it through the Simulation Controller.
+                        match nack.nack_type {
+                            NackType::UnexpectedRecipient(_) => {
+                                //If my drone isn't the one that should have received the message, I've to
+                                //route the message differently, since I'm not the first id in the routing header.
+                                self.send_nack(&err.routing_header.hops[0].clone(), err);
+                            }
+                            NackType::Dropped => {
+                                self.controller_send
+                                    .send(DroneEvent::PacketDropped(packet.clone()))
+                                    .unwrap();
+                                // Notify the sim contr that the packet was dropped.
+
+                                self.handle_packet(err);
+                            }
+                            _ => {
+                                match packet.pack_type {
+                                    PacketType::FloodRequest(_) => {
+                                        unreachable!()
+                                    }
+                                    PacketType::MsgFragment(_) => {
+                                        self.handle_packet(err);
+                                    }
+                                    _ => {
+                                        self.controller_send.send(ControllerShortcut(err)).unwrap();
+                                        //If I had got an error from the checks of the routing of an
+                                        //Ack, Nack or FloodResponse, I just forward it through the Simulation Controller.
+                                    }
                                 }
                             }
                         }
@@ -219,7 +226,12 @@ impl SkyLinkDrone {
     fn crashing_handle_packet(&mut self, packet: Packet) {
         match packet.clone().pack_type {
             PacketType::MsgFragment(_fragment) => {
-                //If the message is a fragment, I send back a Nack
+                self.controller_send
+                    .send(DroneEvent::PacketDropped(packet.clone()))
+                    .unwrap();
+                // Notify the sim contr that the packet was dropped.
+
+                // If the message is a fragment, I send back a Nack
                 let err = create_error(self.id, packet, NackType::ErrorInRouting(self.id));
                 self.send_nack(&err.routing_header.hops[1].clone(), err);
             }

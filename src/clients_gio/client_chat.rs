@@ -23,13 +23,13 @@ pub struct ChatClient<M: MessageType> {
     fragments: HashMap<u64, Vec<Fragment>>,
 }
 
-impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
+impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
     type RequestType = ChatRequest; // Still questioning if we need this lol -Leo
     type ResponseType = ChatResponse;
 
     fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
         let session_id = message.session_id;
-        let frags= Self::fragment_message(&message);
+        let frags = Self::fragment_message(&message);
         self.fragments.insert(session_id, frags.clone());
 
         for fragment in frags {
@@ -37,31 +37,24 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
             let srh = match self.paths.get(&destination) {
                 None => {
                     return Err("Destination not found".to_string());
-                },
-                Some(route_list) => {
-                    match route_list.get_fastest_route(){
-                        None => {return Err("Destination not found".to_string())}
-                        Some(route) => {
-                            route.to_source_routing_header()
-                        }
-                    }
                 }
+                Some(route_list) => match route_list.get_fastest_route() {
+                    None => return Err("Destination not found".to_string()),
+                    Some(route) => route.to_source_routing_header(),
+                },
             };
 
             let first_dst = srh.hops[0];
-            let packet = Packet::new_fragment(
-                srh,
-                session_id,
-                fragment
-            );
+            let packet = Packet::new_fragment(srh, session_id, fragment);
 
-            match self.packet_send.get(&first_dst){
+            match self.packet_send.get(&first_dst) {
                 None => {
-                    self.event_send.try_send(ClientEvent::PacketSendingError(packet)).map_err(|e| e.to_string())?; // i only need it here i think...
-                    return Err("First step not found".to_string())},
-                Some(sender) => {
-                    sender.try_send(packet).map_err(|err| {err.to_string()})?
+                    self.event_send
+                        .try_send(ClientEvent::PacketSendingError(packet))
+                        .map_err(|e| e.to_string())?; // i only need it here i think...
+                    return Err("First step not found".to_string());
                 }
+                Some(sender) => sender.try_send(packet).map_err(|err| err.to_string())?,
             }
         }
 
@@ -80,7 +73,9 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
             PacketType::Ack(_ack) => {}
             PacketType::Nack(_nack) => {}
             PacketType::FloodRequest(mut flood_request) => {
-                flood_request.path_trace.push((self.node_id, NodeType::Client));
+                flood_request
+                    .path_trace
+                    .push((self.node_id, NodeType::Client));
 
                 if self.flood_ids.insert((
                     flood_request.flood_id.clone(),
@@ -104,7 +99,9 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
                             //println!("Key: {}", key);
                             if *key != prev {
                                 //I send the flooding to everyone except the node I received it from.
-                                if let Ok(_) = self.packet_send.get(key).unwrap().send(packet.clone()) {
+                                if let Ok(_) =
+                                    self.packet_send.get(key).unwrap().send(packet.clone())
+                                {
                                     self.event_send
                                         .send(ClientEvent::PacketSent(packet.clone()))
                                         .unwrap();
@@ -121,7 +118,6 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
                 let lenght = flood_resp.path_trace.len();
                 //if the client was the initiator of the flood AKA last element of the flood response
                 if (flood_resp.path_trace[lenght - 1].0 == self.node_id) {
-
                     //as of rn it "saves" all possible servers... we want something else i think...
                     let mut current_path = Vec::new();
                     for (node_id, node_type) in flood_resp.path_trace {
@@ -134,7 +130,7 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
                             }
 
                             // Clone the current path for the server and insert it into the route list
-                            match self.paths.get_mut(&node_id){
+                            match self.paths.get_mut(&node_id) {
                                 None => {
                                     unreachable!()
                                     //i hope it's unreachable
@@ -143,30 +139,25 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
                                     rl.add_route(Route::new(current_path.clone()));
                                 }
                             }
-
                         }
                     }
-                }
-                else {
+                } else {
                     //if it's not his flooding, but he is just part of the flood path that is to be delivered to another flood initiator
                     let next_id = packet.routing_header.hops[packet.routing_header.hop_index]; //please tell me if it's right
 
-                    match self.packet_send.get(&next_id){
-                        None => { /*no more a destination!*/ },
+                    match self.packet_send.get(&next_id) {
+                        None => { /*no more a destination!*/ }
                         Some(sender) => {
-                           match sender.try_send(packet.clone()){
-                               Err(_) => {
-                                   /*no more a destination!*/
-                               }
-                               Ok(_) => {
-                                   self.event_send
-                                       .send(ClientEvent::PacketSent(packet.clone()))
-                                       .unwrap();
-                                   //If the message was sent, I also notify the sim controller.
-                               }
-                           }
+                            match sender.try_send(packet.clone()) {
+                                Err(_) => { /*no more a destination!*/ }
+                                Ok(_) => {
+                                    self.event_send
+                                        .send(ClientEvent::PacketSent(packet.clone()))
+                                        .unwrap();
+                                    //If the message was sent, I also notify the sim controller.
+                                }
+                            }
                         }
-
                     }
                 }
             }
@@ -174,9 +165,8 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
     }
 }
 
-
-impl <M:MessageType> Client<M> for ChatClient<M> {
-    fn new (
+impl<M: MessageType> Client<M> for ChatClient<M> {
+    fn new(
         node_id: NodeId,
         command_recv: Receiver<ClientCommand<M>>,
         event_send: Sender<ClientEvent>,
@@ -228,11 +218,11 @@ impl <M:MessageType> Client<M> for ChatClient<M> {
                 self.packet_send.insert(node_id, sender);
             }
             ClientCommand::SendMessage(node_id, message) => {
-                match self.send_message(message, node_id){
+                match self.send_message(message, node_id) {
                     Err(_err) => {
                         //il sc è già stato notificato credo
                     }
-                    _ => {},
+                    _ => {}
                 }
             }
         }
