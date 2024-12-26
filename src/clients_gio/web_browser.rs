@@ -7,10 +7,10 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 
-pub struct WebBrowser {
+pub struct WebBrowser<M: MessageType> {
     client_type: ClientType,
     node_id: NodeId,
-    command_recv: Receiver<ClientCommand>,
+    command_recv: Receiver<ClientCommand<M>>,
     event_send: Sender<ClientEvent>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -19,16 +19,20 @@ pub struct WebBrowser {
     paths: HashMap<NodeId, Vec<NodeId>>, // NodeId will only be content Servers (text servers).
 }
 
-impl NetworkEdge for WebBrowser {
+impl <M: MessageType> NetworkEdge<M> for WebBrowser<M> {
     type RequestType = TextRequest;
     type ResponseType = TextResponse;
 
-    fn send_message<M: MessageType>(
+    fn send_message(
         &mut self,
         _message: Message<M>,
         _destination: NodeId, // Remove the _ before message and destination when you'll use them.
     ) -> Result<(), String> {
-        todo!()
+        unimplemented!()
+    }
+
+    fn handle_packet(&mut self, _packet: Packet) {
+        unimplemented!()
     }
 }
 // impl Client for WebBrowser {

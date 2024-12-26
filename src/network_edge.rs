@@ -1,19 +1,19 @@
 use crate::message::{Message, MessageType, Request, Response};
 use std::collections::HashMap;
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 
-pub trait NetworkEdge {
+pub trait NetworkEdge <M: MessageType> {
     type RequestType: Request;
     type ResponseType: Response;
 
-    fn send_message<M: MessageType>(
+    fn send_message(
         &mut self,
         message: Message<M>,
         destination: NodeId,
     ) -> Result<(), String>;
 
-    fn fragment_message<M: MessageType>(message: &Message<M>) -> Vec<Fragment> {
+    fn fragment_message(message: &Message<M>) -> Vec<Fragment> {
         let all_bytes = message.content.stringify().into_bytes();
         let total_n_fragments = (all_bytes.len() as u64).div_ceil(128);
         // I divide rounding up with div_ceil
@@ -35,7 +35,7 @@ pub trait NetworkEdge {
 
     // We assume that this function will be called only when the client or server has
     // already collected all fragments of a message and sent the Ack.
-    fn reassemble_message<M: MessageType>(packets: Vec<Packet>) -> Result<Message<M>, String> {
+    fn reassemble_message(packets: Vec<Packet>) -> Result<Message<M>, String> {
         let source_id = packets[0].routing_header.hops[0];
         let session_id = packets[0].session_id;
         let mut to_content = HashMap::new();
@@ -79,4 +79,36 @@ pub trait NetworkEdge {
             content,
         })
     }
+
+    fn handle_packet(&mut self, packet: Packet);
+
+    //its just the same of the drone, where can we put it so it's not duplicate?
+    fn send_flood_response(&mut self, flood: FloodRequest) {
+        //take a flood req, generate the response, send it
+
+        let flood_resp = FloodResponse {
+            flood_id: flood.flood_id,
+            path_trace: flood.path_trace.clone(), //I put a copy of path trace done by the flood
+        };
+
+        let mut hops = flood
+            .path_trace
+            .iter()
+            .rev()
+            .map(|(id, _)| *id)
+            .collect::<Vec<NodeId>>(); //I take only the ID's from the path trace and reverse them.
+        if flood.path_trace[0].0 != flood.initiator_id {
+            hops.push(flood.initiator_id);
+        }
+
+        let resp = Packet {
+            pack_type: PacketType::FloodResponse(flood_resp),
+            routing_header: SourceRoutingHeader { hop_index: 0, hops },
+            session_id: flood.flood_id,
+        };
+        self.handle_packet(resp);
+        //self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap(); //Should be set by handle_packet.
+    }
+
+
 }
