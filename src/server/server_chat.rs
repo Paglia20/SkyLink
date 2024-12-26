@@ -26,11 +26,7 @@ impl<M: MessageType> NetworkEdge<M> for ChatServer {
     type RequestType = ChatRequest;
     type ResponseType = ChatResponse;
 
-    fn send_message(
-        &mut self,
-        _message: Message<M>,
-        _destination: NodeId,
-    ) -> Result<(), String> {
+    fn send_message(&mut self, _message: Message<M>, _destination: NodeId) -> Result<(), String> {
         todo!()
     }
 
@@ -43,9 +39,8 @@ impl<M: MessageType> NetworkEdge<M> for ChatServer {
             PacketType::FloodResponse(_) => {}
         }
     }
-
 }
-impl <M: MessageType> Server<M> for ChatServer{
+impl<M: MessageType> Server<M> for ChatServer {
     fn new(
         node_id: NodeId,
         command_recv: Receiver<ServerCommand>,
@@ -65,8 +60,8 @@ impl <M: MessageType> Server<M> for ChatServer{
         }
     }
 
-    //i had to comment them because of the M: MessageType i added to network_edge trait, but i don't understand why he complains,
-    // in the client one it doesnt complain!
+    //I had to comment them because of the M: MessageType I added to network_edge trait, but i don't understand why he complains,
+    // in the client one it doesn't complain!
     //only difference is that ChatClient<M: MessageType>..
     fn run(&mut self) {
         loop {
@@ -85,13 +80,10 @@ impl <M: MessageType> Server<M> for ChatServer{
         }
     }
 
-
-
     fn handle_command(&mut self, command: ServerCommand) {
         match command {
             ServerCommand::RemoveSender(_) => {}
-            ServerCommand::AddSender(_, _) => {}
-            ServerCommand::SendPacket(_packet) => {} // Remove the _ before packet when you'll use it.
+            ServerCommand::AddSender(_, _) => {} //ServerCommand::SendPacket(_packet) => {} // Remove the _ before packet when you'll use it.
         }
     }
     fn get_server_type(&self) -> ServerType {

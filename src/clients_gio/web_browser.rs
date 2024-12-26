@@ -19,7 +19,7 @@ pub struct WebBrowser<M: MessageType> {
     paths: HashMap<NodeId, Vec<NodeId>>, // NodeId will only be content Servers (text servers).
 }
 
-impl <M: MessageType> NetworkEdge<M> for WebBrowser<M> {
+impl<M: MessageType> NetworkEdge<M> for WebBrowser<M> {
     type RequestType = TextRequest;
     type ResponseType = TextResponse;
 
