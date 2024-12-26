@@ -118,31 +118,57 @@ impl <M:MessageType> NetworkEdge<M> for ChatClient<M> {
                 }
             }
             PacketType::FloodResponse(flood_resp) => {
-                let mut current_path = Vec::new();
+                let lenght = flood_resp.path_trace.len();
+                //if the client was the initiator of the flood AKA last element of the flood response
+                if (flood_resp.path_trace[lenght - 1].0 == self.node_id) {
 
-                for (node_id, node_type) in flood_resp.path_trace {
-                    current_path.push(node_id);
+                    //as of rn it "saves" all possible servers... we want something else i think...
+                    let mut current_path = Vec::new();
+                    for (node_id, node_type) in flood_resp.path_trace {
+                        current_path.push(node_id);
 
-                    if node_type == NodeType::Server {
-                        if !self.paths.contains_key(&node_id) {
-                            //if it's first time this server gets seen
-                            self.paths.insert(node_id.clone(), RouteList::new());
+                        if node_type == NodeType::Server {
+                            if !self.paths.contains_key(&node_id) {
+                                //if it's first time this server gets seen
+                                self.paths.insert(node_id.clone(), RouteList::new());
+                            }
+
+                            // Clone the current path for the server and insert it into the route list
+                            match self.paths.get_mut(&node_id){
+                                None => {
+                                    unreachable!()
+                                    //i hope it's unreachable
+                                }
+                                Some(rl) => {
+                                    rl.add_route(Route::new(current_path.clone()));
+                                }
+                            }
+
                         }
+                    }
+                }
+                else {
+                    //if it's not his flooding, but he is just part of the flood path that is to be delivered to another flood initiator
+                    let next_id = packet.routing_header.hops[packet.routing_header.hop_index]; //please tell me if it's right
 
-                        // Clone the current path for the server and insert it into the route list
-                        match self.paths.get_mut(&node_id){
-                            None => {
-                                unreachable!()
-                                //i hope it's unreachable
-                            }
-                            Some(rl) => {
-                                rl.add_route(Route::new(current_path.clone()));
-                            }
+                    match self.packet_send.get(&next_id){
+                        None => { /*no more a destination!*/ },
+                        Some(sender) => {
+                           match sender.try_send(packet.clone()){
+                               Err(_) => {
+                                   /*no more a destination!*/
+                               }
+                               Ok(_) => {
+                                   self.event_send
+                                       .send(ClientEvent::PacketSent(packet.clone()))
+                                       .unwrap();
+                                   //If the message was sent, I also notify the sim controller.
+                               }
+                           }
                         }
 
                     }
                 }
-
             }
         }
     }
