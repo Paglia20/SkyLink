@@ -34,6 +34,10 @@ impl<M: MessageType> NetworkEdge<M> for WebBrowser<M> {
     fn handle_packet(&mut self, _packet: Packet) {
         unimplemented!()
     }
+
+    fn handle_message(&mut self,message: Message<M>) {
+        unimplemented!()
+    }
 }
 // impl Client for WebBrowser {
 //     fn new(id: NodeId, event_send: Sender<ClientEvent>, command_recv: Receiver<ClientCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {

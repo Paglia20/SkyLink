@@ -39,6 +39,10 @@ impl<M: MessageType> NetworkEdge<M> for ChatServer {
             PacketType::FloodResponse(_) => {}
         }
     }
+
+    fn handle_message(&mut self,message: Message<M>) {
+        unimplemented!()
+    }
 }
 impl<M: MessageType> Server<M> for ChatServer {
     fn new(

@@ -31,21 +31,12 @@ pub trait NetworkEdge<M: MessageType> {
 
     // We assume that this function will be called only when the client or server has
     // already collected all fragments of a message and sent the Ack.
-    fn reassemble_message(packets: Vec<Packet>) -> Result<Message<M>, String> {
-        let source_id = packets[0].routing_header.hops[0];
-        let session_id = packets[0].session_id;
+    fn reassemble_message(session_id: u64, source_id: NodeId,packets: &Vec<Fragment>) -> Result<Message<M>, String> {
         let mut to_content = HashMap::new();
 
-        for packet in packets {
-            match packet.pack_type {
-                PacketType::MsgFragment(frag) => {
-                    let help = frag.data[0..frag.length as usize].to_vec();
-                    to_content.insert(frag.fragment_index, help);
-                }
-                _ => {
-                    return Err("Error: Wrong packet type".to_string());
-                }
-            }
+        for frag in packets {
+            let help = frag.data[0..frag.length as usize].to_vec();
+            to_content.insert(frag.fragment_index, help);
         }
         // We have all fragments, but we first put them in an HashMap to be able to order them.
 
@@ -77,6 +68,10 @@ pub trait NetworkEdge<M: MessageType> {
     }
 
     fn handle_packet(&mut self, packet: Packet);
+
+    fn handle_message(&mut self, message: Message<M>);
+
+
 
     //its just the same of the drone, where can we put it so it's not duplicate?
     fn send_flood_response(&mut self, flood: FloodRequest) {
