@@ -383,11 +383,11 @@ impl eframe::App for MyApp {
                                         }
                                     });
                                     //insert log of the drone (idk how)
-                                    if ui.button("Add Sender").clicked(){
+                                    if ui.button("Add Channel").clicked(){
                                         node.drone_window_scenes = AddSender;
                                     }
 
-                                    if ui.button("Remove Sender").clicked(){
+                                    if ui.button("Remove Channel").clicked(){
                                         node.drone_window_scenes = RemoveSender
                                     }
 
@@ -405,7 +405,7 @@ impl eframe::App for MyApp {
                                 }
                                 DroneWindowScene::AddSender => {
                                     ui.horizontal(|ui| {
-                                        ui.label("ID to add:");
+                                        ui.label("Add Channel With Drone:");
                                         ui.add(egui::DragValue::new(&mut self.sender_id));
 
                                     }
@@ -422,7 +422,7 @@ impl eframe::App for MyApp {
                                 }
                                 DroneWindowScene::RemoveSender => {
                                     ui.horizontal(|ui| {
-                                        ui.label("ID to remove:");
+                                        ui.label("Remove Channel With Drone:");
                                         ui.add(egui::DragValue::new(&mut self.sender_id))
                                     });
 
