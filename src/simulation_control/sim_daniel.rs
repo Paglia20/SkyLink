@@ -18,6 +18,7 @@ pub struct MyNodes {
     connections: Vec<NodeId>,
     selected: bool,
     node_type: NodeType,
+    drone_window_scenes: DroneWindowScene,
 }
 
 impl Eq for MyNodes {}
@@ -48,6 +49,7 @@ pub enum Scene {
     ManageShortcut,
 }
 
+#[derive(Clone, Debug)]
 pub enum DroneWindowScene {
     Start,
     AddSender,
@@ -59,7 +61,6 @@ pub struct MyApp {
     sim_contr: SimulationControl,
     nodes: Vec<MyNodes>,
     side_panel_scenes: Scene,
-    drone_window_scenes: DroneWindowScene,
     checked: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
@@ -80,6 +81,7 @@ impl MyApp {
                 connections: neighbors.1,
                 selected: false,
                 node_type: neighbors.0,
+                drone_window_scenes: DroneWindowScene::Start,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -92,7 +94,6 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
-            drone_window_scenes: DroneWindowScene::Start,
         };
         //app.generate_random_connections();
         app
@@ -104,31 +105,43 @@ impl MyApp {
             .iter()
             .map(|x| (x.id, x.selected))
             .collect::<Vec<(NodeId, bool)>>();
+
+        let id_to_window = self
+            .nodes
+            .iter()
+            .map(|x| (x.id, x.drone_window_scenes.clone()))
+            .collect::<Vec<(NodeId, DroneWindowScene)>>();
+
+        //aggiornamento
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, neighbors) in network_graph {
-            if id_to_selected.contains(&(node_id, true)) {
-                self.nodes.push(MyNodes {
-                    id: node_id,
-                    connections: neighbors.1,
-                    selected: true,
-                    node_type: neighbors.0,
-                });
-            } else if id_to_selected.contains(&(node_id, false)) {
-                self.nodes.push(MyNodes {
-                    id: node_id,
-                    connections: neighbors.1,
-                    selected: false,
-                    node_type: neighbors.0,
-                });
-            } else {
-                self.nodes.push(MyNodes {
-                    id: node_id,
-                    connections: neighbors.1,
-                    selected: false,
-                    node_type: neighbors.0.clone(),
-                });
-                self.checked.push(false);
+            self.nodes.push(MyNodes{
+                id: node_id,
+                connections: neighbors.1,
+                selected: false,
+                node_type: neighbors.0,
+                drone_window_scenes: DroneWindowScene::Start,
+            })
+        }
+
+        //ripristino selected e dws
+
+        for node in self.nodes.iter_mut() {
+            for (id, dws) in id_to_window.iter() {
+                if (*id == node.id){
+                    node.drone_window_scenes = dws.clone();
+                }
+
+            }
+        }
+
+        for node in self.nodes.iter_mut() {
+            for (id, selection) in id_to_selected.iter() {
+                if (*id == node.id){
+                    node.selected = selection.clone();
+                }
+
             }
         }
     }
@@ -357,7 +370,7 @@ impl eframe::App for MyApp {
                         .min_height(500.0)
                         .min_width(500.0)
                         .show(ctx, |ui| {
-                            match self.drone_window_scenes {
+                            match node.drone_window_scenes {
                                 DroneWindowScene::Start => {
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
                                     self.sender_id = 0;
@@ -371,19 +384,19 @@ impl eframe::App for MyApp {
                                     });
                                     //insert log of the drone (idk how)
                                     if ui.button("Add Sender").clicked(){
-                                        self.drone_window_scenes = AddSender
+                                        node.drone_window_scenes = AddSender;
                                     }
 
                                     if ui.button("Remove Sender").clicked(){
-                                        self.drone_window_scenes = RemoveSender
+                                        node.drone_window_scenes = RemoveSender
                                     }
 
                                     if ui.button("Crash This Drone").clicked(){
-                                        self.drone_window_scenes = Crash
+                                        node.drone_window_scenes = Crash
                                     }
 
                                     if ui.button("set PDR").clicked(){
-                                        self.drone_window_scenes = SetPDR
+                                        node.drone_window_scenes = SetPDR
                                     }
 
                                     if ui.button("Close").clicked() {
@@ -393,16 +406,18 @@ impl eframe::App for MyApp {
                                 DroneWindowScene::AddSender => {
                                     ui.horizontal(|ui| {
                                         ui.label("ID to add:");
-                                        ui.add(egui::DragValue::new(&mut self.sender_id))
-                                    });
+                                        ui.add(egui::DragValue::new(&mut self.sender_id));
+
+                                    }
+                                    );
 
                                     if ui.button("Confirm").clicked() {
 
                                         self.sim_contr.add_sender(node.id, self.sender_id);
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                     if ui.button("back").clicked(){
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
                                 DroneWindowScene::RemoveSender => {
@@ -414,10 +429,10 @@ impl eframe::App for MyApp {
                                     if ui.button("Confirm").clicked() {
 
                                         self.sim_contr.remove_senders(node.id, self.sender_id);
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                     if ui.button("back").clicked(){
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
                                 DroneWindowScene::Crash => {
@@ -427,7 +442,7 @@ impl eframe::App for MyApp {
                                         node.selected = false;
                                     }
                                     if ui.button("no, go back").clicked(){
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
                                 DroneWindowScene::SetPDR => {
@@ -439,11 +454,11 @@ impl eframe::App for MyApp {
                                     if ui.button("Set").clicked() {
 
                                         self.sim_contr.set_pdr(node.id, self.pdr);
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                     if ui.button("Back").clicked(){
                                         self.pdr = 0.0;
-                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                        node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
                             }
