@@ -4,15 +4,20 @@ use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
+use std::fmt::format;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
+use wg_2024::packet::NodeType;
+use wg_2024::packet::NodeType::Drone;
+use crate::simulation_control::sim_daniel::DroneWindowScene::AddSender;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id: NodeId,
     connections: Vec<NodeId>,
     selected: bool,
+    node_type: NodeType,
 }
 
 impl Eq for MyNodes {}
@@ -42,12 +47,22 @@ pub enum Scene {
     ManageDrop,
     ManageShortcut,
 }
+
+pub enum DroneWindowScene {
+    Start,
+    AddSender,
+    RemoveSender,
+    Crash,
+    SetPDR
+}
 pub struct MyApp {
     sim_contr: SimulationControl,
     nodes: Vec<MyNodes>,
-    scene: Scene,
+    side_panel_scenes: Scene,
+    drone_window_scenes: DroneWindowScene,
     checked: Vec<bool>,
     pdr: f32,
+    sender_id: NodeId
 }
 
 impl MyApp {
@@ -62,8 +77,9 @@ impl MyApp {
         for (node_id, neighbors) in network_graph {
             vec.push(MyNodes {
                 id: node_id,
-                connections: neighbors,
+                connections: neighbors.1,
                 selected: false,
+                node_type: neighbors.0,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -71,10 +87,12 @@ impl MyApp {
 
         let mut app = Self {
             nodes: vec,
-            scene: Start,
+            side_panel_scenes: Start,
             checked,
             sim_contr,
             pdr: 0.0,
+            sender_id: 0,
+            drone_window_scenes: DroneWindowScene::Start,
         };
         //app.generate_random_connections();
         app
@@ -92,21 +110,24 @@ impl MyApp {
             if id_to_selected.contains(&(node_id, true)) {
                 self.nodes.push(MyNodes {
                     id: node_id,
-                    connections: neighbors,
+                    connections: neighbors.1,
                     selected: true,
+                    node_type: neighbors.0,
                 });
             } else if id_to_selected.contains(&(node_id, false)) {
                 self.nodes.push(MyNodes {
                     id: node_id,
-                    connections: neighbors,
+                    connections: neighbors.1,
                     selected: false,
+                    node_type: neighbors.0,
                 });
             } else {
                 //if there are new elements, add and make those checkable
                 self.nodes.push(MyNodes {
                     id: node_id,
-                    connections: neighbors,
+                    connections: neighbors.1,
                     selected: false,
+                    node_type: neighbors.0.clone(),
                 });
                 self.checked.push(false);
             }
@@ -124,14 +145,19 @@ impl MyApp {
         self.sim_contr.add_to_log(event.clone());
         match event {
             DroneEvent::PacketDropped(_packet) => {
-                self.scene = ManageDrop;
+                self.side_panel_scenes = ManageDrop;
             }
             DroneEvent::ControllerShortcut(_packet) => {
-                self.scene = ManageShortcut;
+                self.side_panel_scenes = ManageShortcut;
             }
             _ => {}
         }
     }
+
+    pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
+        self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
+    }
+
 }
 
 impl eframe::App for MyApp {
@@ -169,7 +195,7 @@ impl eframe::App for MyApp {
             .min_width(300.0)
             .show(ctx, |ui| {
                 ui.heading("Actions");
-                match self.scene {
+                match self.side_panel_scenes {
                     Start => {
                         if ui.button("test log!").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(
@@ -179,10 +205,10 @@ impl eframe::App for MyApp {
                             ));
                         }
                         if ui.button("Add Drone!").clicked() {
-                            self.scene = ManageAdd;
+                            self.side_panel_scenes = ManageAdd;
                         }
                         if ui.button("remove Drone!").clicked() {
-                            self.scene = ManageCrash;
+                            self.side_panel_scenes = ManageCrash;
                         }
 
                         // for testing
@@ -213,7 +239,7 @@ impl eframe::App for MyApp {
                     }
                     ManageAdd => {
                         if ui.button("back").clicked() {
-                            self.scene = Start;
+                            self.side_panel_scenes = Start;
                             self.reset_check();
                             self.pdr = 0.0;
                         }
@@ -242,7 +268,7 @@ impl eframe::App for MyApp {
                                 .collect();
                             add_node(&checked_indices, self.pdr);
                             self.reset_check();
-                            self.scene = Start;
+                            self.side_panel_scenes = Start;
                         }
                     }
                     ManageCrash => {
@@ -253,7 +279,7 @@ impl eframe::App for MyApp {
                             ui.checkbox(&mut self.checked[i], item.id.to_string());
                         }
 
-                        if ui.button("Process Checked Items").clicked() {
+                        if ui.button("Confirm").clicked() {
                             let checked_indices: Vec<NodeId> = self
                                 .checked
                                 .iter()
@@ -267,8 +293,13 @@ impl eframe::App for MyApp {
                                 })
                                 .collect();
                             //add_node(&checked_indices);
+                            for node_id in checked_indices {
+                                self.sim_contr.crash_drone(node_id);
+                                self.nodes.retain(|item| item.id != node_id);
+
+                            }
                             self.reset_check();
-                            self.scene = Start;
+                            self.side_panel_scenes = Start;
                         }
                     }
                     ManageDrop => {
@@ -289,13 +320,13 @@ impl eframe::App for MyApp {
                                 // TODO: Implement packet resend logic
                             }
                             if ui.button("Lose it").clicked() {
-                                self.scene = Start; // Navigate back to the start
+                                self.side_panel_scenes = Start; // Navigate back to the start
                             }
                         } else {
                             // Inform the user if recovery is not possible
                             ui.label("Impossible to recover the packet.");
                             if ui.button("Close").clicked() {
-                                self.scene = Start; // Close the alert
+                                self.side_panel_scenes = Start; // Close the alert
                             }
                         }
                     }
@@ -303,7 +334,7 @@ impl eframe::App for MyApp {
                         //todo not sure wtf a shortcut does
 
                         if ui.button("Close").clicked() {
-                            self.scene = Start; // Close the alert
+                            self.side_panel_scenes = Start; // Close the alert
                         }
                     }
                 }
@@ -311,28 +342,88 @@ impl eframe::App for MyApp {
 
         for node in self.nodes.iter_mut() {
             if node.selected {
-                egui::Window::new(format!("Log for Node {}", node.id))
-                    .resizable(true) // Permetti il ridimensionamento
-                    .collapsible(true)
-                    .min_height(500.0)
-                    .min_width(500.0)
-                    .show(ctx, |ui| {
-                        ui.label(format!("Dettagli del nodo {}:", node.id));
+                match node.node_type {
+                    NodeType::Drone => {egui::Window::new(format!("Drone {}", node.id))
+                        .resizable(true) // Permetti il ridimensionamento
+                        .collapsible(true)
+                        .min_height(500.0)
+                        .min_width(500.0)
+                        .show(ctx, |ui| {
+                            match self.drone_window_scenes {
+                                DroneWindowScene::Start => {
+                                    // Qui puoi aggiungere ulteriori informazioni o controlli
+                                    ui.label("Log:");
+                                    ui.vertical(|ui| {
+                                        for s in &self.sim_contr.log {
+                                            if s.get_id() == node.id {
+                                                ui.label(format!("{}", s));
+                                            }
+                                        }
+                                    });
+                                    //insert log of the drone (idk how)
+                                    if ui.button("Add Sender").clicked(){
+                                        self.drone_window_scenes = AddSender
+                                    }
 
-                        // Qui puoi aggiungere ulteriori informazioni o controlli
-                        ui.label("Log:");
-                        ui.vertical(|ui| {
-                            for s in &self.sim_contr.log {
-                                if s.get_id() == node.id {
-                                    ui.label(format!("{}", s));
+                                    if ui.button("Close").clicked() {
+                                        node.selected = false; // Chiudi il popup
+                                    }
                                 }
+                                DroneWindowScene::AddSender => {
+
+                                }
+                                DroneWindowScene::RemoveSender => {}
+                                DroneWindowScene::Crash => {}
+                                DroneWindowScene::SetPDR => {}
+                            }
+
+                        });
+                    }
+                    NodeType::Client => { {egui::Window::new(format!(" Client {}", node.id))
+                        .resizable(true) // Permetti il ridimensionamento
+                        .collapsible(true)
+                        .min_height(500.0)
+                        .min_width(500.0)
+                        .show(ctx, |ui| {
+
+                            // Qui puoi aggiungere ulteriori informazioni o controlli
+                            ui.label("Log:");
+                            ui.vertical(|ui| {
+                                for s in &self.sim_contr.log {
+                                    if s.get_id() == node.id {
+                                        ui.label(format!("{}", s));
+                                    }
+                                }
+                            });
+                            //insert log of the drone (idk how)
+                            if ui.button("Chiudi").clicked() {
+                                node.selected = false; // Chiudi il popup
                             }
                         });
-                        //insert log of the drone (idk how)
-                        if ui.button("Chiudi").clicked() {
-                            node.selected = false; // Chiudi il popup
-                        }
-                    });
+                    } }
+                    NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
+                            .resizable(true) // Permetti il ridimensionamento
+                            .collapsible(true)
+                            .min_height(500.0)
+                            .min_width(500.0)
+                            .show(ctx, |ui| {
+
+                                // Qui puoi aggiungere ulteriori informazioni o controlli
+                                ui.label("Log:");
+                                ui.vertical(|ui| {
+                                    for s in &self.sim_contr.log {
+                                        if s.get_id() == node.id {
+                                            ui.label(format!("{}", s));
+                                        }
+                                    }
+                                });
+                                //insert log of the drone (idk how)
+                                if ui.button("Chiudi").clicked() {
+                                    node.selected = false; // Chiudi il popup
+                                }
+                            });
+                        } }
+                }
             }
         }
 
