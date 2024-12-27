@@ -20,7 +20,7 @@ pub struct ChatClient<M: MessageType> {
 
     paths: HashMap<NodeId, RouteList>, // These NodeId are just server_chat nodes.
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we want to communicate with, the second one is the server he has to write to, this two hash might be merged in future
-    fragments: HashMap<u64, Vec<Fragment>>,
+    fragments: HashMap<(u64, NodeId), Vec<Fragment>>,
 }
 
 impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
@@ -30,7 +30,7 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
     fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
-        self.fragments.insert(session_id, frags.clone());
+        self.fragments.insert((session_id, self.node_id), frags.clone());
 
         for fragment in frags {
             //create SRH
@@ -63,12 +63,32 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
 
     fn handle_packet(&mut self, mut packet: Packet) {
         match packet.pack_type.clone() {
-            PacketType::MsgFragment(_fragment) => {
-                unimplemented!()
-                //wait for all the frag
-                //recreate message
-                //handle message
-                //send response
+            PacketType::MsgFragment(fragment) => {
+                if ( packet.routing_header.hops[0] == self.node_id){
+                    //circular message? is it possible? HELL NAH
+                }
+                let tot_num_frag = fragment.total_n_fragments as usize;
+                let session_id = packet.session_id;
+                let initiator_id =  packet.routing_header.hops[0];
+                //add new frag
+                if !self.fragments.contains_key(&(packet.session_id, packet.routing_header.hops[0])) {
+                    self.fragments.insert((session_id, initiator_id), vec![fragment]);
+                } else {
+                    self.fragments.get_mut(&(session_id, initiator_id)).unwrap().push(fragment);
+                }
+
+                //if all the frag have arrived recreate message
+                let frags_clone = self.fragments.get(&(packet.session_id, packet.routing_header.hops[0])).clone().unwrap();
+                if (frags_clone.len() == tot_num_frag){
+                    let message = match Self::reassemble_message(session_id,initiator_id, frags_clone){
+                        Ok(mess) => {mess}
+                        Err(e) => {
+                            unimplemented!()//
+                        }
+                    };
+                    //handle message
+                    self.handle_message(message);
+                }
             }
             PacketType::Ack(_ack) => {}
             PacketType::Nack(_nack) => {}
@@ -162,6 +182,10 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
                 }
             }
         }
+    }
+
+    fn handle_message(&mut self,message: Message<M>) {
+        unimplemented!()
     }
 }
 
