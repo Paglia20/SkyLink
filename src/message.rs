@@ -3,10 +3,34 @@ use serde::{Deserialize, Serialize};
 use wg_2024::network::NodeId;
 
 #[derive(Debug, Clone)]
-pub struct Message<M: MessageType> {
+pub struct Message {
     pub source_id: NodeId,
     pub session_id: u64,
-    pub content: M,
+    pub content: ContenType,
+}
+impl Message {
+    pub fn stringify_content(&self) -> String {
+        match &self.content {
+            ContenType::TextRequest(inner) =>  inner.stringify(),
+            ContenType::TextResponse(inner) => inner.stringify(),
+            ContenType::MediaRequest(inner) => inner.stringify(),
+            ContenType::MediaResponse(inner) =>  inner.stringify(),
+            ContenType::ChatRequest(inner) =>  inner.stringify(),
+            ContenType::ChatResponse(inner) => inner.stringify(),
+        }
+    }
+
+
+}
+
+#[derive(Clone, Debug)]
+pub enum ContenType{
+    TextRequest(TextRequest),
+    TextResponse(TextResponse),
+    MediaRequest(MediaRequest),
+    MediaResponse(MediaResponse),
+    ChatRequest(ChatRequest),
+    ChatResponse(ChatResponse),
 }
 
 pub trait MessageType: Serialize + DeserializeOwned {

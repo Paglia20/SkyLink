@@ -1,17 +1,18 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::Client;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{ChatRequest, ChatResponse, Message, MessageType};
+use crate::message::{ChatRequest, ChatResponse, ContenType, Message};
 use crate::network_edge::NetworkEdge;
 use crate::routing::{Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, NodeType, Packet, PacketType};
+use crate::message::TextRequest::*;
 
-pub struct ChatClient<M: MessageType> {
+pub struct ChatClient {
     node_id: NodeId,
-    command_recv: Receiver<ClientCommand<M>>,
+    command_recv: Receiver<ClientCommand>,
     event_send: Sender<ClientEvent>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -21,13 +22,14 @@ pub struct ChatClient<M: MessageType> {
     paths: HashMap<NodeId, RouteList>, // These NodeId are just server_chat nodes.
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we want to communicate with, the second one is the server he has to write to, this two hash might be merged in future
     fragments: HashMap<(u64, NodeId), Vec<Fragment>>,
+    arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
 }
 
-impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
+impl NetworkEdge for ChatClient {
     type RequestType = ChatRequest; // Still questioning if we need this lol -Leo
     type ResponseType = ChatResponse;
 
-    fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String> {
+    fn send_message(&mut self, message: Message, destination: NodeId) -> Result<(), String> {
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
         self.fragments.insert((session_id, self.node_id), frags.clone());
@@ -62,14 +64,33 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
+        if *packet.routing_header.hops.last().unwrap() != self.node_id {
+            //if it's not his packet, but he has to act as a drone (that never misses)
+            let next_id = packet.routing_header.hops[packet.routing_header.hop_index]; //please tell me if it's right
+
+            match self.packet_send.get(&next_id) {
+                None => { /*no more a destination!*/ }
+                Some(sender) => {
+                    match sender.try_send(packet.clone()) {
+                        Err(_) => { /*no more a destination!*/ }
+                        Ok(_) => {
+                            self.event_send
+                                .send(ClientEvent::PacketSent(packet.clone()))
+                                .unwrap();
+                            //If the message was sent, I also notify the sim controller.
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        //we can take for granted he is the destination
         match packet.pack_type.clone() {
             PacketType::MsgFragment(fragment) => {
-                if ( packet.routing_header.hops[0] == self.node_id){
-                    //circular message? is it possible? HELL NAH
-                }
                 let tot_num_frag = fragment.total_n_fragments as usize;
                 let session_id = packet.session_id;
-                let initiator_id =  packet.routing_header.hops[0];
+                let initiator_id = packet.routing_header.hops[0];
                 //add new frag
                 if !self.fragments.contains_key(&(packet.session_id, packet.routing_header.hops[0])) {
                     self.fragments.insert((session_id, initiator_id), vec![fragment]);
@@ -78,16 +99,19 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
                 }
 
                 //if all the frag have arrived recreate message
-                let frags_clone = self.fragments.get(&(packet.session_id, packet.routing_header.hops[0])).clone().unwrap();
-                if (frags_clone.len() == tot_num_frag){
-                    let message = match Self::reassemble_message(session_id,initiator_id, frags_clone){
-                        Ok(mess) => {mess}
-                        Err(e) => {
-                            unimplemented!()//
+                let frags_clone = self.fragments.get(&(packet.session_id, packet.routing_header.hops[0])).unwrap();
+                if (frags_clone.len() == tot_num_frag) {
+                    let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                        Ok(mess) => { mess }
+                        Err(_e) => {
+                            unimplemented!() //
                         }
                     };
                     //handle message
                     self.handle_message(message);
+
+                    //svuota hashmap
+                    self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
                 }
             }
             PacketType::Ack(_ack) => {}
@@ -135,47 +159,24 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
                 }
             }
             PacketType::FloodResponse(flood_resp) => {
-                let lenght = flood_resp.path_trace.len();
-                //if the client was the initiator of the flood AKA last element of the flood response
-                if (flood_resp.path_trace[lenght - 1].0 == self.node_id) {
-                    //as of rn it "saves" all possible servers... we want something else i think...
-                    let mut current_path = Vec::new();
-                    for (node_id, node_type) in flood_resp.path_trace {
-                        current_path.push(node_id);
+                //as of rn it "saves" all possible servers... we want something else i think...
+                let mut current_path = Vec::new();
+                for (node_id, node_type) in flood_resp.path_trace {
+                    current_path.push(node_id);
 
-                        if node_type == NodeType::Server {
-                            if !self.paths.contains_key(&node_id) {
-                                //if it's first time this server gets seen
-                                self.paths.insert(node_id.clone(), RouteList::new());
-                            }
-
-                            // Clone the current path for the server and insert it into the route list
-                            match self.paths.get_mut(&node_id) {
-                                None => {
-                                    unreachable!()
-                                    //i hope it's unreachable
-                                }
-                                Some(rl) => {
-                                    rl.add_route(Route::new(current_path.clone()));
-                                }
-                            }
+                    if node_type == NodeType::Server {
+                        if !self.paths.contains_key(&node_id) {
+                            //if it's first time this server gets seen
+                            self.paths.insert(node_id.clone(), RouteList::new());
                         }
-                    }
-                } else {
-                    //if it's not his flooding, but he is just part of the flood path that is to be delivered to another flood initiator
-                    let next_id = packet.routing_header.hops[packet.routing_header.hop_index]; //please tell me if it's right
-
-                    match self.packet_send.get(&next_id) {
-                        None => { /*no more a destination!*/ }
-                        Some(sender) => {
-                            match sender.try_send(packet.clone()) {
-                                Err(_) => { /*no more a destination!*/ }
-                                Ok(_) => {
-                                    self.event_send
-                                        .send(ClientEvent::PacketSent(packet.clone()))
-                                        .unwrap();
-                                    //If the message was sent, I also notify the sim controller.
-                                }
+                        // Clone the current path for the server and insert it into the route list
+                        match self.paths.get_mut(&node_id) {
+                            None => {
+                                unreachable!()
+                                //i hope it's unreachable
+                            }
+                            Some(rl) => {
+                                rl.add_route(Route::new(current_path.clone()));
                             }
                         }
                     }
@@ -184,15 +185,32 @@ impl<M: MessageType> NetworkEdge<M> for ChatClient<M> {
         }
     }
 
-    fn handle_message(&mut self,message: Message<M>) {
-        unimplemented!()
+
+    fn handle_message(&mut self, message: Message) {
+        match message.content {
+            ContenType::ChatResponse(resp) => {
+                match resp{
+                    ChatResponse::ClientList(list) => {
+                        self.contact_list.insert(message.source_id, list);
+                    }
+                    ChatResponse::MessageFrom { from, message } => {
+                        self.arrived_messages.entry(from).or_insert(Vec::new()).push(message);
+                    }
+                    ChatResponse::MessageSent => {
+                        //not sure, is just an ack?
+                    }
+                }
+            }
+            _ => {} //no point in getting other types of req
+        }
     }
 }
 
-impl<M: MessageType> Client<M> for ChatClient<M> {
+
+impl Client for ChatClient {
     fn new(
         node_id: NodeId,
-        command_recv: Receiver<ClientCommand<M>>,
+        command_recv: Receiver<ClientCommand>,
         event_send: Sender<ClientEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
@@ -208,6 +226,7 @@ impl<M: MessageType> Client<M> for ChatClient<M> {
             paths: HashMap::new(),
             contact_list: HashMap::new(),
             fragments: HashMap::new(),
+            arrived_messages: HashMap::new(),
         }
     }
 
@@ -228,7 +247,7 @@ impl<M: MessageType> Client<M> for ChatClient<M> {
         }
     }
 
-    fn handle_command(&mut self, command: ClientCommand<M>) {
+    fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::RemoveSender(node_id) => {
                 if self.packet_send.contains_key(&node_id) {

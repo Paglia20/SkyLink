@@ -1,4 +1,3 @@
-use crate::message::MessageType;
 use crate::network_edge::NetworkEdge;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_type::ServerType;
@@ -7,7 +6,7 @@ use dr_ones::Packet;
 use std::collections::HashMap;
 use wg_2024::network::*;
 
-pub trait Server<M: MessageType>: NetworkEdge<M> {
+pub trait Server: NetworkEdge {
     fn new(
         id: NodeId,
         command_recv: Receiver<ServerCommand>,
