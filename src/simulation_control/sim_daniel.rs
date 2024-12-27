@@ -10,7 +10,7 @@ use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType;
 use wg_2024::packet::NodeType::Drone;
-use crate::simulation_control::sim_daniel::DroneWindowScene::AddSender;
+use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -62,7 +62,7 @@ pub struct MyApp {
     drone_window_scenes: DroneWindowScene,
     checked: Vec<bool>,
     pdr: f32,
-    sender_id: NodeId
+    sender_id: NodeId,
 }
 
 impl MyApp {
@@ -122,7 +122,6 @@ impl MyApp {
                     node_type: neighbors.0,
                 });
             } else {
-                //if there are new elements, add and make those checkable
                 self.nodes.push(MyNodes {
                     id: node_id,
                     connections: neighbors.1,
@@ -158,6 +157,15 @@ impl MyApp {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
     }
 
+    pub fn create_drone_id_vector(&self) -> Vec<NodeId> {
+        let mut ids: Vec<NodeId> = Vec::new();
+        for drone in self.nodes.iter() {
+            if drone.node_type == Drone{
+                ids.push(drone.id);
+            }
+        }
+        ids
+    }
 }
 
 impl eframe::App for MyApp {
@@ -352,6 +360,7 @@ impl eframe::App for MyApp {
                             match self.drone_window_scenes {
                                 DroneWindowScene::Start => {
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
+                                    self.sender_id = 0;
                                     ui.label("Log:");
                                     ui.vertical(|ui| {
                                         for s in &self.sim_contr.log {
@@ -365,18 +374,79 @@ impl eframe::App for MyApp {
                                         self.drone_window_scenes = AddSender
                                     }
 
+                                    if ui.button("Remove Sender").clicked(){
+                                        self.drone_window_scenes = RemoveSender
+                                    }
+
+                                    if ui.button("Crash This Drone").clicked(){
+                                        self.drone_window_scenes = Crash
+                                    }
+
+                                    if ui.button("set PDR").clicked(){
+                                        self.drone_window_scenes = SetPDR
+                                    }
+
                                     if ui.button("Close").clicked() {
                                         node.selected = false; // Chiudi il popup
                                     }
                                 }
                                 DroneWindowScene::AddSender => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("ID to add:");
+                                        ui.add(egui::DragValue::new(&mut self.sender_id))
+                                    });
 
+                                    if ui.button("Confirm").clicked() {
+
+                                        self.sim_contr.add_sender(node.id, self.sender_id);
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                    if ui.button("back").clicked(){
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
                                 }
-                                DroneWindowScene::RemoveSender => {}
-                                DroneWindowScene::Crash => {}
-                                DroneWindowScene::SetPDR => {}
-                            }
+                                DroneWindowScene::RemoveSender => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("ID to remove:");
+                                        ui.add(egui::DragValue::new(&mut self.sender_id))
+                                    });
 
+                                    if ui.button("Confirm").clicked() {
+
+                                        self.sim_contr.remove_senders(node.id, self.sender_id);
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                    if ui.button("back").clicked(){
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                }
+                                DroneWindowScene::Crash => {
+                                    ui.label("Are you sure you want to crash this drone?");
+                                    if ui.button("yes, crash").clicked(){
+                                        self.sim_contr.crash_drone(node.id);
+                                        node.selected = false;
+                                    }
+                                    if ui.button("no, go back").clicked(){
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                }
+                                DroneWindowScene::SetPDR => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("insert PDR:");
+                                        ui.add(egui::DragValue::new(&mut self.pdr).speed(0.1));
+                                    });
+
+                                    if ui.button("Set").clicked() {
+
+                                        self.sim_contr.set_pdr(node.id, self.pdr);
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                    if ui.button("Back").clicked(){
+                                        self.pdr = 0.0;
+                                        self.drone_window_scenes = DroneWindowScene::Start;
+                                    }
+                                }
+                            }
                         });
                     }
                     NodeType::Client => { {egui::Window::new(format!(" Client {}", node.id))
