@@ -1,4 +1,4 @@
-use crate::message::{ChatRequest, ChatResponse, Message, MessageType};
+use crate::message::{ChatRequest, ChatResponse, Message};
 use crate::network_edge::NetworkEdge;
 use crate::routing::RouteList;
 use crate::server::server_command::{ServerCommand, ServerEvent};
@@ -22,11 +22,11 @@ pub struct ChatServer {
     fragments: HashMap<u64, Vec<Fragment>>, // The u64 is the session id.
 }
 
-impl<M: MessageType> NetworkEdge<M> for ChatServer {
+impl NetworkEdge for ChatServer {
     type RequestType = ChatRequest;
     type ResponseType = ChatResponse;
 
-    fn send_message(&mut self, _message: Message<M>, _destination: NodeId) -> Result<(), String> {
+    fn send_message(&mut self, _message: Message, _destination: NodeId) -> Result<(), String> {
         todo!()
     }
 
@@ -40,11 +40,11 @@ impl<M: MessageType> NetworkEdge<M> for ChatServer {
         }
     }
 
-    fn handle_message(&mut self,message: Message<M>) {
+    fn handle_message(&mut self,_message: Message) {
         unimplemented!()
     }
 }
-impl<M: MessageType> Server<M> for ChatServer {
+impl Server for ChatServer {
     fn new(
         node_id: NodeId,
         command_recv: Receiver<ServerCommand>,

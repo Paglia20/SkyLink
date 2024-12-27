@@ -1,16 +1,16 @@
-use crate::message::{Message, MessageType, Request, Response};
+use crate::message::{ChatRequest, ChatResponse, ContenType, MediaRequest, MediaResponse, Message, MessageType, Request, Response, TextRequest, TextResponse};
 use std::collections::HashMap;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 
-pub trait NetworkEdge<M: MessageType> {
+pub trait NetworkEdge {
     type RequestType: Request;
     type ResponseType: Response;
 
-    fn send_message(&mut self, message: Message<M>, destination: NodeId) -> Result<(), String>;
+    fn send_message(&mut self, message: Message, destination: NodeId) -> Result<(), String>;
 
-    fn fragment_message(message: &Message<M>) -> Vec<Fragment> {
-        let all_bytes = message.content.stringify().into_bytes();
+    fn fragment_message(message: &Message) -> Vec<Fragment> {
+        let all_bytes = message.stringify_content().into_bytes();
         let total_n_fragments = (all_bytes.len() as u64).div_ceil(128);
         // I divide rounding up with div_ceil
 
@@ -31,7 +31,7 @@ pub trait NetworkEdge<M: MessageType> {
 
     // We assume that this function will be called only when the client or server has
     // already collected all fragments of a message and sent the Ack.
-    fn reassemble_message(session_id: u64, source_id: NodeId,packets: &Vec<Fragment>) -> Result<Message<M>, String> {
+    fn reassemble_message(session_id: u64, source_id: NodeId,packets: &Vec<Fragment>) -> Result<Message, String> {
         let mut to_content = HashMap::new();
 
         for frag in packets {
@@ -53,23 +53,63 @@ pub trait NetworkEdge<M: MessageType> {
         // We repeat for every fragment of the HashMap (Since we have all of them,
         // we can just use an incremental counter).
 
-        let content = match M::from_string(string_to_cont) {
-            Ok(content) => content,
-            Err(e) => {
-                return Err(e);
-            }
-        };
+        // Attempt to deserialize into each possible type
+        if let Ok(content) = MediaRequest::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::MediaRequest(content),
+            });
+        }
 
-        Ok(Message {
-            source_id,
-            session_id,
-            content,
-        })
+        if let Ok(content) = MediaResponse::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::MediaResponse(content),
+            });
+        }
+
+        if let Ok(content) = TextRequest::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::TextRequest(content),
+            });
+        }
+
+        if let Ok(content) = TextResponse::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::TextResponse(content),
+            });
+        }
+
+        if let Ok(content) = ChatRequest::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::ChatRequest(content),
+            });
+        }
+
+        if let Ok(content) = ChatResponse::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContenType::ChatResponse(content),
+            });
+        }
+
+        // no deserialization succeeds
+        Err("Failed to determine content type".to_string())
     }
+
 
     fn handle_packet(&mut self, packet: Packet);
 
-    fn handle_message(&mut self, message: Message<M>);
+    fn handle_message(&mut self, message: Message);
 
 
 
