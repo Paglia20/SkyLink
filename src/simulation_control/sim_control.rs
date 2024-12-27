@@ -194,6 +194,11 @@ impl SimulationControl {
                         ids.remove(pos);
                     }
                 }
+                if let Some((nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
+                    if let Some(pos) = ids.iter().position(|&x| x == id) {
+                        ids.remove(pos);
+                    }
+                }
                 self.log.push_back(LogEntry::new(
                     Cause::Managing,
                     id,
