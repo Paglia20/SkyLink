@@ -7,15 +7,18 @@ use std::thread::JoinHandle;
 use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::*;
+use wg_2024::drone;
+use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
+use wg_2024::packet::{NodeType, Packet};
+use wg_2024::packet::NodeType::*;
 
 pub struct SimulationControl {
     node_send: HashMap<NodeId, Sender<DroneCommand>>,
     pub(crate) node_recv: Receiver<DroneEvent>,
     pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
-    pub(crate) network_graph: HashMap<NodeId, Vec<NodeId>>,
+    pub(crate) network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
 }
 
@@ -25,7 +28,7 @@ impl SimulationControl {
         node_recv: Receiver<DroneEvent>,
         channel_for_drone: Sender<DroneEvent>,
         all_sender_packets: HashMap<NodeId, Sender<Packet>>,
-        network_graph: HashMap<NodeId, Vec<NodeId>>,
+        network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
     ) -> Self {
         SimulationControl {
             node_send,
@@ -91,7 +94,7 @@ impl SimulationControl {
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()> {
         let new_id = self.generate_id();
         //aggiorna network graph
-        self.network_graph.insert(new_id, connections.clone());
+        self.network_graph.insert(new_id, (NodeType::Drone, connections.clone()));
 
         let (control_sender, control_receiver) = unbounded(); //canale per il Sim che manda drone command al drone
         self.node_send
@@ -154,13 +157,14 @@ impl SimulationControl {
                 println!("crash command sent do the drone {}", id);
 
                 // remove the drone from the neighbour's sends
-                if let Some(vec) = self.network_graph.get(&id) {
+                if let mut vec = self.network_graph.keys().cloned().collect::<Vec<_>>() {
                     for (neighbor_id, neighbor_sender) in &self.node_send {
                         if vec.contains(neighbor_id) {
                             neighbor_sender.send(RemoveSender(id)).unwrap()
                         }
                     }
                 }
+
                 if let Some(to_be_dropped) = self.node_send.remove(&id) {
                     drop(to_be_dropped);
                 }
@@ -169,12 +173,14 @@ impl SimulationControl {
                     id,
                     "Node crashed".to_string(),
                 ));
+
+                self.network_graph.remove(&id);
             }
         } else {
             println!("drone {} not found in the network.", id);
         }
     }
-    fn remove_senders(&mut self, id: NodeId, id_to_remove: NodeId) {
+    pub fn remove_senders(&mut self, id: NodeId, id_to_remove: NodeId) {
         if let Some(sender) = self.node_send.get(&id) {
             if let Err(_e) = sender.send(RemoveSender(id_to_remove)) {
                 println!(
@@ -192,7 +198,7 @@ impl SimulationControl {
         }
     }
 
-    fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
+   pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
         if let Some(sender) = self.node_send.get(&id) {
             if let Some(senderpacket) = self.all_sender_packets.get(&id) {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
@@ -209,7 +215,7 @@ impl SimulationControl {
         }
     }
 
-    fn set_pdr(&mut self, id: NodeId, pdr: f32) {
+    pub fn set_pdr(&mut self, id: NodeId, pdr: f32) {
         if let Some(sender) = self.node_send.get(&id) {
             if let Err(_e) = sender.send(DroneCommand::SetPacketDropRate(pdr)) {
                 println!("error in setting drone {} pdr to {}", id, pdr);
