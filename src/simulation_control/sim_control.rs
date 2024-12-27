@@ -189,6 +189,11 @@ impl SimulationControl {
                 );
             } else {
                 println!("drone {} removed from drone {} senders", id_to_remove, id);
+                if let Some((nodetype, ids)) = self.network_graph.get_mut(&id) {
+                    if let Some(pos) = ids.iter().position(|&x| x == id_to_remove) {
+                        ids.remove(pos);
+                    }
+                }
                 self.log.push_back(LogEntry::new(
                     Cause::Managing,
                     id,
@@ -204,6 +209,9 @@ impl SimulationControl {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
+                    if let Some((nodetype, ids)) = self.network_graph.get_mut(&id) {
+                        ids.push(id_to_add);
+                    }
                     println!("drone {} added to drone {} senders", id_to_add, id);
                     self.log.push_back(LogEntry::new(
                         Cause::Managing,
