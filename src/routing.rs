@@ -21,7 +21,7 @@ impl Route {
     pub fn get_weight(&self) -> f64 {
         let mut weight = 0.0;
         for (_,x,y) in self.path.iter() {
-            weight += (*x as f64)/(*x as f64 + *y as f64);
+            weight *= (*x as f64)/(*x as f64 + *y as f64);
         }
         weight
         // By weighting the routes, we should consider the drop rates
@@ -91,10 +91,10 @@ impl RouteList {
         let mut to_remove = Vec::new();
         for route in self.routes.iter() {
 
-            if res.is_none() || route.get_weight() < weight{
+            if res.is_none() || route.get_weight() > weight{
                 res = Some(route.clone());
                 weight = route.get_weight();
-            } else if route.get_weight() > weight {
+            } else if route.get_weight() < weight {
                 // Since this is called often, I put a check for nodes with PDR too high
                 match route.check_for_100_pdr() {
                     None => {},
