@@ -4,9 +4,6 @@ use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
-use std::fmt::format;
-use crossbeam_channel::{Sender, TrySendError};
-use dr_ones::Packet;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
@@ -131,7 +128,7 @@ impl MyApp {
 
         for node in self.nodes.iter_mut() {
             for (id, dws) in id_to_window.iter() {
-                if (*id == node.id){
+                if *id == node.id{
                     node.drone_window_scenes = dws.clone();
                 }
 
@@ -140,7 +137,7 @@ impl MyApp {
 
         for node in self.nodes.iter_mut() {
             for (id, selection) in id_to_selected.iter() {
-                if (*id == node.id){
+                if *id == node.id {
                     node.selected = selection.clone();
                 }
 
@@ -158,12 +155,12 @@ impl MyApp {
     pub fn manage_event(&mut self, event: DroneEvent) {
         self.sim_contr.add_to_log(event.clone());
         match event {
-            DroneEvent::PacketDropped(packet) => {
+            PacketDropped(packet) => {
                 let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
                 self.sim_contr.dropped_packets.push((source_id, packet));
                 self.side_panel_scenes = ManageDrop;
             }
-            DroneEvent::ControllerShortcut(packet) => {
+            ControllerShortcut(packet) => {
                 match packet.clone().pack_type {
                     PacketType::MsgFragment(_) => {
                         self.sim_contr.log.push_back(LogEntry::new(
@@ -182,7 +179,7 @@ impl MyApp {
                         let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
                             None => {
                                 self.sim_contr.log.push_back(LogEntry::new(
-                                    Cause::Error,
+                                    Error,
                                     next_id,
                                     format!("error in sendig packet {} (packet not present)", next_id),
                                 ));
@@ -331,7 +328,7 @@ impl eframe::App for MyApp {
                                     }
                                 })
                                 .collect();
-                            let id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
+                            let _id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
                             self.reset_check();
                             self.pdr = 0.0;
                             self.side_panel_scenes = Start;
@@ -342,7 +339,7 @@ impl eframe::App for MyApp {
                         ui.label("select drones to crash:");
                         ui.separator();
                         for (i, item) in self.nodes.iter().enumerate() {
-                            if (item.node_type == NodeType::Drone) {
+                            if item.node_type == Drone {
                                 ui.checkbox(&mut self.checked[i], item.id.to_string());
                             }
                         }
@@ -402,7 +399,7 @@ impl eframe::App for MyApp {
         for node in self.nodes.iter_mut() {
             if node.selected {
                 match node.node_type {
-                    NodeType::Drone => {egui::Window::new(format!("Drone {}", node.id))
+                    Drone => {egui::Window::new(format!("Drone {}", node.id))
                         .resizable(true) // Permetti il ridimensionamento
                         .collapsible(true)
                         .min_height(500.0)
@@ -441,7 +438,7 @@ impl eframe::App for MyApp {
                                         node.selected = false; // Chiudi il popup
                                     }
                                 }
-                                DroneWindowScene::AddSender => {
+                                AddSender => {
                                     ui.horizontal(|ui| {
                                         ui.label("Add Channel With Drone:");
                                         ui.add(egui::DragValue::new(&mut self.sender_id));
@@ -458,7 +455,7 @@ impl eframe::App for MyApp {
                                         node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
-                                DroneWindowScene::RemoveSender => {
+                                RemoveSender => {
                                     ui.horizontal(|ui| {
                                         ui.label("Remove Channel With Drone:");
                                         ui.add(egui::DragValue::new(&mut self.sender_id))
@@ -473,7 +470,7 @@ impl eframe::App for MyApp {
                                         node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
-                                DroneWindowScene::Crash => {
+                                Crash => {
                                     ui.label("Are you sure you want to crash this drone?");
                                     if ui.button("yes, crash").clicked(){
                                         self.sim_contr.crash_drone(node.id);
@@ -483,7 +480,7 @@ impl eframe::App for MyApp {
                                         node.drone_window_scenes = DroneWindowScene::Start;
                                     }
                                 }
-                                DroneWindowScene::SetPDR => {
+                                SetPDR => {
                                     ui.horizontal(|ui| {
                                         ui.label("insert PDR:");
                                         ui.add(egui::DragValue::new(&mut self.pdr).speed(0.1));
@@ -627,10 +624,6 @@ impl eframe::App for MyApp {
             }
         }
     }
-}
-
-fn add_node(checked_indices: &Vec<NodeId>, pdr: f32) {
-    // SimulationControl::spawn_node(&mut , pdr, checked_indices.clone());
 }
 
 pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> {
