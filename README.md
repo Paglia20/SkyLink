@@ -1,3 +1,8 @@
-# SkyLink
-se leo è il wgc, e io sono il wg di leo, chi sono io?
-ciao prova
+# SkyLink 
+
+## Ready to go
+to add our drone to your network:
+
+```rust
+[dependencies]
+skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }

@@ -1,11 +1,15 @@
-use std::{fs, thread};
-use std::thread::JoinHandle;
-use std::collections::HashMap;
-use crossbeam_channel::unbounded;
-use wg_2024::config::Config;
-use wg_2024::drone::Drone;
 use crate::sim_control::SimulationControl;
 use crate::skylink_drone::drone::SkyLinkDrone;
+use crossbeam_channel::unbounded;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::{fs, thread};
+use wg_2024::config::Config;
+use wg_2024::drone::Drone;
+use wg_2024::packet::NodeType;
+use wg_2024::packet::NodeType::*;
 
 pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
@@ -40,13 +44,13 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     //I crate a hashmap that will be used as graph by the Simulation Controller.
     let mut network_graph = HashMap::new();
     for drone in config.drone.iter() {
-        network_graph.insert(drone.id, drone.connected_node_ids.clone());
+        network_graph.insert((drone.id), (NodeType::Drone, drone.connected_node_ids.clone()));
     }
     for server in config.server.iter() {
-        network_graph.insert(server.id, server.connected_drone_ids.clone());
+        network_graph.insert(server.id, (NodeType::Server, server.connected_drone_ids.clone()));
     }
     for client in config.client.iter() {
-        network_graph.insert(client.id, client.connected_drone_ids.clone());
+        network_graph.insert(client.id, (NodeType::Client, client.connected_drone_ids.clone()));
     }
 
     for drone in config.drone.into_iter() {
@@ -67,7 +71,14 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
 
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
-            let mut drone = SkyLinkDrone::new(drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr);
+            let mut drone = SkyLinkDrone::new(
+                drone.id,
+                node_event_send,
+                contr_recv,
+                drone_recv,
+                drone_send,
+                drone.pdr,
+            );
 
             drone.run();
         }));
@@ -75,8 +86,13 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
         //implementation of other groups drones in our network.
     }
 
-
-    let sim_contr = SimulationControl::new(command_send, event_recv, event_send, packet_senders, network_graph);
+    let mut sim_contr = SimulationControl::new(
+        command_send,
+        event_recv,
+        event_send,
+        packet_senders,
+        network_graph,
+    );
 
     (sim_contr, handles)
 }
