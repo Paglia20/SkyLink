@@ -1,13 +1,13 @@
-use crate::message::{ChatRequest, ChatResponse, ContenType, MediaRequest, MediaResponse, Message, MessageType, Request, Response, TextRequest, TextResponse};
+use crate::message::{ChatRequest, ChatResponse, ContentType, MediaRequest, MediaResponse, Message, MessageType,TextRequest, TextResponse};
 use std::collections::HashMap;
+use std::sync::Arc;
+use crossbeam_channel::Sender;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
+use crate::routing::RouteList;
 
 pub trait NetworkEdge {
-    type RequestType: Request;
-    type ResponseType: Response;
-
-    fn send_message(&mut self, message: Message, destination: NodeId) -> Result<(), String>;
+    fn send_message(&mut self, message: Message, destination: NodeId);
 
     fn fragment_message(message: &Message) -> Vec<Fragment> {
         let all_bytes = message.stringify_content().into_bytes();
@@ -58,7 +58,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::MediaRequest(content),
+                content: ContentType::MediaRequest(content),
             });
         }
 
@@ -66,7 +66,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::MediaResponse(content),
+                content: ContentType::MediaResponse(content),
             });
         }
 
@@ -74,7 +74,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::TextRequest(content),
+                content: ContentType::TextRequest(content),
             });
         }
 
@@ -82,7 +82,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::TextResponse(content),
+                content: ContentType::TextResponse(content),
             });
         }
 
@@ -90,7 +90,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::ChatRequest(content),
+                content: ContentType::ChatRequest(content),
             });
         }
 
@@ -98,7 +98,7 @@ pub trait NetworkEdge {
             return Ok(Message {
                 source_id,
                 session_id,
-                content: ContenType::ChatResponse(content),
+                content: ContentType::ChatResponse(content),
             });
         }
 
@@ -140,4 +140,10 @@ pub trait NetworkEdge {
         self.handle_packet(resp);
         //self.controller_send.send(DroneEvent::PacketSent(resp)).unwrap(); //Should be set by handle_packet.
     }
+
+    fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64);
+
+    fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId);
+
+    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack);
 }
