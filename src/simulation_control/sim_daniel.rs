@@ -49,7 +49,6 @@ pub enum Scene {
     ManageAdd,
     ManageCrash,
     ManageDrop,
-    ManageShortcut,
 }
 
 #[derive(Clone, Debug)]
@@ -159,39 +158,26 @@ impl MyApp {
     pub fn manage_event(&mut self, event: DroneEvent) {
         self.sim_contr.add_to_log(event.clone());
         match event {
-            DroneEvent::PacketDropped(_packet) => {
+            DroneEvent::PacketDropped(packet) => {
+                let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
+                self.sim_contr.dropped_packets.push((source_id, packet));
                 self.side_panel_scenes = ManageDrop;
             }
             DroneEvent::ControllerShortcut(packet) => {
-                self.side_panel_scenes = ManageShortcut;
                 match packet.clone().pack_type {
-                    PacketType::Ack(_) => {
-                       let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
-                       let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
-                           None => {
-                               self.sim_contr.log.push_back(LogEntry::new(
-                                   Cause::Error,
-                                   next_id,
-                                   format!("error in sendig packet {} (packet not present)", next_id),
-                               ));
-                               return;
-                           },
-                           Some(sender) => {
-                               sender
-                           }
-                       };
-                        match sender.try_send(packet){
-                            Ok(_) => {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Cause::Sent,
-                                    next_id,
-                                    format!("shortcut redirected succesfully to {}", next_id),
-                                ));
-                            }
-                            _ => {}
-                        }
+                    PacketType::MsgFragment(_) => {
+                        self.sim_contr.log.push_back(LogEntry::new(
+                            Error,
+                            packet.routing_header.hops[packet.routing_header.hop_index],
+                            "Shortcut used for unusual packet type".to_string()))
                     }
-                    PacketType::Nack(_) => {
+                    PacketType::FloodRequest(_) => {
+                        self.sim_contr.log.push_back(LogEntry::new(
+                            Error,
+                            packet.routing_header.hops[packet.routing_header.hop_index],
+                            "Shortcut used for unusual packet type".to_string()))
+                    }
+                    _ => {
                         let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
                         let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
                             None => {
@@ -216,12 +202,6 @@ impl MyApp {
                             }
                             _ => {}
                         }
-                    }
-                    _ => {
-                        self.sim_contr.log.push_back(LogEntry::new(
-                            Error,
-                            packet.routing_header.hops[packet.routing_header.hop_index],
-                            "Shortcut used for unusual packet type".to_string()))
                     }
                 }
             }
@@ -362,7 +342,9 @@ impl eframe::App for MyApp {
                         ui.label("select drones to crash:");
                         ui.separator();
                         for (i, item) in self.nodes.iter().enumerate() {
-                            ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            if (item.node_type == NodeType::Drone) {
+                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            }
                         }
 
                         if ui.button("Confirm").clicked() {
@@ -378,7 +360,6 @@ impl eframe::App for MyApp {
                                     }
                                 })
                                 .collect();
-                            //add_node(&checked_indices);
                             for node_id in checked_indices {
                                 self.sim_contr.crash_drone(node_id);
                                 self.nodes.retain(|item| item.id != node_id);
@@ -391,19 +372,18 @@ impl eframe::App for MyApp {
                     ManageDrop => {
                         ui.label("Packet has been dropped!");
                         // Attempt to find the last dropped packet in the log
-                        if let Some(dropped_packet) = self
+                        if let Some((id,dropped_packet)) = self
                             .sim_contr
-                            .log
-                            .iter()
-                            .rev()
-                            .find(|item| matches!(item.cause, Cause::Dropped))
+                            .dropped_packets
+                            .last()
                         {
                             // Display the dropped packet
-                            ui.label(format!("Here is the packet: {}", dropped_packet));
+                            ui.label(format!("{id} dropped packet: {}", dropped_packet));
 
                             // Options for handling the packet
                             if ui.button("Resend it").clicked() {
-                                // TODO: Implement packet resend logic
+                                self.sim_contr.resend_packet(dropped_packet);
+                                self.side_panel_scenes = Start;
                             }
                             if ui.button("Lose it").clicked() {
                                 self.side_panel_scenes = Start; // Navigate back to the start
@@ -414,13 +394,6 @@ impl eframe::App for MyApp {
                             if ui.button("Close").clicked() {
                                 self.side_panel_scenes = Start; // Close the alert
                             }
-                        }
-                    }
-                    ManageShortcut => {
-                        //todo not sure wtf a shortcut does
-
-                        if ui.button("Close").clicked() {
-                            self.side_panel_scenes = Start; // Close the alert
                         }
                     }
                 }
