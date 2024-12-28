@@ -180,7 +180,19 @@ impl SimulationControl {
             println!("drone {} not found in the network.", id);
         }
     }
+
     pub fn remove_senders(&mut self, id: NodeId, id_to_remove: NodeId) {
+        if !self.is_node_connected(id, id_to_remove){
+            self.log.push_back(LogEntry::new(
+                Cause::Error,
+                id,
+                format!("drone {} is not connected to {}", id_to_remove, id),
+            ));
+            println!(".");
+            return;
+            //se non sono connessi non far nulla e returna
+        }
+
         if let Some(sender) = self.node_send.get(&id) {
             if let Err(_e) = sender.send(RemoveSender(id_to_remove)) {
                 println!(
@@ -189,26 +201,38 @@ impl SimulationControl {
                 );
             } else {
                 println!("drone {} removed from drone {} senders", id_to_remove, id);
-                if let Some((nodetype, ids)) = self.network_graph.get_mut(&id) {
+                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
                     if let Some(pos) = ids.iter().position(|&x| x == id_to_remove) {
                         ids.remove(pos);
                     }
                 }
-                if let Some((nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
+            }
+        }
+        if let Some(sender) = self.node_send.get(&id_to_remove) {
+            if let Err(_e) = sender.send(RemoveSender(id)) {
+                println!(
+                    "error in removing drone {} from drone {} senders",
+                    id, id_to_remove
+                );
+            } else {
+                println!("drone {} removed from drone {} senders", id, id_to_remove);
+                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
                     if let Some(pos) = ids.iter().position(|&x| x == id) {
                         ids.remove(pos);
                     }
                 }
-                self.log.push_back(LogEntry::new(
-                    Cause::Managing,
-                    id,
-                    format!("drone {} removed from senders", id_to_remove),
-                ));
+
             }
         }
+        self.log.push_back(LogEntry::new(
+            Cause::Managing,
+            id,
+            format!("drone {} removed from senders", id_to_remove),
+        ));
+
     }
 
-   pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
+    pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
         if let Some(sender) = self.node_send.get(&id) {
             if let Some(senderpacket) = self.all_sender_packets.get(&id) {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
@@ -245,6 +269,21 @@ impl SimulationControl {
             }
         }
     }
+
+    pub fn is_node_connected (&self, id: NodeId, rhs: NodeId) -> bool {
+        let mut out = true;
+        if let Some((_node, vec)) = self.network_graph.get(&id){
+            if !vec.contains(&rhs) {
+                out = false;
+            }
+        }
+        if let Some((_node, vec)) = self.network_graph.get(&rhs){
+            if !vec.contains(&id) {
+                out = false;
+            }
+        }
+        out
+    }
 }
 
 pub enum Cause {
@@ -252,6 +291,7 @@ pub enum Cause {
     Sent,
     Shortcut,
     Managing, //this cause is for the log entry "caused" by manipulation of the SC
+    Error,
 }
 
 pub struct LogEntry {
