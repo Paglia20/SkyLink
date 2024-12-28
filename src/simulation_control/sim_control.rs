@@ -224,7 +224,6 @@ impl SimulationControl {
                 ));
             }
         }
-
     }
 
     pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {

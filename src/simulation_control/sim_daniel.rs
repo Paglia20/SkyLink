@@ -5,11 +5,14 @@ use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::fmt::format;
+use crossbeam_channel::{Sender, TrySendError};
+use dr_ones::Packet;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
-use wg_2024::packet::NodeType;
+use wg_2024::packet::{NodeType, PacketType};
 use wg_2024::packet::NodeType::Drone;
+use crate::simulation_control::sim_control::Cause::Error;
 use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
 
 #[derive(Debug, Clone)]
@@ -159,8 +162,68 @@ impl MyApp {
             DroneEvent::PacketDropped(_packet) => {
                 self.side_panel_scenes = ManageDrop;
             }
-            DroneEvent::ControllerShortcut(_packet) => {
+            DroneEvent::ControllerShortcut(packet) => {
                 self.side_panel_scenes = ManageShortcut;
+                match packet.clone().pack_type {
+                    PacketType::Ack(_) => {
+                       let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
+                       let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
+                           None => {
+                               self.sim_contr.log.push_back(LogEntry::new(
+                                   Cause::Error,
+                                   next_id,
+                                   format!("error in sendig packet {} (packet not present)", next_id),
+                               ));
+                               return;
+                           },
+                           Some(sender) => {
+                               sender
+                           }
+                       };
+                        match sender.try_send(packet){
+                            Ok(_) => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Cause::Sent,
+                                    next_id,
+                                    format!("shortcut redirected succesfully to {}", next_id),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                    PacketType::Nack(_) => {
+                        let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
+                        let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
+                            None => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Cause::Error,
+                                    next_id,
+                                    format!("error in sendig packet {} (packet not present)", next_id),
+                                ));
+                                return;
+                            },
+                            Some(sender) => {
+                                sender
+                            }
+                        };
+                        match sender.try_send(packet){
+                            Ok(_) => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Cause::Sent,
+                                    next_id,
+                                    format!("shortcut redirected succesfully to {}", next_id),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {
+                        self.sim_contr.log.push_back(LogEntry::new(
+                            Error,
+                            packet.routing_header.hops[packet.routing_header.hop_index],
+                            "Shortcut used for unusual packet type".to_string()))
+                    }
+                }
             }
             _ => {}
         }
