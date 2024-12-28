@@ -7,7 +7,6 @@ use std::thread::JoinHandle;
 use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::*;
-use wg_2024::drone;
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet};
@@ -20,6 +19,8 @@ pub struct SimulationControl {
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
+
+    pub dropped_packets: Vec<(NodeId, Packet)>,
 }
 
 impl SimulationControl {
@@ -37,6 +38,7 @@ impl SimulationControl {
             all_sender_packets,
             network_graph,
             log: VecDeque::new(),
+            dropped_packets: Vec::new()
         }
     }
 
@@ -53,8 +55,8 @@ impl SimulationControl {
                     cause: Cause::Sent,
                     node_id: *id_drone,
                     message: format!(
-                        "Sent fragment {:?} of type: {:?}",
-                        packet.session_id, packet.pack_type
+                        "Sent fragment {:?} of packet: {}",
+                        packet.session_id, packet
                     ),
                 };
                 self.log.push_back(new_log);
@@ -69,8 +71,8 @@ impl SimulationControl {
                     cause: Cause::Dropped,
                     node_id: *id_drone,
                     message: format!(
-                        "Dropped fragment {:?} of type: {:?}",
-                        packet.session_id, packet.pack_type
+                        "Sent fragment {:?} of packet: {}",
+                        packet.session_id, packet
                     ),
                 };
                 self.log.push_back(new_log);
@@ -84,7 +86,7 @@ impl SimulationControl {
                 let new_log = LogEntry {
                     cause: Cause::Shortcut,
                     node_id: *id_drone,
-                    message: format!("Sent shortcut for type {:?}", packet.pack_type),
+                    message: format!("Sent shortcut for packet {}", packet),
                 };
                 self.log.push_back(new_log);
             }
@@ -242,7 +244,7 @@ impl SimulationControl {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
-                    if let Some((nodetype, ids)) = self.network_graph.get_mut(&id) {
+                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
                         ids.push(id_to_add);
                     }
 
@@ -260,7 +262,7 @@ impl SimulationControl {
                 if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id, id_to_add);
                 } else {
-                    if let Some((nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
+                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
                         ids.push(id);
                     }
                     println!("drone {} added to drone {} senders", id, id_to_add);
@@ -311,6 +313,12 @@ impl SimulationControl {
         }
         out
     }
+
+    pub(crate) fn resend_packet(&self, _p0: &Packet) {
+        //tell client/server (depending on source_id) to send it again recomputing the way
+    }
+
+
 }
 
 pub enum Cause {
