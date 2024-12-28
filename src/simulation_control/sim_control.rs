@@ -91,7 +91,8 @@ impl SimulationControl {
         }
     }
 
-    pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> JoinHandle<()> {
+    pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
+        println!("-");
         let new_id = self.generate_id();
         //aggiorna network graph
         self.network_graph.insert(new_id, (NodeType::Drone, connections.clone()));
@@ -101,14 +102,7 @@ impl SimulationControl {
             .insert(new_id.clone(), control_sender.clone()); // do al sim il sender per questo drone
 
         let (packet_send, packet_recv) = unbounded(); //canale per il drone, il recv gli va dentro, il send va dato in copia a tutti i droni che vogliono comunicare con lui
-        for (id, sender) in self.node_send.iter() {
-            // per dare a tutti i droni in node_in il sender al new drone
-            for i in connections.clone() {
-                if i == *id {
-                    sender.send(AddSender(new_id, packet_send.clone())).unwrap();
-                }
-            }
-        }
+        self.all_sender_packets.insert(new_id.clone(), packet_send.clone());
 
         let mut packet_send = HashMap::new();
         //riempi la hashmap
@@ -134,18 +128,22 @@ impl SimulationControl {
             );
             new_drone.run();
         });
-        handle
+
+        for ids in connections.clone() {
+            self.add_sender(new_id, ids);
+        }
+
+        (handle, new_id)
     }
 
     fn generate_id(&mut self) -> NodeId {
         //just a function to generate an id that is empty in our hashmap, if is 1-3-4, it should give 2, if it's 1-2-3, should give 4.
         for k in 0..=u8::MAX {
             //If k is not a key in the map, I return it.
-            if !self.node_send.contains_key(&k) {
+            if !self.network_graph.contains_key(&k) {
                 return k;
             }
         }
-
         unreachable!("No free key found");
     }
 
@@ -188,7 +186,6 @@ impl SimulationControl {
                 id,
                 format!("drone {} is not connected to {}", id_to_remove, id),
             ));
-            println!(".");
             return;
             //se non sono connessi non far nulla e returna
         }
@@ -200,12 +197,14 @@ impl SimulationControl {
                     id_to_remove, id
                 );
             } else {
-                println!("drone {} removed from drone {} senders", id_to_remove, id);
                 if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                    if let Some(pos) = ids.iter().position(|&x| x == id_to_remove) {
-                        ids.remove(pos);
-                    }
+                    ids.retain(|id| {id != &id_to_remove});
                 }
+                self.log.push_back(LogEntry::new(
+                    Cause::Managing,
+                    id_to_remove,
+                    format!("drone {} removed from senders", id),
+                ));
             }
         }
         if let Some(sender) = self.node_send.get(&id_to_remove) {
@@ -215,40 +214,61 @@ impl SimulationControl {
                     id, id_to_remove
                 );
             } else {
-                println!("drone {} removed from drone {} senders", id, id_to_remove);
                 if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
-                    if let Some(pos) = ids.iter().position(|&x| x == id) {
-                        ids.remove(pos);
-                    }
+                    ids.retain(|x| {x != &id});
                 }
-
+                self.log.push_back(LogEntry::new(
+                    Cause::Managing,
+                    id,
+                    format!("drone {} removed from senders", id_to_remove),
+                ));
             }
         }
-        self.log.push_back(LogEntry::new(
-            Cause::Managing,
-            id,
-            format!("drone {} removed from senders", id_to_remove),
-        ));
 
     }
 
     pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
+
+        if !self.does_drone_exist(id_to_add) {
+            self.log.push_back(LogEntry::new(
+                Cause::Error,
+                id,
+                format!("drone {} does not exist in this network.", id_to_add),
+            ));
+            return;
+        }
+
         if let Some(sender) = self.node_send.get(&id) {
-            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
+            if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                 } else {
                     if let Some((nodetype, ids)) = self.network_graph.get_mut(&id) {
                         ids.push(id_to_add);
                     }
-                    if let Some((nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                        ids.push(id);
-                    }
+
                     println!("drone {} added to drone {} senders", id_to_add, id);
                     self.log.push_back(LogEntry::new(
                         Cause::Managing,
                         id,
-                        format!("drone {} added to senders", id_to_add),
+                        format!(" -- drone {} added to senders", id_to_add),
+                    ));
+                }
+            }
+        }
+        if let Some(sender) = self.node_send.get(&id_to_add) {
+            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
+                if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
+                    println!("error adding drone {} to drone {} senders", id, id_to_add);
+                } else {
+                    if let Some((nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
+                        ids.push(id);
+                    }
+                    println!("drone {} added to drone {} senders", id, id_to_add);
+                    self.log.push_back(LogEntry::new(
+                        Cause::Managing,
+                        id_to_add,
+                        format!("drone {} added to senders", id),
                     ));
                 }
             }
@@ -268,6 +288,14 @@ impl SimulationControl {
                 ));
             }
         }
+    }
+
+    pub fn does_drone_exist(&mut self, id: NodeId) -> bool {
+        let mut exists = false;
+        if self.network_graph.contains_key(&id){
+            exists = true;
+        }
+        exists
     }
 
     pub fn is_node_connected (&self, id: NodeId, rhs: NodeId) -> bool {

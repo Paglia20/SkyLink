@@ -148,7 +148,7 @@ impl MyApp {
 
     fn reset_check(&mut self) {
         self.checked.clear();
-        for _ in 0..self.nodes.len() {
+        for _ in 0..self.nodes.len() + 1 {
             self.checked.push(false);
         }
     }
@@ -266,8 +266,9 @@ impl eframe::App for MyApp {
                         }
                         ui.separator();
                         ui.label("select drones to connect the new drone with:");
+                        self.nodes.sort();
                         for (i, item) in self.nodes.iter().enumerate() {
-                            ui.checkbox(&mut self.checked[i], item.id.to_string());
+                                ui.checkbox(&mut self.checked[i], item.id.to_string());
                         }
                         ui.separator();
                         ui.label("input pdr:");
@@ -287,8 +288,9 @@ impl eframe::App for MyApp {
                                     }
                                 })
                                 .collect();
-                            add_node(&checked_indices, self.pdr);
+                            let id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
                             self.reset_check();
+                            self.pdr = 0.0;
                             self.side_panel_scenes = Start;
                         }
                     }
