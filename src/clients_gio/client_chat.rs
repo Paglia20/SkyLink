@@ -98,6 +98,10 @@ impl NetworkEdge for ChatClient {
                     // Empty the HashMap
                     self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
                     // !!But this is still to be implemented
+
+                    // !!I have also implemented positive feedback for routes, that'll need to be
+                    // !!applied after the Ack, similar to how the negative one is applied in dropped,
+                    // !!but this time with every node of the route.
                 }
 
                 PacketType::Nack(nack) => {
@@ -128,6 +132,8 @@ impl NetworkEdge for ChatClient {
                         NackType::Dropped => {
                             // I just send it again
                             self.send_fragment_after_nack(packet, nack);
+                            //self.paths.iter_mut().map(|(x,y)| y.negative_feed()).collect();
+                            // Still WIP because for some fucking reason Dropped doesn't tell by which drone.
                         }
                     }
                 }
@@ -225,7 +231,7 @@ impl NetworkEdge for ChatClient {
     }
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        match self.paths.get(&destination) {
+        match self.paths.get_mut(&destination) {
             None => {
                 //I first check if I have any path to the destination
                 self.event_send
