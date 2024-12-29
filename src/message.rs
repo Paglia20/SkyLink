@@ -6,17 +6,17 @@ use wg_2024::network::NodeId;
 pub struct Message {
     pub source_id: NodeId,
     pub session_id: u64,
-    pub content: ContenType,
+    pub content: ContentType,
 }
 impl Message {
     pub fn stringify_content(&self) -> String {
         match &self.content {
-            ContenType::TextRequest(inner) =>  inner.stringify(),
-            ContenType::TextResponse(inner) => inner.stringify(),
-            ContenType::MediaRequest(inner) => inner.stringify(),
-            ContenType::MediaResponse(inner) =>  inner.stringify(),
-            ContenType::ChatRequest(inner) =>  inner.stringify(),
-            ContenType::ChatResponse(inner) => inner.stringify(),
+            ContentType::TextRequest(inner) =>  inner.stringify(),
+            ContentType::TextResponse(inner) => inner.stringify(),
+            ContentType::MediaRequest(inner) => inner.stringify(),
+            ContentType::MediaResponse(inner) =>  inner.stringify(),
+            ContentType::ChatRequest(inner) =>  inner.stringify(),
+            ContentType::ChatResponse(inner) => inner.stringify(),
         }
     }
 
@@ -24,7 +24,7 @@ impl Message {
 }
 
 #[derive(Clone, Debug)]
-pub enum ContenType{
+pub enum ContentType{
     TextRequest(TextRequest),
     TextResponse(TextResponse),
     MediaRequest(MediaRequest),
@@ -41,8 +41,6 @@ pub trait MessageType: Serialize + DeserializeOwned {
         serde_json::from_str(raw.as_str()).map_err(|e| e.to_string())
     }
 }
-pub trait Request: MessageType {}
-pub trait Response: MessageType {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextRequest {
@@ -73,7 +71,8 @@ pub enum TextResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
     MediaList(Vec<u64>),
-    Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway i don't get the type inside MediaList
+    Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway I don't get the type inside MediaList
+    // Leo: I've still no idea on how to use the medias, so we'll change these if needed.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,11 +88,3 @@ impl MessageType for ChatRequest {}
 impl MessageType for TextResponse {}
 impl MessageType for MediaResponse {}
 impl MessageType for ChatResponse {}
-
-impl Request for TextRequest {}
-impl Request for MediaRequest {}
-impl Request for ChatRequest {}
-
-impl Response for TextResponse {}
-impl Response for MediaResponse {}
-impl Response for ChatResponse {}

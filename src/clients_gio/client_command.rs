@@ -15,5 +15,10 @@ pub enum ClientEvent {
     PacketSendingError(Packet),
     AckReceived(Ack),
     NackReceived(Nack),
+    MissingDestination(NodeId),
+    MissingRoute(NodeId),
+    LostMessage(u64, NodeId), // session_id and NodeId
+    LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
+    DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     // OpenedChat(NodeID),
 }

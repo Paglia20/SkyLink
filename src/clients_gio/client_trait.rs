@@ -4,7 +4,7 @@ use crate::network_edge::NetworkEdge;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::network::*;
-use wg_2024::packet::Packet;
+use wg_2024::packet::{Fragment, Packet};
 
 pub trait Client: NetworkEdge {
     fn new(

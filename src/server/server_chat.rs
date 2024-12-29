@@ -7,8 +7,10 @@ use crate::server::server_type::ServerType;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use dr_ones::Packet;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::thread;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, PacketType};
+use wg_2024::packet::{Fragment, Nack, PacketType};
 
 pub struct ChatServer {
     node_id: NodeId,
@@ -23,10 +25,7 @@ pub struct ChatServer {
 }
 
 impl NetworkEdge for ChatServer {
-    type RequestType = ChatRequest;
-    type ResponseType = ChatResponse;
-
-    fn send_message(&mut self, _message: Message, _destination: NodeId) -> Result<(), String> {
+    fn send_message(&mut self, _message: Message, _destination: NodeId) {
         todo!()
     }
 
@@ -42,6 +41,17 @@ impl NetworkEdge for ChatServer {
 
     fn handle_message(&mut self,_message: Message) {
         unimplemented!()
+    }
+
+    fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
+
+    }
+    fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
+
+    }
+
+    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
+
     }
 }
 impl Server for ChatServer {
