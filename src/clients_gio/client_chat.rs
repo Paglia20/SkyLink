@@ -6,8 +6,9 @@ use crate::network_edge::NetworkEdge;
 use crate::routing::{Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::PacketType::Ack;
 use crate::message::TextRequest::*;
 
 pub struct ChatClient {
@@ -73,12 +74,17 @@ impl NetworkEdge for ChatClient {
                     let tot_num_frag = fragment.total_n_fragments as usize;
                     let session_id = packet.session_id;
                     let initiator_id = packet.routing_header.hops[0];
+                    let frag_index = fragment.fragment_index;
                     //add new frag
                     if !self.fragments.contains_key(&(packet.session_id, packet.routing_header.hops[0])) {
                         self.fragments.insert((session_id, initiator_id), vec![fragment]);
                     } else {
                         self.fragments.get_mut(&(session_id, initiator_id)).unwrap().push(fragment);
                     }
+
+                    //for each arrived frag, send back an ack
+                    self.send_ack(packet.clone(), frag_index);
+
 
                     // If all the frag have arrived recreate message
                     let frags_clone = self.fragments.get(&(packet.session_id, packet.routing_header.hops[0])).unwrap();
@@ -91,9 +97,13 @@ impl NetworkEdge for ChatClient {
                         };
                         //handle message
                         self.handle_message(message);
+
+                        //svuota hashmap
+                        self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
+
                     }
                 }
-                PacketType::Ack(_ack) => {
+                PacketType::Ack(ack) => {
                     // !!I moved it here, because I need them for the Nack until we receive the Ack
                     // Empty the HashMap
                     self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
@@ -313,6 +323,23 @@ impl NetworkEdge for ChatClient {
                         self.send_fragment(fragment.clone(), *packet.routing_header.hops.get(0).unwrap(), packet.session_id);
                     }
                 }
+            }
+        }
+    }
+
+    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
+        let new_hops = packet.routing_header.hops.iter().rev().collect();
+        let next_id = new_hops[0];
+        let srh = SourceRoutingHeader::new(new_hops, 0);
+        let packet_ack = Packet::new_ack(srh, packet.session_id, fragment_index);
+
+        match self.packet_send.get(&next_id) {
+            Some(sender) => {
+                sender.send(packet_ack.clone()).unwrap();
+                self.event_send.send(ClientEvent::PacketSent(packet_ack)).unwrap();
+            }
+            None => {
+                self.event_send.send(ClientEvent::MissingDestination(next_id)).unwrap();
             }
         }
     }
