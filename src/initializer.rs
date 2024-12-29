@@ -1,11 +1,12 @@
 use crate::sim_control::SimulationControl;
 use crate::skylink_drone::drone::SkyLinkDrone;
-use crossbeam_channel::unbounded;
+use crossbeam_channel::{unbounded, Sender};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::{fs, thread};
+use dr_ones::{NodeId, Packet};
 use wg_2024::config::Config;
 use wg_2024::drone::Drone;
 use wg_2024::packet::NodeType;
@@ -16,11 +17,19 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let mut handles = Vec::new();
     //I'll return the handles of the threads, and join them to the main thread.
 
-    let mut command_send = HashMap::new();
+    let mut drone_command_send = HashMap::new();
+    let mut client_command_send = HashMap::new();
+    let mut server_command_send = HashMap::new();
+
     //This will be given to the Sim Contr to command the drones.
-    let (event_send, event_recv) = unbounded();
+    let (drone_event_send, drone_event_recv) = unbounded();
     //I create the channel, the 'send' will be given to every drone,
     //while the 'recv' will go to the Sim contr.
+
+    let (client_event_send, client_event_recv) = unbounded();
+    let (server_event_send, server_event_recv) = unbounded();
+
+
 
     let mut packet_senders = HashMap::new();
     let mut packet_receivers = HashMap::new();
@@ -56,10 +65,10 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     for drone in config.drone.into_iter() {
         //Adding the sender to this drone to the senders of the Sim Contr.
         let (contr_send, contr_recv) = unbounded();
-        command_send.insert(drone.id, contr_send);
+        drone_command_send.insert(drone.id, contr_send);
 
         //Give the drone a copy of the sender of events to the Sim Contr.
-        let node_event_send = event_send.clone();
+        let node_event_send = drone_event_send.clone();
 
         //Take the channels necessary to this drone.
         let drone_recv = packet_receivers.remove(&drone.id).unwrap();
@@ -86,10 +95,64 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
         //implementation of other groups drones in our network.
     }
 
+    for client in config.client.into_iter() {
+        //Adding the sender to this client to the senders of the Sim Contr.
+        let (contr_send, contr_recv) = unbounded();
+        client_command_send.insert(client.id, contr_send);
+
+        //Give the clinet a copy of the sender of events to the Sim Contr.
+        let node_event_send = client_event_send.clone();
+
+        //Take the channels necessary to this client.
+        let client_recv = packet_receivers.remove(&client.id).unwrap();
+        let client_send: HashMap<NodeId, Sender<Packet>> = client
+            .connected_drone_ids
+            .into_iter()
+            .map(|id| (id, packet_senders[&id].clone()))
+            .collect();
+
+        //create the thread of the Client, and add it to a Vec to be pushed afterward
+        handles.push(thread::spawn(move || {
+            //create client
+
+        }));
+        //This will probably need to be changed based on the
+        //implementation of other groups drones in our network.
+    }
+
+    for server in config.server.into_iter() {
+        //Adding the sender to this server to the senders of the Sim Contr.
+        let (contr_send, contr_recv) = unbounded();
+        client_command_send.insert(server.id, contr_send);
+
+        //Give the server a copy of the sender of events to the Sim Contr.
+        let node_event_send = server_event_send.clone();
+
+        //Take the channels necessary to this client.
+        let server_recv = packet_receivers.remove(&server.id).unwrap();
+        let server_send: HashMap<NodeId, Sender<Packet>> = server
+            .connected_drone_ids
+            .into_iter()
+            .map(|id| (id, packet_senders[&id].clone()))
+            .collect();
+
+        //create the thread of the server, and add it to a Vec to be pushed afterward
+        handles.push(thread::spawn(move || {
+            //create server
+
+        }));
+        //This will probably need to be changed based on the
+        //implementation of other groups drones in our network.
+    }
+
     let mut sim_contr = SimulationControl::new(
-        command_send,
-        event_recv,
-        event_send,
+        drone_command_send,
+        client_command_send,
+        server_command_send,
+        drone_event_recv,
+        client_event_recv,
+        server_event_recv,
+        drone_event_send,
         packet_senders,
         network_graph,
     );

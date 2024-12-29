@@ -6,6 +6,7 @@ pub struct Route {
     // Every node keeps track of dropped and arrived messages.
     // This count doesn't consider errors different from the drop.
 }
+#[derive(Clone)]
 pub struct RouteList {
     routes: Vec<Route>,
 }

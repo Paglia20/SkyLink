@@ -53,6 +53,10 @@ impl NetworkEdge for ChatServer {
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
 
     }
+
+    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
+        todo!()
+    }
 }
 impl Server for ChatServer {
     fn new(

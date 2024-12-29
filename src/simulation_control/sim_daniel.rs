@@ -153,7 +153,7 @@ impl MyApp {
     }
 
     pub fn manage_event(&mut self, event: DroneEvent) {
-        self.sim_contr.add_to_log(event.clone());
+        self.sim_contr.add_drone_event_to_log(event.clone());
         match event {
             PacketDropped(packet) => {
                 let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
@@ -614,7 +614,7 @@ impl eframe::App for MyApp {
             });
         });
 
-        match self.sim_contr.node_recv.try_recv() {
+        match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
                 //manage event
                 self.manage_event(event);

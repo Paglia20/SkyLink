@@ -11,10 +11,18 @@ use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet};
 use wg_2024::packet::NodeType::*;
+use crate::server::server_command::{ServerCommand, ServerEvent};
+use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 
 pub struct SimulationControl {
-    node_send: HashMap<NodeId, Sender<DroneCommand>>,
-    pub(crate) node_recv: Receiver<DroneEvent>,
+    drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
+    client_command_senders: HashMap<NodeId, Sender<ClientCommand>>,
+    server_command_senders: HashMap<NodeId, Sender<ServerCommand>>,
+
+    pub(crate) drone_event_recv: Receiver<DroneEvent>,
+    pub(crate) client_event_recv: Receiver<ClientEvent>,
+    pub(crate) server_event_recv: Receiver<ServerEvent>,
+
     pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
@@ -25,15 +33,23 @@ pub struct SimulationControl {
 
 impl SimulationControl {
     pub fn new(
-        node_send: HashMap<NodeId, Sender<DroneCommand>>,
-        node_recv: Receiver<DroneEvent>,
+        drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
+        client_command_senders: HashMap<NodeId, Sender<ClientCommand>>,
+        server_command_senders: HashMap<NodeId, Sender<ServerCommand>>,
+        drone_event_recv: Receiver<DroneEvent>,
+        client_event_recv: Receiver<ClientEvent>,
+        server_event_recv: Receiver<ServerEvent>,
         channel_for_drone: Sender<DroneEvent>,
         all_sender_packets: HashMap<NodeId, Sender<Packet>>,
         network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
     ) -> Self {
         SimulationControl {
-            node_send,
-            node_recv,
+            drone_command_senders,
+            drone_event_recv,
+            client_command_senders,
+            server_command_senders,
+            client_event_recv,
+            server_event_recv,
             channel_for_drone,
             all_sender_packets,
             network_graph,
@@ -42,7 +58,7 @@ impl SimulationControl {
         }
     }
 
-    pub(crate) fn add_to_log(&mut self, e: DroneEvent) {
+    pub(crate) fn add_drone_event_to_log(&mut self, e: DroneEvent) {
         match e {
             //index of the get might be wrong, either hop_index -1 either hop_index... double check please
             DroneEvent::PacketSent(packet) => {
@@ -92,6 +108,8 @@ impl SimulationControl {
             }
         }
     }
+    pub(crate) fn add_client_event_to_log(&mut self, e: ClientEvent){todo!()}
+    pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){todo!()}
 
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
         println!("-");
@@ -100,7 +118,7 @@ impl SimulationControl {
         self.network_graph.insert(new_id, (NodeType::Drone, connections.clone()));
 
         let (control_sender, control_receiver) = unbounded(); //canale per il Sim che manda drone command al drone
-        self.node_send
+        self.drone_command_senders
             .insert(new_id.clone(), control_sender.clone()); // do al sim il sender per questo drone
 
         let (packet_send, packet_recv) = unbounded(); //canale per il drone, il recv gli va dentro, il send va dato in copia a tutti i droni che vogliono comunicare con lui
@@ -150,7 +168,7 @@ impl SimulationControl {
     }
 
     pub fn crash_drone(&mut self, id: NodeId) {
-        if let Some(sender) = self.node_send.get(&id) {
+        if let Some(sender) = self.drone_command_senders.get(&id) {
             if let Err(e) = sender.send(DroneCommand::Crash) {
                 println!("error in crashing drone {}: {:?}", id, e);
             } else {
@@ -158,14 +176,14 @@ impl SimulationControl {
 
                 // remove the drone from the neighbour's sends
                 if let mut vec = self.network_graph.keys().cloned().collect::<Vec<_>>() {
-                    for (neighbor_id, neighbor_sender) in &self.node_send {
+                    for (neighbor_id, neighbor_sender) in &self.drone_command_senders {
                         if vec.contains(neighbor_id) {
                             neighbor_sender.send(RemoveSender(id)).unwrap()
                         }
                     }
                 }
 
-                if let Some(to_be_dropped) = self.node_send.remove(&id) {
+                if let Some(to_be_dropped) = self.drone_command_senders.remove(&id) {
                     drop(to_be_dropped);
                 }
                 self.log.push_back(LogEntry::new(
@@ -192,38 +210,150 @@ impl SimulationControl {
             //se non sono connessi non far nulla e returna
         }
 
-        if let Some(sender) = self.node_send.get(&id) {
-            if let Err(_e) = sender.send(RemoveSender(id_to_remove)) {
-                println!(
-                    "error in removing drone {} from drone {} senders",
-                    id_to_remove, id
-                );
-            } else {
-                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                    ids.retain(|id| {id != &id_to_remove});
-                }
+        //i created get_type that gets the type of the node from the id,
+        // depending on that, you send the correct drone/client/server command
+        match self.get_type(id){
+            None => {
+                //if it returned None it wasnt saved inside the network, you shouldn't reach this anyway but you never know
                 self.log.push_back(LogEntry::new(
-                    Cause::Managing,
-                    id_to_remove,
-                    format!("drone {} removed from senders", id),
-                ));
+                    Cause::Error,
+                    id,
+                    format!("drone {id} is not in network",
+                )));
+                return;
+            }
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&id) {
+                            if let Err(_e) = sender.send(ClientCommand::RemoveSender(id_to_remove)) {
+                                println!(
+                                    "error in removing node {} from client {} senders",
+                                    id_to_remove, id
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                    ids.retain(|id| {id != &id_to_remove});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id_to_remove,
+                                    format!("node {} removed from senders", id),
+                                ));
+                            }
+                        }
+                    }
+                    Drone => {
+                        if let Some(sender) = self.drone_command_senders.get(&id) {
+                            if let Err(_e) = sender.send(RemoveSender(id_to_remove)) {
+                                println!(
+                                    "error in removing drone {} from drone {} senders",
+                                    id_to_remove, id
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                    ids.retain(|id| {id != &id_to_remove});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id_to_remove,
+                                    format!("drone {} removed from senders", id),
+                                ));
+                            }
+                        }
+                    }
+                    Server => {
+                        if let Some(sender) = self.server_command_senders.get(&id) {
+                            if let Err(_e) = sender.send(ServerCommand::RemoveSender(id_to_remove)) {
+                                println!(
+                                    "error in removing node {} from server {} senders",
+                                    id_to_remove, id
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                    ids.retain(|id| {id != &id_to_remove});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id_to_remove,
+                                    format!("node {} removed from senders", id),
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
-        if let Some(sender) = self.node_send.get(&id_to_remove) {
-            if let Err(_e) = sender.send(RemoveSender(id)) {
-                println!(
-                    "error in removing drone {} from drone {} senders",
-                    id, id_to_remove
-                );
-            } else {
-                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
-                    ids.retain(|x| {x != &id});
-                }
+
+        match self.get_type(id_to_remove){
+            None => {
                 self.log.push_back(LogEntry::new(
-                    Cause::Managing,
+                    Cause::Error,
                     id,
-                    format!("drone {} removed from senders", id_to_remove),
-                ));
+                    format!("drone {id_to_remove} is not in network",
+                    )));
+                return;
+            }
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&id_to_remove) {
+                            if let Err(_e) = sender.send(ClientCommand::RemoveSender(id)) {
+                                println!(
+                                    "error in removing node {} from client {} senders",
+                                    id, id_to_remove
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
+                                    ids.retain(|x| {x != &id});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id,
+                                    format!("node {} removed from senders", id_to_remove),
+                                ));
+                            }
+                        }
+                    }
+                    Drone => {
+                        if let Some(sender) = self.drone_command_senders.get(&id_to_remove) {
+                            if let Err(_e) = sender.send(RemoveSender(id)) {
+                                println!(
+                                    "error in removing drone {} from drone {} senders",
+                                    id, id_to_remove
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
+                                    ids.retain(|x| {x != &id});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id,
+                                    format!("drone {} removed from senders", id_to_remove),
+                                ));
+                            }
+                        }
+                    }
+                    Server => {
+                        if let Some(sender) = self.server_command_senders.get(&id_to_remove) {
+                            if let Err(_e) = sender.send(ServerCommand::RemoveSender(id)) {
+                                println!(
+                                    "error in removing node {} from server {} senders",
+                                    id, id_to_remove
+                                );
+                            } else {
+                                if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
+                                    ids.retain(|x| {x != &id});
+                                }
+                                self.log.push_back(LogEntry::new(
+                                    Cause::Managing,
+                                    id,
+                                    format!("node {} removed from senders", id_to_remove),
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -239,7 +369,7 @@ impl SimulationControl {
             return;
         }
 
-        if let Some(sender) = self.node_send.get(&id) {
+        if let Some(sender) = self.drone_command_senders.get(&id) {
             if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
                 if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id_to_add, id);
@@ -257,7 +387,7 @@ impl SimulationControl {
                 }
             }
         }
-        if let Some(sender) = self.node_send.get(&id_to_add) {
+        if let Some(sender) = self.drone_command_senders.get(&id_to_add) {
             if let Some(senderpacket) = self.all_sender_packets.get(&id) {
                 if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
                     println!("error adding drone {} to drone {} senders", id, id_to_add);
@@ -276,8 +406,16 @@ impl SimulationControl {
         }
     }
 
+    pub fn get_type(&self, id: NodeId) -> Option<NodeType> {
+        let (node_type, _) = match self.network_graph.get(&id) {
+            Some(node) => node,
+            None => return None,
+        };
+        Some(*node_type)
+    }
+
     pub fn set_pdr(&mut self, id: NodeId, pdr: f32) {
-        if let Some(sender) = self.node_send.get(&id) {
+        if let Some(sender) = self.drone_command_senders.get(&id) {
             if let Err(_e) = sender.send(DroneCommand::SetPacketDropRate(pdr)) {
                 println!("error in setting drone {} pdr to {}", id, pdr);
             } else {
