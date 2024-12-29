@@ -49,14 +49,13 @@ impl NetworkEdge for ChatClient {
 
             match self.packet_send.get(&next_id) {
                 None => {
-                    // !!You need to send back the same errors a drone would
-                    /*no more a destination!*/
+                    self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
                         Err(_) => {
                             // !!You need to send back the same errors a drone would
-                            /*no more a destination!*/
+                            self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                         }
                         Ok(_) => {
                             self.event_send
@@ -104,6 +103,7 @@ impl NetworkEdge for ChatClient {
                     }
                 }
                 PacketType::Ack(ack) => {
+                    self.event_send.send(ClientEvent::AckReceived(ack)).unwrap();
                     // !!I moved it here, because I need them for the Nack until we receive the Ack
                     // Empty the HashMap
                     self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
@@ -112,6 +112,17 @@ impl NetworkEdge for ChatClient {
                     // !!I have also implemented positive feedback for routes, that'll need to be
                     // !!applied after the Ack, similar to how the negative one is applied in dropped,
                     // !!but this time with every node of the route.
+
+                    //the source of the nack will be the destination for witch i want to apply feedback
+                    let source = packet.routing_header.source().unwrap();
+                    let mut r_list = match self.paths.get(&source){
+                        None => {
+                            self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
+                            return;
+                        }
+                        Some(rl) => {rl}
+                    };
+                    r_list.positive_feed(packet.routing_header.hops);
                 }
 
                 PacketType::Nack(nack) => {
@@ -330,7 +341,7 @@ impl NetworkEdge for ChatClient {
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
         let new_hops = packet.routing_header.hops.iter().rev().collect();
         let next_id = new_hops[0];
-        let srh = SourceRoutingHeader::new(new_hops, 0);
+        let srh = SourceRoutingHeader::new(new_hops, 1); //is it 1 right?
         let packet_ack = Packet::new_ack(srh, packet.session_id, fragment_index);
 
         match self.packet_send.get(&next_id) {
