@@ -115,12 +115,12 @@ impl NetworkEdge for ChatClient {
 
                     //the source of the nack will be the destination for witch i want to apply feedback
                     let source = packet.routing_header.source().unwrap();
-                    let mut r_list = match self.paths.get(&source){
+                    let mut r_list = match self.paths.get_mut(&source){
                         None => {
                             self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
                             return;
                         }
-                        Some( rl) => {rl.clone()}
+                        Some( rl) => {rl}
                     };
                     r_list.positive_feed(packet.routing_header.hops);
                 }
