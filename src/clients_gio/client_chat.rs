@@ -24,7 +24,7 @@ pub struct ChatClient {
     fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
     arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
     unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
-    // The NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
 impl NetworkEdge for ChatClient {
@@ -248,7 +248,7 @@ impl NetworkEdge for ChatClient {
                 // !!Leo: We still need to tell that it was an error tho, probably by
                 // !!sending a Nack wrong recipient
 
-                //todo
+                //todo send_nack()
 
             }
         }
