@@ -10,7 +10,7 @@ use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, PacketType};
-use wg_2024::packet::NodeType::Drone;
+use wg_2024::packet::NodeType::*;
 use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::server::server_command::ServerEvent;
@@ -228,14 +228,11 @@ impl MyApp {
             }
             Event::Server(server_event) => {
                 self.sim_contr.add_server_event_to_log(server_event.clone());
-                //todo match server_event
             }
             Event::Client(client_event) => {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
-                //todo match client_event
             }
         }
-
     }
 
 }
@@ -613,6 +610,8 @@ impl eframe::App for MyApp {
                     } else {
                         egui::Color32::from_rgb(216, 100, 56)
                     };
+
+
                     painter.circle_filled(rect.center(), 15.0, circle_color);
 
                     // Disegna il testo
