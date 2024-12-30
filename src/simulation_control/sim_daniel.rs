@@ -8,9 +8,10 @@ use std::cmp::{Ordering, PartialEq};
 use std::ops::Deref;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
-use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType, PacketType};
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{FloodRequest, FloodResponse, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
+use wg_2024::packet::PacketType::*;
 use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::server::server_command::ServerEvent;
@@ -316,13 +317,29 @@ impl eframe::App for MyApp {
 
                         if ui.button("Test sending packet").clicked() {
                             let msg = create_packet(vec![4,1,8,5,2]);
-
                             self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
-
                         }
 
+                        if ui.button("Test flooding -- crash").clicked() {
+                            let flod = FloodRequest{
+                                flood_id: 0,
+                                initiator_id: 4,
+                                path_trace: vec![],
+                            };
 
+                            let flood = FloodRequest(flod);
+                            let msg = Packet{
+                                routing_header: SourceRoutingHeader{
+                                    hop_index: 1,
+                                    hops: vec![],
+                                },
+                                session_id: 299,
+                                pack_type: flood,
+                            };
 
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+                        }
+                        
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);

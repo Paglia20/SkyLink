@@ -106,7 +106,6 @@ impl NetworkEdge for ChatClient {
 
                     self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
 
-
                     //the ack will have the source that was the destination of the initial packet
                     match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())){
                         None => {}
@@ -163,9 +162,21 @@ impl NetworkEdge for ChatClient {
                         },
                         NackType::Dropped => {
                             // I just send it again
-                            self.send_fragment_after_nack(packet, nack);
-                            //self.paths.iter_mut().map(|(x,y)| y.negative_feed()).collect();
+                            self.send_fragment_after_nack(packet.clone(), nack);
+
+
+                            //who dropped will be source for the nack
+                            let dropper = packet.routing_header.source().unwrap();
+                            let mut r_list = match self.paths.get_mut(&dropper){
+                                None => {
+                                    self.event_send.send(ClientEvent::MissingRoute(dropper)).unwrap();
+                                    return;
+                                }
+                                Some( rl) => {rl}
+                            };
+                            r_list.negative_feed(packet.routing_header.hops);
                             // Still WIP because for some fucking reason Dropped doesn't tell by which drone.
+                            //gio: i think we good now
                         }
                     }
                 }
