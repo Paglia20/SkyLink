@@ -31,7 +31,7 @@ pub fn final_destination_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(
     }
 }
 pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
-    let next_hop = &packet.routing_header.hops[packet.routing_header.hop_index];
+    let next_hop = &packet.routing_header.hops.clone()[packet.routing_header.hop_index];
     if drone.get_packet_send().contains_key(next_hop) {
         Ok(())
     } else {
@@ -39,8 +39,8 @@ pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Pac
             PacketType::MsgFragment(_fragment) => Err(create_error(
                 drone.get_id(),
                 packet,
-                NackType::ErrorInRouting(drone.get_id()),
-            )),
+                NackType::ErrorInRouting(*next_hop)),
+            ),
             _ => Err(packet),
         }
     }
