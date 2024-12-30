@@ -8,9 +8,10 @@ use std::cmp::{Ordering, PartialEq};
 use std::ops::Deref;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
-use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType, PacketType};
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{FloodRequest, FloodResponse, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
+use wg_2024::packet::PacketType::*;
 use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::server::server_command::ServerEvent;
@@ -197,12 +198,13 @@ impl MyApp {
                             }
                             _ => {
                                 let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
+
                                 let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
                                     None => {
                                         self.sim_contr.log.push_back(LogEntry::new(
                                             Error,
                                             next_id,
-                                            format!("error in sendig packet {} (packet not present)", next_id),
+                                            format!("error in sendig packet to {} through shortcut (packet not present)", next_id),
                                         ));
                                         return;
                                     },
@@ -210,12 +212,23 @@ impl MyApp {
                                         sender
                                     }
                                 };
+
+                                let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
+                                if (*n_type == NodeType::Drone){
+                                    self.sim_contr.log.push_back(LogEntry::new(
+                                        Error,
+                                        next_id,
+                                        format!("error in sending packet to {} through shortcut (final destination is drone)", next_id),
+                                    ));
+                                    return;
+                                }
+
                                 match sender.try_send(packet){
                                     Ok(_) => {
                                         self.sim_contr.log.push_back(LogEntry::new(
                                             Cause::Sent,
                                             next_id,
-                                            format!("shortcut redirected succesfully to {}", next_id),
+                                            format!("shortcut redirected successfully to {} through shortcut ", next_id),
                                         ));
                                     }
                                     _ => {}
@@ -303,14 +316,30 @@ impl eframe::App for MyApp {
                         }
 
                         if ui.button("Test sending packet").clicked() {
-                            let msg = create_packet(vec![4,1,8,5]);
-
+                            let msg = create_packet(vec![4,1,8,5,2]);
                             self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
-
                         }
 
+                        if ui.button("Test flooding -- crash").clicked() {
+                            let flod = FloodRequest{
+                                flood_id: 0,
+                                initiator_id: 4,
+                                path_trace: vec![],
+                            };
 
+                            let flood = FloodRequest(flod);
+                            let msg = Packet{
+                                routing_header: SourceRoutingHeader{
+                                    hop_index: 1,
+                                    hops: vec![],
+                                },
+                                session_id: 299,
+                                pack_type: flood,
+                            };
 
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+                        }
+                        
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);

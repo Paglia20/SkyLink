@@ -44,7 +44,14 @@ impl NetworkEdge for ChatClient {
         if *packet.routing_header.hops.last().unwrap() != self.node_id {
             // If it's not his packet, but he has to act as a drone (that never misses)
             packet.routing_header.hop_index += 1;
-            let next_id = packet.routing_header.hops[packet.routing_header.hop_index];
+            let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index){
+                Some(id) => *id,
+                None =>{
+                    //send nack NackType::ErrorInRouting(*next_hop))???
+
+                     return;
+                },
+            };
 
             match self.packet_send.get(&next_id) {
                 None => {
@@ -54,6 +61,7 @@ impl NetworkEdge for ChatClient {
                     match sender.try_send(packet.clone()) {
                         Err(_) => {
                             // !!You need to send back the same errors a drone would
+                            //send nack NackType::ErrorInRouting(*next_hop)) ??? ,
                             self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                         }
                         Ok(_) => {
@@ -102,12 +110,22 @@ impl NetworkEdge for ChatClient {
 
                     }
                 }
-                PacketType::Ack(_ack) => {
+                PacketType::Ack(ack) => {
+
                     self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
-                    // !!I moved it here, because I need them for the Nack until we receive the Ack
-                    // Empty the HashMap
-                    self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0], *packet.routing_header.hops.last().unwrap()));
-                    // !!But this is still to be implemented
+
+                    //the ack will have the source that was the destination of the initial packet
+                    match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())){
+                        None => {}
+                        Some(vec) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                            //if it's empty i retained all fragments because i received all the acks, hence i can remove my entry from hashmap
+                            if (vec.is_empty()) {
+                                self.fragments.remove_entry(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap()));
+                            }
+                        }
+                    }
 
                     // !!I have also implemented positive feedback for routes, that'll need to be
                     // !!applied after the Ack, similar to how the negative one is applied in dropped,
@@ -152,9 +170,21 @@ impl NetworkEdge for ChatClient {
                         },
                         NackType::Dropped => {
                             // I just send it again
-                            self.send_fragment_after_nack(packet, nack);
-                            //self.paths.iter_mut().map(|(x,y)| y.negative_feed()).collect();
+                            self.send_fragment_after_nack(packet.clone(), nack);
+
+
+                            //who dropped will be source for the nack
+                            let dropper = packet.routing_header.source().unwrap();
+                            let mut r_list = match self.paths.get_mut(&dropper){
+                                None => {
+                                    self.event_send.send(ClientEvent::MissingRoute(dropper)).unwrap();
+                                    return;
+                                }
+                                Some( rl) => {rl}
+                            };
+                            r_list.negative_feed(packet.routing_header.hops);
                             // Still WIP because for some fucking reason Dropped doesn't tell by which drone.
+                            //gio: i think we good now
                         }
                     }
                 }
@@ -239,14 +269,15 @@ impl NetworkEdge for ChatClient {
                         self.arrived_messages.entry(from).or_insert(Vec::new()).push(message);
                     }
                     ChatResponse::MessageSent => {
-                        //not sure, is just an ack?
+                        //not sure, is just an ack? i don't think we need this (also because if they
+                        // dont have any information i can't know which message are they refering too)
                     }
                 }
             }
             _ => {
                 // Gio: no point in getting other types of req
                 // !!Leo: We still need to tell that it was an error tho, probably by
-                // !!sending a Nack wrong recipient
+                // !!sending a Nack UnexpectedRecipient(self.NodeId),
 
                 //todo send_nack()
 

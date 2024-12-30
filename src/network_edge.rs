@@ -111,8 +111,6 @@ pub trait NetworkEdge {
 
     fn handle_message(&mut self, message: Message);
 
-
-
     //its just the same of the drone, where can we put it so it's not duplicate?
     fn send_flood_response(&mut self, flood: FloodRequest) {
         //take a flood req, generate the response, send it
@@ -146,5 +144,7 @@ pub trait NetworkEdge {
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId);
 
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack);
+
     fn send_ack(&mut self, packet: Packet, fragment_index: u64);
+
 }

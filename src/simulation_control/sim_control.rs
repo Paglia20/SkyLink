@@ -9,7 +9,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::*;
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType, Packet};
+use wg_2024::packet::{NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
@@ -60,16 +60,21 @@ impl SimulationControl {
 
     pub(crate) fn add_drone_event_to_log(&mut self, e: DroneEvent) {
         match e {
-            //index of the get might be wrong, either hop_index -1 either hop_index... double check please
+            //had to correct index due to not having a source routing header in the flood request!!
             DroneEvent::PacketSent(packet) => {
-                let id_drone = packet
-                    .routing_header
-                    .hops
-                    .get(packet.routing_header.hop_index-1)
-                    .unwrap();
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
+
                 let new_log = LogEntry {
                     cause: Cause::Sent,
-                    node_id: *id_drone,
+                    node_id: id_drone,
                     message: format!(
                         "Sent fragment {:?} of packet: {}",
                         packet.session_id, packet
@@ -78,14 +83,18 @@ impl SimulationControl {
                 self.log.push_back(new_log);
             }
             DroneEvent::PacketDropped(packet) => {
-                let id_drone = packet
-                    .routing_header
-                    .hops
-                    .get(packet.routing_header.hop_index -1)
-                    .unwrap();
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
                 let new_log = LogEntry {
                     cause: Cause::Dropped,
-                    node_id: *id_drone,
+                    node_id: id_drone,
                     message: format!(
                         "Sent fragment {:?} of packet: {}",
                         packet.session_id, packet
