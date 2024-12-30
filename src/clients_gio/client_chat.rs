@@ -44,7 +44,14 @@ impl NetworkEdge for ChatClient {
         if *packet.routing_header.hops.last().unwrap() != self.node_id {
             // If it's not his packet, but he has to act as a drone (that never misses)
             packet.routing_header.hop_index += 1;
-            let next_id = packet.routing_header.hops[packet.routing_header.hop_index];
+            let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index){
+                Some(id) => *id,
+                None =>{
+                    //send nack NackType::ErrorInRouting(*next_hop))???
+
+                     return;
+                },
+            };
 
             match self.packet_send.get(&next_id) {
                 None => {
@@ -54,6 +61,7 @@ impl NetworkEdge for ChatClient {
                     match sender.try_send(packet.clone()) {
                         Err(_) => {
                             // !!You need to send back the same errors a drone would
+                            //send nack NackType::ErrorInRouting(*next_hop)) ??? ,
                             self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                         }
                         Ok(_) => {
@@ -261,14 +269,15 @@ impl NetworkEdge for ChatClient {
                         self.arrived_messages.entry(from).or_insert(Vec::new()).push(message);
                     }
                     ChatResponse::MessageSent => {
-                        //not sure, is just an ack?
+                        //not sure, is just an ack? i don't think we need this (also because if they
+                        // dont have any information i can't know which message are they refering too)
                     }
                 }
             }
             _ => {
                 // Gio: no point in getting other types of req
                 // !!Leo: We still need to tell that it was an error tho, probably by
-                // !!sending a Nack wrong recipient
+                // !!sending a Nack UnexpectedRecipient(self.NodeId),
 
                 //todo send_nack()
 
