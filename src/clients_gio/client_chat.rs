@@ -6,7 +6,7 @@ use crate::network_edge::NetworkEdge;
 use crate::routing::{Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::message::TextRequest::*;
 
@@ -21,17 +21,17 @@ pub struct ChatClient {
 
     paths: HashMap<NodeId, RouteList>, // These NodeId are just server_chat nodes.
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we want to communicate with, the second one is the server he has to write to, this two hash might be merged in future
-    fragments: HashMap<(u64, NodeId), Vec<Fragment>>,
+    fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
     arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
-    unsent_fragments: (u8, HashMap<(u64, NodeId), Vec<(Fragment)>>),
-    // The NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
+    // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
 impl NetworkEdge for ChatClient {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
-        self.fragments.insert((session_id, self.node_id), frags.clone());
+        self.fragments.insert((session_id, self.node_id, destination), frags.clone());
         // I also save the fragments in the memory, in case I have to send them again.
 
         for fragment in frags {
@@ -48,14 +48,13 @@ impl NetworkEdge for ChatClient {
 
             match self.packet_send.get(&next_id) {
                 None => {
-                    // !!You need to send back the same errors a drone would
-                    /*no more a destination!*/
+                    self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
                         Err(_) => {
                             // !!You need to send back the same errors a drone would
-                            /*no more a destination!*/
+                            self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                         }
                         Ok(_) => {
                             self.event_send
@@ -73,15 +72,21 @@ impl NetworkEdge for ChatClient {
                     let tot_num_frag = fragment.total_n_fragments as usize;
                     let session_id = packet.session_id;
                     let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.node_id; //he is the destination
+                    let frag_index = fragment.fragment_index;
                     //add new frag
-                    if !self.fragments.contains_key(&(packet.session_id, packet.routing_header.hops[0])) {
-                        self.fragments.insert((session_id, initiator_id), vec![fragment]);
+                    if !self.fragments.contains_key(&(packet.session_id, initiator_id, destination)) {
+                        self.fragments.insert((session_id, initiator_id, destination), vec![fragment]);
                     } else {
-                        self.fragments.get_mut(&(session_id, initiator_id)).unwrap().push(fragment);
+                        self.fragments.get_mut(&(session_id, initiator_id, destination)).unwrap().push(fragment);
                     }
 
+                    //for each arrived frag, send back an ack
+                    self.send_ack(packet.clone(), frag_index);
+
+
                     // If all the frag have arrived recreate message
-                    let frags_clone = self.fragments.get(&(packet.session_id, packet.routing_header.hops[0])).unwrap();
+                    let frags_clone = self.fragments.get(&(packet.session_id, initiator_id, destination )).unwrap();
                     if frags_clone.len() == tot_num_frag {
                         let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                             Ok(mess) => { mess }
@@ -91,17 +96,33 @@ impl NetworkEdge for ChatClient {
                         };
                         //handle message
                         self.handle_message(message);
+
+                        //svuota hashmap
+                        self.fragments.remove(&(packet.session_id, initiator_id, destination));
+
                     }
                 }
-                PacketType::Ack(_ack) => {
+                PacketType::Ack(ack) => {
+                    self.event_send.send(ClientEvent::AckReceived(ack)).unwrap();
                     // !!I moved it here, because I need them for the Nack until we receive the Ack
                     // Empty the HashMap
-                    self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0]));
+                    self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0], *packet.routing_header.hops.last().unwrap()));
                     // !!But this is still to be implemented
 
                     // !!I have also implemented positive feedback for routes, that'll need to be
                     // !!applied after the Ack, similar to how the negative one is applied in dropped,
                     // !!but this time with every node of the route.
+
+                    //the source of the nack will be the destination for witch i want to apply feedback
+                    let source = packet.routing_header.source().unwrap();
+                    let mut r_list = match self.paths.get_mut(&source){
+                        None => {
+                            self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
+                            return;
+                        }
+                        Some( rl) => {rl}
+                    };
+                    r_list.positive_feed(packet.routing_header.hops);
                 }
 
                 PacketType::Nack(nack) => {
@@ -226,6 +247,9 @@ impl NetworkEdge for ChatClient {
                 // Gio: no point in getting other types of req
                 // !!Leo: We still need to tell that it was an error tho, probably by
                 // !!sending a Nack wrong recipient
+
+                //todo send_nack()
+
             }
         }
     }
@@ -281,20 +305,20 @@ impl NetworkEdge for ChatClient {
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         // If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
-        match self.unsent_fragments.1.get_mut(&(session_id, destination)) {
+        match self.unsent_fragments.1.get_mut(&(session_id, self.node_id, destination)) {
             Some(fragments) => {
                 fragments.push(fragment);
             },
             None => {
                 let mut vec = Vec::new();
                 vec.push(fragment);
-                self.unsent_fragments.1.insert((session_id, destination), vec);
+                self.unsent_fragments.1.insert((session_id, self.node_id, destination), vec);
             }
         }
     }
 
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        match self.fragments.get(&(packet.session_id, self.node_id)) {
+        match self.fragments.get(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap())) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
                 self.event_send
@@ -313,6 +337,24 @@ impl NetworkEdge for ChatClient {
                         self.send_fragment(fragment.clone(), *packet.routing_header.hops.get(0).unwrap(), packet.session_id);
                     }
                 }
+            }
+        }
+    }
+
+    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
+        let new_hops: Vec<NodeId> = packet.routing_header.hops.iter().rev().map(|(id)| *id)
+            .collect::<Vec<NodeId>>();
+        let next_id = new_hops[0];
+        let srh = SourceRoutingHeader::new(new_hops, 1); //is it 1 right?
+        let packet_ack = Packet::new_ack(srh, packet.session_id, fragment_index);
+
+        match self.packet_send.get(&next_id) {
+            Some(sender) => {
+                sender.send(packet_ack.clone()).unwrap();
+                self.event_send.send(ClientEvent::PacketSent(packet_ack)).unwrap();
+            }
+            None => {
+                self.event_send.send(ClientEvent::MissingDestination(next_id)).unwrap();
             }
         }
     }

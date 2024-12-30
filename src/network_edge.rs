@@ -146,4 +146,5 @@ pub trait NetworkEdge {
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId);
 
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack);
+    fn send_ack(&mut self, packet: Packet, fragment_index: u64);
 }

@@ -2,12 +2,14 @@ use crossbeam_channel::Sender;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Ack, Nack, Packet};
 
+#[derive(Debug, Clone)]
 pub enum ServerCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
     //SendPacket(Packet), // Not sure yet if I want this or not
 }
 
+#[derive(Debug, Clone)]
 pub enum ServerEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
