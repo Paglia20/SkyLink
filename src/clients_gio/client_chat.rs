@@ -102,12 +102,23 @@ impl NetworkEdge for ChatClient {
 
                     }
                 }
-                PacketType::Ack(_ack) => {
+                PacketType::Ack(ack) => {
+
                     self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
-                    // !!I moved it here, because I need them for the Nack until we receive the Ack
-                    // Empty the HashMap
-                    self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0], *packet.routing_header.hops.last().unwrap()));
-                    // !!But this is still to be implemented
+
+
+                    //the ack will have the source that was the destination of the initial packet
+                    match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())){
+                        None => {}
+                        Some(vec) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                            //if it's empty i retained all fragments because i received all the acks, hence i can remove my entry from hashmap
+                            if (vec.is_empty()) {
+                                self.fragments.remove_entry(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap()));
+                            }
+                        }
+                    }
 
                     // !!I have also implemented positive feedback for routes, that'll need to be
                     // !!applied after the Ack, similar to how the negative one is applied in dropped,
