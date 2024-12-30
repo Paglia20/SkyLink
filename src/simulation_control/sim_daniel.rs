@@ -303,7 +303,7 @@ impl eframe::App for MyApp {
                         }
 
                         if ui.button("Test sending packet").clicked() {
-                            let msg = create_packet(vec![0,1,8,5]);
+                            let msg = create_packet(vec![4,1,8,5]);
 
                             self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
 

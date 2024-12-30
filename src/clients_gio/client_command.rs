@@ -15,8 +15,8 @@ pub enum ClientEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
-    AckReceived(Ack),
-    NackReceived(Nack),
+    AckReceived(Packet), //packet with inside the ack (so i can get the nodeid in SC)
+    NackReceived(Packet),
     MissingDestination(NodeId),
     MissingRoute(NodeId),
     LostMessage(u64, NodeId), // session_id and NodeId

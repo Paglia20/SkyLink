@@ -102,8 +102,8 @@ impl NetworkEdge for ChatClient {
 
                     }
                 }
-                PacketType::Ack(ack) => {
-                    self.event_send.send(ClientEvent::AckReceived(ack)).unwrap();
+                PacketType::Ack(_ack) => {
+                    self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
                     // !!I moved it here, because I need them for the Nack until we receive the Ack
                     // Empty the HashMap
                     self.fragments.remove(&(packet.session_id, packet.routing_header.hops[0], *packet.routing_header.hops.last().unwrap()));
