@@ -247,7 +247,7 @@ impl eframe::App for MyApp {
 
         // BottomPanel ridimensionabile
         egui::TopBottomPanel::bottom("bottom_panel")
-            .height_range(100.0..=300.0)
+            .height_range(100.0..=400.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -301,6 +301,16 @@ impl eframe::App for MyApp {
                                 }
                             }
                         }
+
+                        if ui.button("Test sending packet").clicked() {
+                            let msg = create_packet(vec![0,1,8,5]);
+
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+
+                        }
+
+
+
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);
@@ -423,6 +433,12 @@ impl eframe::App for MyApp {
                         .show(ctx, |ui| {
                             match node.drone_window_scenes {
                                 DroneWindowScene::Start => {
+                                    let mut connections= String::new();
+                                    for connection in node.connections.clone() {
+                                        connections.push_str(connection.to_string().as_str());
+                                        connections.push_str(", ");
+                                    }
+                                    ui.label(format!("Connected to :{}", connections));
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
                                     self.sender_id = 0;
                                     ui.label("Log:");
@@ -522,6 +538,12 @@ impl eframe::App for MyApp {
                         .min_width(500.0)
                         .show(ctx, |ui| {
 
+                            let mut connections= String::new();
+                            for connection in node.connections.clone() {
+                                connections.push_str(connection.to_string().as_str());
+                            }
+                            ui.label(format!("Connected to :{}", connections));
+
                             // Qui puoi aggiungere ulteriori informazioni o controlli
                             ui.label("Log:");
                             ui.vertical(|ui| {
@@ -531,7 +553,7 @@ impl eframe::App for MyApp {
                                     }
                                 }
                             });
-                            //insert log of the drone (idk how)
+
                             if ui.button("Chiudi").clicked() {
                                 node.selected = false; // Chiudi il popup
                             }
@@ -543,6 +565,12 @@ impl eframe::App for MyApp {
                             .min_height(500.0)
                             .min_width(500.0)
                             .show(ctx, |ui| {
+
+                                let mut connections= String::new();
+                                for connection in node.connections.clone() {
+                                    connections.push_str(connection.to_string().as_str());
+                                }
+                                ui.label(format!("Connected to :{}", connections));
 
                                 // Qui puoi aggiungere ulteriori informazioni o controlli
                                 ui.label("Log:");

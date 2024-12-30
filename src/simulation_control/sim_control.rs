@@ -65,7 +65,7 @@ impl SimulationControl {
                 let id_drone = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index)
+                    .get(packet.routing_header.hop_index-1)
                     .unwrap();
                 let new_log = LogEntry {
                     cause: Cause::Sent,
@@ -81,7 +81,7 @@ impl SimulationControl {
                 let id_drone = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index)
+                    .get(packet.routing_header.hop_index -1)
                     .unwrap();
                 let new_log = LogEntry {
                     cause: Cause::Dropped,
@@ -97,7 +97,7 @@ impl SimulationControl {
                 let id_drone = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index)
+                    .get(packet.routing_header.hop_index -1)
                     .unwrap();
                 let new_log = LogEntry {
                     cause: Cause::Shortcut,
