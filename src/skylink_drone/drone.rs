@@ -180,9 +180,18 @@ impl SkyLinkDrone {
                             return;
                         }
                     }
-                    let err = create_error(self.id, packet, NackType::ErrorInRouting(next_hop));
-                    self.send_nack(&err.routing_header.hops[1].clone(), err);
-                    //If the message wasn't sent, despite all the checks, I still send an error back.
+                    // If I have an error during sending, that means that that channel doesn't have a receiver.
+                    self.packet_send.remove(&next_hop); // !!Does it make sense to also put his?
+
+                    if let PacketType::MsgFragment(_) = packet.pack_type.clone() {
+                        let err = create_error(self.id, packet, NackType::ErrorInRouting(next_hop));
+                        self.send_nack(&err.routing_header.hops[1].clone(), err);
+                        //If the message wasn't sent, despite all the checks, I still send an error back.
+                    } else {
+                        self.controller_send.send(ControllerShortcut(packet)).unwrap();
+                        // In case I get an error for any packet that wasn't a fragment, I need to
+                        // pass through the sim contr. (Keep in mind that FloodRequest can't arrive here)
+                    }
                 }
                 //Otherwise the error is already the right one to send.
                 Err(err) => {
