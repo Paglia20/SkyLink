@@ -12,6 +12,7 @@ mod server;
 mod simulation_control;
 mod skylink_drone;
 mod test;
+mod event_wrapper;
 
 fn main() {
     // println!("Hello, world!");

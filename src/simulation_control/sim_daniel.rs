@@ -1,14 +1,19 @@
+use std::any::Any;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
+use std::ops::Deref;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, PacketType};
 use wg_2024::packet::NodeType::Drone;
+use crate::clients_gio::client_command::ClientEvent;
+use crate::event_wrapper::Event;
+use crate::server::server_command::ServerEvent;
 use crate::simulation_control::sim_control::Cause::Error;
 use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
 
@@ -152,60 +157,6 @@ impl MyApp {
         }
     }
 
-    pub fn manage_event(&mut self, event: DroneEvent) {
-        self.sim_contr.add_drone_event_to_log(event.clone());
-        match event {
-            PacketDropped(packet) => {
-                let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
-                self.sim_contr.dropped_packets.push((source_id, packet));
-                self.side_panel_scenes = ManageDrop;
-            }
-            ControllerShortcut(packet) => {
-                match packet.clone().pack_type {
-                    PacketType::MsgFragment(_) => {
-                        self.sim_contr.log.push_back(LogEntry::new(
-                            Error,
-                            packet.routing_header.hops[packet.routing_header.hop_index],
-                            "Shortcut used for unusual packet type".to_string()))
-                    }
-                    PacketType::FloodRequest(_) => {
-                        self.sim_contr.log.push_back(LogEntry::new(
-                            Error,
-                            packet.routing_header.hops[packet.routing_header.hop_index],
-                            "Shortcut used for unusual packet type".to_string()))
-                    }
-                    _ => {
-                        let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
-                        let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
-                            None => {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Error,
-                                    next_id,
-                                    format!("error in sendig packet {} (packet not present)", next_id),
-                                ));
-                                return;
-                            },
-                            Some(sender) => {
-                                sender
-                            }
-                        };
-                        match sender.try_send(packet){
-                            Ok(_) => {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Cause::Sent,
-                                    next_id,
-                                    format!("shortcut redirected succesfully to {}", next_id),
-                                ));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
     }
@@ -219,6 +170,74 @@ impl MyApp {
         }
         ids
     }
+
+    pub fn manage_event(&mut self, event: Event) {
+        match event{
+            Event::Drone(drone_event) => {
+                self.sim_contr.add_drone_event_to_log(drone_event.clone());
+                match drone_event {
+                    PacketDropped(packet) => {
+                        let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
+                        self.sim_contr.dropped_packets.push((source_id, packet));
+                        self.side_panel_scenes = ManageDrop;
+                    }
+                    ControllerShortcut(packet) => {
+                        match packet.clone().pack_type {
+                            PacketType::MsgFragment(_) => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Error,
+                                    packet.routing_header.hops[packet.routing_header.hop_index],
+                                    "Shortcut used for unusual packet type: msgfragment".to_string()))
+                            }
+                            PacketType::FloodRequest(_) => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Error,
+                                    packet.routing_header.hops[packet.routing_header.hop_index],
+                                    "Shortcut used for unusual packet type: floodrequest".to_string()))
+                            }
+                            _ => {
+                                let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
+                                let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
+                                    None => {
+                                        self.sim_contr.log.push_back(LogEntry::new(
+                                            Error,
+                                            next_id,
+                                            format!("error in sendig packet {} (packet not present)", next_id),
+                                        ));
+                                        return;
+                                    },
+                                    Some(sender) => {
+                                        sender
+                                    }
+                                };
+                                match sender.try_send(packet){
+                                    Ok(_) => {
+                                        self.sim_contr.log.push_back(LogEntry::new(
+                                            Cause::Sent,
+                                            next_id,
+                                            format!("shortcut redirected succesfully to {}", next_id),
+                                        ));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Event::Server(server_event) => {
+                self.sim_contr.add_server_event_to_log(server_event.clone());
+                //todo match server_event
+            }
+            Event::Client(client_event) => {
+                self.sim_contr.add_client_event_to_log(client_event.clone());
+                //todo match client_event
+            }
+        }
+
+    }
+
 }
 
 impl eframe::App for MyApp {
@@ -617,11 +636,26 @@ impl eframe::App for MyApp {
         match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
                 //manage event
-                self.manage_event(event);
+
+                self.manage_event(Event::Drone(event));
             }
-            Err(_) => {
-                // println!("clearly not stucked");
+            _ => {}
+        }
+
+        match self.sim_contr.client_event_recv.try_recv() {
+            Ok(event) => {
+                //manage event
+                self.manage_event(Event::Client(event));
             }
+            _ => {}
+        }
+
+        match self.sim_contr.server_event_recv.try_recv() {
+            Ok(event) => {
+                //manage event
+                self.manage_event(Event::Server(event));
+            }
+            _ => {}
         }
     }
 }
