@@ -106,12 +106,11 @@ impl SimulationControl {
             DroneEvent::ControllerShortcut(packet) => {
                 let id_drone = packet
                     .routing_header
-                    .hops
-                    .get(packet.routing_header.hop_index -1)
+                    .previous_hop()
                     .unwrap();
                 let new_log = LogEntry {
                     cause: Cause::Shortcut,
-                    node_id: *id_drone,
+                    node_id: id_drone,
                     message: format!("Sent shortcut for packet {}", packet),
                 };
                 self.log.push_back(new_log);
@@ -672,15 +671,25 @@ impl SimulationControl {
     }
 
     pub fn set_pdr(&mut self, id: NodeId, pdr: f32) {
+        let mut capped_pdr = pdr;
+        if (pdr >= 100.0){
+            capped_pdr = 100.0;
+            self.log.push_back(LogEntry::new(
+                Cause::Managing,
+                id,
+                format!("Capped pdr to 100"),
+            ));
+        }
+
         if let Some(sender) = self.drone_command_senders.get(&id) {
-            if let Err(_e) = sender.send(DroneCommand::SetPacketDropRate(pdr)) {
-                println!("error in setting drone {} pdr to {}", id, pdr);
+            if let Err(_e) = sender.send(DroneCommand::SetPacketDropRate(capped_pdr)) {
+                println!("error in setting drone {} pdr to {}", id, capped_pdr);
             } else {
-                println!("setting drone {} pdr to {}", id, pdr);
+                println!("setting drone {} pdr to {}", id, capped_pdr);
                 self.log.push_back(LogEntry::new(
                     Cause::Managing,
                     id,
-                    format!("drone now has pdr set to {}", pdr),
+                    format!("drone now has pdr set to {}", capped_pdr),
                 ));
             }
         }

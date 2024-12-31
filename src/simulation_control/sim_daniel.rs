@@ -178,8 +178,8 @@ impl MyApp {
                 self.sim_contr.add_drone_event_to_log(drone_event.clone());
                 match drone_event {
                     PacketDropped(packet) => {
-                        let source_id = packet.routing_header.hops[packet.routing_header.hop_index];
-                        self.sim_contr.dropped_packets.push((source_id, packet));
+                        let dropper = packet.routing_header.current_hop().unwrap();
+                        self.sim_contr.dropped_packets.push((dropper, packet));
                         self.side_panel_scenes = ManageDrop;
                     }
                     ControllerShortcut(packet) => {
@@ -351,6 +351,11 @@ impl eframe::App for MyApp {
                                     println!("error through shortcut");
                                 }
                             }
+                        }
+
+
+                        if ui.button("Clear Log").clicked() {
+                            self.sim_contr.log.clear();
                         }
                     }
                     ManageAdd => {
