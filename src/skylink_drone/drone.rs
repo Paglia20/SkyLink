@@ -206,6 +206,7 @@ impl SkyLinkDrone {
                                 self.controller_send
                                     .send(DroneEvent::PacketDropped(packet.clone()))
                                     .unwrap();
+                                println!(". with {}", self.id);
                                 // Notify the sim contr that the packet was dropped.
 
                                 self.handle_packet(err);
