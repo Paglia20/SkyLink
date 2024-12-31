@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
+use egui::ahash::HashSet;
 use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::*;
@@ -26,7 +27,7 @@ pub struct SimulationControl {
 
     pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
-    pub(crate) network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
+    pub(crate) network_graph: HashMap<NodeId, (NodeType, HashSet<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
 
     pub dropped_packets: Vec<(NodeId, Packet)>,
@@ -42,7 +43,7 @@ impl SimulationControl {
         server_event_recv: Receiver<ServerEvent>,
         channel_for_drone: Sender<DroneEvent>,
         all_sender_packets: HashMap<NodeId, Sender<Packet>>,
-        network_graph: HashMap<NodeId, (NodeType, Vec<NodeId>)>,
+        network_graph: HashMap<NodeId, (NodeType, HashSet<NodeId>)>,
     ) -> Self {
         SimulationControl {
             drone_command_senders,
@@ -371,7 +372,7 @@ impl SimulationControl {
         println!("-");
         let new_id = self.generate_id();
         //aggiorna network graph
-        self.network_graph.insert(new_id, (NodeType::Drone, connections.clone()));
+        self.network_graph.insert(new_id, (NodeType::Drone, HashSet::from_iter(connections.clone().into_iter())));
 
         let (control_sender, control_receiver) = unbounded(); //canale per il Sim che manda drone command al drone
         self.drone_command_senders
@@ -643,7 +644,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to client {} senders", id_to_add, id);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                        ids.push(id_to_add);
+                                        ids.insert(id_to_add);
                                     }
 
                                     println!("drone {} added to client {} senders", id_to_add, id);
@@ -655,6 +656,13 @@ impl SimulationControl {
                                 }
                             }
                         }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id,
+                                format!("error adding node {} to senders (client command channel not found)", id_to_add),
+                            ));
+                        }
                     }
                     Drone => {
                         if let Some(sender) = self.drone_command_senders.get(&id) {
@@ -663,7 +671,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to drone {} senders", id_to_add, id);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                        ids.push(id_to_add);
+                                        ids.insert(id_to_add);
                                     }
 
                                     println!("drone {} added to drone {} senders", id_to_add, id);
@@ -674,6 +682,12 @@ impl SimulationControl {
                                     ));
                                 }
                             }
+                        } else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id,
+                                format!("error adding node {} to senders (drone command channel not found)", id_to_add),
+                            ));
                         }
                     }
                     Server => {
@@ -683,7 +697,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to server {} senders", id_to_add, id);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                        ids.push(id_to_add);
+                                        ids.insert(id_to_add);
                                     }
 
                                     println!("drone {} added to server {} senders", id_to_add, id);
@@ -694,6 +708,12 @@ impl SimulationControl {
                                     ));
                                 }
                             }
+                        } else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id,
+                                format!("error adding node {} to senders (server command channel not found)", id_to_add),
+                            ));
                         }
                     }
                 }
@@ -718,7 +738,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to client {} senders", id, id_to_add);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                        ids.push(id);
+                                        ids.insert(id);
                                     }
 
                                     println!("drone {} added to client {} senders", id, id_to_add);
@@ -730,6 +750,13 @@ impl SimulationControl {
                                 }
                             }
                         }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id_to_add,
+                                format!("error adding node {} to senders (client command channel not found)", id),
+                            ));
+                        }
                     }
                     Drone => {
                         if let Some(sender) = self.drone_command_senders.get(&id_to_add) {
@@ -738,7 +765,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to drone {} senders", id, id_to_add);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                        ids.push(id);
+                                        ids.insert(id);
                                     }
 
                                     println!("drone {} added to drone {} senders", id, id_to_add);
@@ -750,6 +777,13 @@ impl SimulationControl {
                                 }
                             }
                         }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id_to_add,
+                                format!("error adding node {} to senders (drone command channel not found)", id),
+                            ));
+                        }
                     }
                     Server => {
                         if let Some(sender) = self.server_command_senders.get(&id_to_add) {
@@ -758,7 +792,7 @@ impl SimulationControl {
                                     println!("error adding drone {} to server {} senders", id, id_to_add);
                                 } else {
                                     if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                        ids.push(id);
+                                        ids.insert(id);
                                     }
 
                                     println!("drone {} added to server {} senders", id, id_to_add);
@@ -769,6 +803,13 @@ impl SimulationControl {
                                     ));
                                 }
                             }
+                        }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                id_to_add,
+                                format!("error adding node {} to senders (server command channel not found)", id),
+                            ));
                         }
                     }
                 }

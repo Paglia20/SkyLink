@@ -6,6 +6,7 @@ use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::ops::Deref;
+use egui::ahash::HashSet;
 use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
@@ -21,7 +22,7 @@ use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id: NodeId,
-    connections: Vec<NodeId>,
+    connections: HashSet<NodeId>,
     selected: bool,
     node_type: NodeType,
     drone_window_scenes: DroneWindowScene,
@@ -599,7 +600,6 @@ impl eframe::App for MyApp {
                             .min_height(500.0)
                             .min_width(500.0)
                             .show(ctx, |ui| {
-
                                 let mut connections= String::new();
                                 for connection in node.connections.clone() {
                                     connections.push_str(connection.to_string().as_str());

@@ -2,7 +2,7 @@ use crate::sim_control::SimulationControl;
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Sender};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::{fs, thread};
@@ -53,13 +53,13 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     //I crate a hashmap that will be used as graph by the Simulation Controller.
     let mut network_graph = HashMap::new();
     for drone in config.drone.iter() {
-        network_graph.insert((drone.id), (NodeType::Drone, drone.connected_node_ids.clone()));
+        network_graph.insert((drone.id), (NodeType::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
     }
     for server in config.server.iter() {
-        network_graph.insert(server.id, (NodeType::Server, server.connected_drone_ids.clone()));
+        network_graph.insert(server.id, (NodeType::Server, HashSet::from_iter(server.connected_drone_ids.clone())));
     }
     for client in config.client.iter() {
-        network_graph.insert(client.id, (NodeType::Client, client.connected_drone_ids.clone()));
+        network_graph.insert(client.id, (NodeType::Client, HashSet::from_iter(client.connected_drone_ids.clone())));
     }
 
     for drone in config.drone.into_iter() {
