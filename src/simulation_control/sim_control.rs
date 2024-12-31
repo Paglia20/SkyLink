@@ -13,7 +13,7 @@ use wg_2024::packet::{NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, LostMessage, MissingDestination, Received};
+use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, LostMessage, MissingDestination};
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -265,7 +265,108 @@ impl SimulationControl {
             }
         }
     }
-    pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){todo!()}
+    pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){
+        match e {
+            ServerEvent::PacketSent(packet) => {
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
+
+                let new_log = LogEntry {
+                    cause: Cause::Sent,
+                    node_id: id_drone,
+                    message: format!(
+                        "Sent fragment {:?} of packet: {}",
+                        packet.session_id, packet
+                    ),
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::PacketReceived(packet) => {
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
+
+                let new_log = LogEntry {
+                    cause: Cause::Sent,
+                    node_id: id_drone,
+                    message: format!(
+                        "Received fragment {:?} of packet: {}",
+                        packet.session_id, packet
+                    ),
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::PacketSendingError(packet) => {
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
+                let new_log = LogEntry {
+                    cause: Cause::Error,
+                    node_id: id_drone,
+                    message: format!(
+                        "Error in sending fragment {:?} of packet: {}",
+                        packet.session_id, packet
+                    ),
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::AckReceived(packet) => {
+                if let Some(ack_id) = packet.routing_header.destination(){
+                    match packet.pack_type {
+                        PacketType::Ack(ack) => {
+                            let new_log = LogEntry{
+                                cause: AckReceived,
+                                node_id: ack_id,
+                                message: format!(
+                                    "Node {:?} received Ack of fragment {}"
+                                    , ack_id, ack.fragment_index
+                                )
+                            };
+                            self.log.push_back(new_log);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ServerEvent::NackReceived(packet) => {
+                if let Some(ack_id) = packet.routing_header.destination(){
+                    match packet.pack_type {
+                        PacketType::Ack(ack) => {
+                            let new_log = LogEntry{
+                                cause: AckReceived,
+                                node_id: ack_id,
+                                message: format!(
+                                    "Node {:?} received Nack of fragment {}"
+                                    , ack_id, ack.fragment_index
+                                )
+                            };
+                            self.log.push_back(new_log);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
 
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
         println!("-");
