@@ -6,15 +6,18 @@ pub fn create_error(starting_id: NodeId, packet: Packet, nack_type: NackType) ->
     if let PacketType::MsgFragment(msg_fragment) = packet.pack_type {
         fragment_index = msg_fragment.fragment_index;
     }
-
-    let hops = packet.routing_header.hops
-        .into_iter()
-        .rev()
-        .collect::<Vec<NodeId>>();
-    let position = hops
+    let position = packet.routing_header.hops
         .iter()
         .position(|x| *x == starting_id)
         .unwrap();
+
+    let hops = packet.routing_header.hops[..=position].to_vec()
+        .into_iter()
+        .rev()
+        .collect::<Vec<NodeId>>();
+
+    let position = 0;
+
     Packet {
         pack_type: PacketType::Nack(Nack {
             fragment_index,

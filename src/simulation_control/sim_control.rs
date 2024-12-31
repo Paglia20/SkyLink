@@ -1,7 +1,7 @@
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, VecDeque};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
 use egui::ahash::HashSet;
@@ -90,25 +90,31 @@ impl SimulationControl {
                         let (id, _) = flood.path_trace.last().unwrap();
                         *id
                     }
-                    _ => *{
-                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    _ => {
+                        packet.routing_header.current_hop().unwrap()
                     },
                 };
+
                 let new_log = LogEntry {
                     cause: Cause::Dropped,
                     node_id: id_drone,
                     message: format!(
-                        "Sent fragment {:?} of packet: {}",
+                        "dropped fragment {:?} of packet: {}",
                         packet.session_id, packet
                     ),
                 };
                 self.log.push_back(new_log);
             }
             DroneEvent::ControllerShortcut(packet) => {
-                let id_drone = packet
-                    .routing_header
-                    .previous_hop()
-                    .unwrap();
+                let id_drone = match packet.clone().pack_type{
+                    PacketType::FloodRequest(flood) => {
+                        let (id, _) = flood.path_trace.last().unwrap();
+                        *id
+                    }
+                    _ => *{
+                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    },
+                };
                 let new_log = LogEntry {
                     cause: Cause::Shortcut,
                     node_id: id_drone,
@@ -915,5 +921,11 @@ impl LogEntry {
 impl Display for LogEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Node {} notified {}", self.node_id, self.message)
+    }
+}
+
+impl Debug for LogEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}", self.node_id)
     }
 }

@@ -203,13 +203,17 @@ impl SkyLinkDrone {
                                 self.send_nack(&err.routing_header.hops[0].clone(), err);
                             }
                             NackType::Dropped => {
+                                if err.routing_header.source().unwrap() == self.id {
                                 self.controller_send
                                     .send(DroneEvent::PacketDropped(packet.clone()))
                                     .unwrap();
-                                println!(". with {}", self.id);
                                 // Notify the sim contr that the packet was dropped.
+                                }
 
-                                self.handle_packet(err);
+                                if err.routing_header.destination().unwrap() != self.id {
+                                    self.handle_packet(err);
+                                }
+
                             }
                             _ => {
                                 match packet.pack_type {
@@ -268,8 +272,9 @@ impl SkyLinkDrone {
     fn apply_checks(&self, mut packet: Packet) -> Result<Packet, Packet> {
         //Check if we're on the right hop.
         id_hop_match_check(&self, packet.clone())?;
-        //Increase the index.
-        packet.routing_header.hop_index += 1;
+        //Increase the index, if it makes sense to do it (he is not the destination)
+        if packet.routing_header.hop_index +1 < packet.routing_header.hops.len(){
+        packet.routing_header.hop_index += 1;}
         //Check if we're a final destination.
         final_destination_check(&self, packet.clone())?;
         //Check if the packet is dropped (only when msg_fragment).

@@ -180,6 +180,7 @@ impl MyApp {
                 match drone_event {
                     PacketDropped(packet) => {
                         let dropper = packet.routing_header.current_hop().unwrap();
+                        //println!("packet dropped by {dropper}"); debug printing
                         self.sim_contr.dropped_packets.push((dropper, packet));
                         self.side_panel_scenes = ManageDrop;
                     }
@@ -304,16 +305,10 @@ impl eframe::App for MyApp {
 
                         // for testing
                         if ui.button("Test Drop").clicked() {
-                            let msg = create_packet(vec![0, 1, 8]);
-                            let drop = PacketDropped(msg);
-                            match self.sim_contr.channel_for_drone.try_send(drop) {
-                                Ok(_) => {
-                                    println!("sent dropping")
-                                }
-                                Err(_) => {
-                                    println!("error dropping packet");
-                                }
-                            }
+                            self.sim_contr.set_pdr(5, 100.0);
+
+                            let msg = create_packet(vec![4,1,8,5,2]);
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
                         }
 
                         if ui.button("Test sending packet").clicked() {

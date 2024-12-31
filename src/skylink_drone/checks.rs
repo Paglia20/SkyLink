@@ -17,7 +17,7 @@ pub fn id_hop_match_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Pa
     }
 }
 pub fn final_destination_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
-    if packet.routing_header.hop_index < packet.routing_header.hops.len() {
+    if packet.routing_header.destination().unwrap() != drone.get_id() {
         Ok(())
     } else {
         match packet.pack_type.clone() {
