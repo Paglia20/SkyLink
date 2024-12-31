@@ -14,7 +14,7 @@ pub enum ServerEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
-    AckReceived(Ack),
-    NackReceived(Nack),
+    AckReceived(Packet),
+    NackReceived(Packet),
     // CreatedConnection(NodeId, NodeId),
 }
