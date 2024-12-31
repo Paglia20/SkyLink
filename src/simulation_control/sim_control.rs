@@ -625,38 +625,152 @@ impl SimulationControl {
             return;
         }
 
-        if let Some(sender) = self.drone_command_senders.get(&id) {
-            if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
-                if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
-                    println!("error adding drone {} to drone {} senders", id_to_add, id);
-                } else {
-                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                        ids.push(id_to_add);
-                    }
+        match self.get_type(id) {
+            None => {
+                self.log.push_back(LogEntry::new(
+                    Cause::Error,
+                    id,
+                    format!("drone {id} is not in network",
+                    )));
+                return;
+            }
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&id) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                                if let Err(_e) = sender.send(ClientCommand::AddSender(id_to_add, senderpacket.clone())) {
+                                    println!("error adding drone {} to client {} senders", id_to_add, id);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                        ids.push(id_to_add);
+                                    }
 
-                    println!("drone {} added to drone {} senders", id_to_add, id);
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id,
-                        format!(" -- drone {} added to senders", id_to_add),
-                    ));
+                                    println!("drone {} added to client {} senders", id_to_add, id);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id,
+                                        format!("drone {} added to senders", id_to_add),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Drone => {
+                        if let Some(sender) = self.drone_command_senders.get(&id) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                                if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
+                                    println!("error adding drone {} to drone {} senders", id_to_add, id);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                        ids.push(id_to_add);
+                                    }
+
+                                    println!("drone {} added to drone {} senders", id_to_add, id);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id,
+                                        format!(" -- drone {} added to senders", id_to_add),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Server => {
+                        if let Some(sender) = self.server_command_senders.get(&id) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                                if let Err(_e) = sender.send(ServerCommand::AddSender(id_to_add, senderpacket.clone())) {
+                                    println!("error adding drone {} to server {} senders", id_to_add, id);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+                                        ids.push(id_to_add);
+                                    }
+
+                                    println!("drone {} added to server {} senders", id_to_add, id);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id,
+                                        format!("drone {} added to senders", id_to_add),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        if let Some(sender) = self.drone_command_senders.get(&id_to_add) {
-            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
-                if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
-                    println!("error adding drone {} to drone {} senders", id, id_to_add);
-                } else {
-                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                        ids.push(id);
+
+        match self.get_type(id_to_add) {
+            None => {
+                self.log.push_back(LogEntry::new(
+                    Cause::Error,
+                    id_to_add,
+                    format!("drone {id_to_add} is not in network",
+                    )));
+                return;
+            }
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&id_to_add) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
+                                if let Err(_e) = sender.send(ClientCommand::AddSender(id, senderpacket.clone())) {
+                                    println!("error adding drone {} to client {} senders", id, id_to_add);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
+                                        ids.push(id);
+                                    }
+
+                                    println!("drone {} added to client {} senders", id, id_to_add);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id_to_add,
+                                        format!("drone {} added to senders", id),
+                                    ));
+                                }
+                            }
+                        }
                     }
-                    println!("drone {} added to drone {} senders", id, id_to_add);
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id_to_add,
-                        format!("drone {} added to senders", id),
-                    ));
+                    Drone => {
+                        if let Some(sender) = self.drone_command_senders.get(&id_to_add) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
+                                if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
+                                    println!("error adding drone {} to drone {} senders", id, id_to_add);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
+                                        ids.push(id);
+                                    }
+
+                                    println!("drone {} added to drone {} senders", id, id_to_add);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id_to_add,
+                                        format!("drone {} added to senders", id),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Server => {
+                        if let Some(sender) = self.server_command_senders.get(&id_to_add) {
+                            if let Some(senderpacket) = self.all_sender_packets.get(&id) {
+                                if let Err(_e) = sender.send(ServerCommand::AddSender(id, senderpacket.clone())) {
+                                    println!("error adding drone {} to server {} senders", id, id_to_add);
+                                } else {
+                                    if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
+                                        ids.push(id);
+                                    }
+
+                                    println!("drone {} added to server {} senders", id, id_to_add);
+                                    self.log.push_back(LogEntry::new(
+                                        Cause::Managing,
+                                        id_to_add,
+                                        format!("drone {} added to senders", id),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
