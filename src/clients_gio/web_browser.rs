@@ -52,6 +52,10 @@ impl NetworkEdge for WebBrowser {
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
         unimplemented!()
     }
+
+    fn flood(&self) {
+        todo!()
+    }
 }
 // impl Client for WebBrowser {
 //     fn new(id: NodeId, event_send: Sender<ClientEvent>, command_recv: Receiver<ClientCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {

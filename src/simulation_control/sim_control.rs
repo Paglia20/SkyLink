@@ -14,7 +14,7 @@ use wg_2024::packet::{NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, LostMessage, MissingDestination};
+use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, LostMessage, MissingDestination, NackReceived};
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -207,20 +207,22 @@ impl SimulationControl {
                 }
             }
             ClientEvent::NackReceived(packet) => {
-                if let Some(ack_id) = packet.routing_header.destination(){
+                if let Some(nack_id) = packet.routing_header.destination(){
                     match packet.pack_type {
-                        PacketType::Ack(ack) => {
+                        PacketType::Nack(nack) => {
                             let new_log = LogEntry{
-                                cause: AckReceived,
-                                node_id: ack_id,
+                                cause: NackReceived,
+                                node_id: nack_id,
                                 message: format!(
-                                    "Node {:?} received Nack of fragment {}"
-                                    , ack_id, ack.fragment_index
+                                    "Node {:?} received Nack of fragment {}, nack type:{:?} "
+                                    , nack_id, nack.fragment_index, nack.nack_type
                                 )
                             };
                             self.log.push_back(new_log);
                         }
-                        _ => {}
+                        _ => {
+
+                        }
                     }
                 }
             }
@@ -228,7 +230,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: MissingDestination,
                     node_id,
-                    message: format!("Node {:?} is missing destination",
+                    message: format!("Couldn't reach {} with a pacekt (missing destination) ",
                                      node_id),
                 };
                 self.log.push_back(new_log);
@@ -237,7 +239,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: MissingDestination,
                     node_id,
-                    message: format!("Node {:?} is missing route",
+                    message: format!("Couldn't reach {} with a packet (missing route)",
                                             node_id),
                 };
                 self.log.push_back(new_log);
@@ -616,6 +618,48 @@ impl SimulationControl {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    pub fn flood_with(&mut self, node_id: NodeId){
+        if !self.does_drone_exist(node_id) {
+            self.log.push_back(LogEntry::new(
+                Cause::Error,
+                node_id,
+                format!("drone {} does not exist in this network.", node_id),
+            ));
+            return;
+        }
+        match self.get_type(node_id) {
+            None => {self.log.push_back(LogEntry::new(
+                Cause::Error,
+                node_id,
+                format!("drone {node_id} is not in network",
+                )));
+                return;},
+
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&node_id) {
+                                if let Err(_e) = sender.send(ClientCommand::Flood) {
+                                    println!("error flooding");
+                                } else {
+                                    println!("flooded successfully");
+                                }
+
+                        }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                node_id,
+                                format!("error flooding"),
+                            ));
+                        }
+                    }
+                    _ => {},
                 }
             }
         }

@@ -38,16 +38,13 @@ id = 8
 connected_node_ids = [5,1]
 pdr = 0.00
 
-[[drone]]
+[[client]]
 id = 9
-connected_node_ids = [2,6]
-pdr = 0.00
+connected_drone_ids = [2,6]
 
-[[drone]]
+[[client]]
 id = 10
-connected_node_ids = [7,3]
-pdr = 0.00
-
+connected_drone_ids = [7,3]
 
 [[client]]
 id = 0

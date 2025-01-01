@@ -8,7 +8,10 @@ pub enum ClientCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
     SendMessage(NodeId, Message),
+    Flood,
 }
+
+//add a send packet for testing??
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
@@ -24,3 +27,6 @@ pub enum ClientEvent {
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     // OpenedChat(NodeID),
 }
+
+
+//?? i want to add floodreceived (Node_id) with the Node i got a path for

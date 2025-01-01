@@ -57,6 +57,10 @@ impl NetworkEdge for ChatServer {
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
         todo!()
     }
+
+    fn flood(&self) {
+        todo!()
+    }
 }
 impl Server for ChatServer {
     fn new(
