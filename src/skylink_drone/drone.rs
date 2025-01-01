@@ -257,8 +257,9 @@ impl SkyLinkDrone {
         }
     }
 
-    fn send_nack(&self, index: &NodeId, err: Packet) {
+    fn send_nack(&self, index: &NodeId, mut err: Packet) {
         if let Some(sender) = self.packet_send.get(index) {
+            err.routing_header.hop_index += 1;
             sender.send(err.clone()).unwrap();
             self.controller_send
                 .send(DroneEvent::PacketSent(err))
