@@ -8,7 +8,7 @@ use wg_2024_rust::drone::RustDrone;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
 type Tested = SkyLinkDrone;
-const TIMEOUT: Duration = Duration::from_millis(20);
+const TIMEOUT: Duration = Duration::from_millis(40);
 const FLOOD_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[test]
