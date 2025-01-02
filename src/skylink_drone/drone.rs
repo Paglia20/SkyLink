@@ -9,6 +9,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::NackType::DestinationIsDrone;
 
 pub struct SkyLinkDrone {
     id: NodeId,
@@ -224,9 +225,13 @@ impl SkyLinkDrone {
                                         self.handle_packet(err);
                                     }
                                     _ => {
-                                        self.controller_send.send(ControllerShortcut(err)).unwrap();
+
+                                       if nack.nack_type != NackType::DestinationIsDrone {
+                                           self.controller_send.send(ControllerShortcut(err)).unwrap();
+                                       }
                                         //If I had got an error from the checks of the routing of an
                                         //Ack, Nack or FloodResponse, I just forward it through the Simulation Controller.
+                                        //unless its a destination is drone
                                     }
                                 }
                             }

@@ -8,6 +8,7 @@ use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use crate::message::TextRequest::*;
 
@@ -234,21 +235,24 @@ impl NetworkEdge for ChatClient {
                         //as of rn it "saves" all possible servers and client... we want something else I think...
                         let mut current_path = Vec::new();
                         for (node_id, node_type) in flood_resp.path_trace {
-                            current_path.push(node_id);
+                            //no point in having a route that return to yourself
+                            if (node_id != self.node_id) {
+                                current_path.push(node_id);
 
-                            if node_type == NodeType::Server || node_type == NodeType::Client {
-                                if !self.paths.contains_key(&node_id) {
-                                    //if it's first time this server gets seen
-                                    self.paths.insert(node_id.clone(), RouteList::new());
-                                }
-                                // Clone the current path for the server and insert it into the route list
-                                match self.paths.get_mut(&node_id) {
-                                    None => {
-                                        unreachable!()
-                                        //i hope it's unreachable
+                                if node_type == NodeType::Server || node_type == NodeType::Client {
+                                    if !self.paths.contains_key(&node_id) {
+                                        //if it's first time this server gets seen
+                                        self.paths.insert(node_id.clone(), RouteList::new());
                                     }
-                                    Some(rl) => {
-                                        rl.add_route(Route::new(current_path.clone()));
+                                    // Clone the current path for the server and insert it into the route list
+                                    match self.paths.get_mut(&node_id) {
+                                        None => {
+                                            unreachable!()
+                                            //i hope it's unreachable
+                                        }
+                                        Some(rl) => {
+                                            rl.add_route(Route::new(current_path.clone()));
+                                        }
                                     }
                                 }
                             }
@@ -392,14 +396,27 @@ impl NetworkEdge for ChatClient {
         }
     }
 
-
-    fn flood(&self) {
-        let mut flood_request = FloodRequest{
-            flood_id: 0, //change?
-            initiator_id: self.node_id,
-            path_trace: vec![],
+    fn get_flood_id(&mut self) -> u64 {
+        let min = match self.flood_ids.iter().min(){
+            Some(min) => (*min).0,
+            None => {
+                let value = fastrand::u64(..30);
+                self.flood_ids.insert((value, self.node_id));
+                return value
+            }
         };
-        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), 1, flood_request);
+        let value = fastrand::u64(min..min + 40);
+        self.flood_ids.insert((value, self.node_id));
+        value
+    }
+
+    fn flood(&mut self) {
+        let mut flood_request = FloodRequest{
+            flood_id: self.get_flood_id(),
+            initiator_id: self.node_id,
+            path_trace: vec![(self.node_id, Client)],
+        };
+        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), fastrand::u64(..500), flood_request);
         self.packet_send.values().for_each(|sender| {
             sender.send(packet.clone()).unwrap()
         });

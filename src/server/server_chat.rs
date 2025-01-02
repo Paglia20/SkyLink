@@ -58,7 +58,10 @@ impl NetworkEdge for ChatServer {
         todo!()
     }
 
-    fn flood(&self) {
+    fn flood(&mut self) {
+        todo!()
+    }
+    fn get_flood_id(&mut self) -> u64 {
         todo!()
     }
 }

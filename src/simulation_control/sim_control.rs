@@ -64,6 +64,26 @@ impl SimulationControl {
         match e {
             //had to correct index due to not having a source routing header in the flood request!!
             DroneEvent::PacketSent(packet) => {
+                let mut message = String::new();
+
+                match packet.clone().pack_type{
+                    PacketType::MsgFragment(fragment) => {
+                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                    }
+                    PacketType::Ack(ack) => {
+                        message = format!("sent ack id: {}", ack.fragment_index);
+                    }
+                    PacketType::Nack(nack) => {
+                        message = format!("sent nack id: {}", nack.fragment_index);
+                    }
+                    PacketType::FloodRequest(rq) => {
+                        message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                    }
+                    PacketType::FloodResponse(rr) => {
+                        message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                    }
+                }
+
                 let id_drone = match packet.clone().pack_type{
                     PacketType::FloodRequest(flood) => {
                         let (id, _) = flood.path_trace.last().unwrap();
@@ -77,10 +97,8 @@ impl SimulationControl {
                 let new_log = LogEntry {
                     cause: Cause::Sent,
                     node_id: id_drone,
-                    message: format!(
-                        "Sent fragment {:?} of packet: {}",
-                        packet.session_id, packet
-                    ),
+                    message: message
+
                 };
                 self.log.push_back(new_log);
             }
@@ -127,6 +145,26 @@ impl SimulationControl {
     pub(crate) fn add_client_event_to_log(&mut self, e: ClientEvent){
         match e {
             ClientEvent::PacketSent(packet) => {
+                let mut message = String::new();
+
+                match packet.clone().pack_type{
+                    PacketType::MsgFragment(fragment) => {
+                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                    }
+                    PacketType::Ack(ack) => {
+                        message = format!("sent ack id: {}", ack.fragment_index);
+                    }
+                    PacketType::Nack(nack) => {
+                        message = format!("sent nack id: {}", nack.fragment_index);
+                    }
+                    PacketType::FloodRequest(rq) => {
+                        message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                    }
+                    PacketType::FloodResponse(rr) => {
+                        message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                    }
+                }
+
                 let id_drone = match packet.clone().pack_type{
                     PacketType::FloodRequest(flood) => {
                         let (id, _) = flood.path_trace.last().unwrap();
@@ -140,13 +178,12 @@ impl SimulationControl {
                 let new_log = LogEntry {
                     cause: Cause::Sent,
                     node_id: id_drone,
-                    message: format!(
-                        "Sent fragment {:?} of packet: {}",
-                        packet.session_id, packet
-                    ),
+                    message: message
+
                 };
                 self.log.push_back(new_log);
             }
+
             ClientEvent::PacketReceived(packet) => {
                 let id_drone = match packet.clone().pack_type{
                     PacketType::FloodRequest(flood) => {
@@ -276,6 +313,26 @@ impl SimulationControl {
     pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){
         match e {
             ServerEvent::PacketSent(packet) => {
+                let mut message = String::new();
+
+                match packet.clone().pack_type{
+                    PacketType::MsgFragment(fragment) => {
+                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                    }
+                    PacketType::Ack(ack) => {
+                        message = format!("sent ack id: {}", ack.fragment_index);
+                    }
+                    PacketType::Nack(nack) => {
+                        message = format!("sent nack id: {}", nack.fragment_index);
+                    }
+                    PacketType::FloodRequest(rq) => {
+                        message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                    }
+                    PacketType::FloodResponse(rr) => {
+                        message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                    }
+                }
+
                 let id_drone = match packet.clone().pack_type{
                     PacketType::FloodRequest(flood) => {
                         let (id, _) = flood.path_trace.last().unwrap();
@@ -289,10 +346,8 @@ impl SimulationControl {
                 let new_log = LogEntry {
                     cause: Cause::Sent,
                     node_id: id_drone,
-                    message: format!(
-                        "Sent fragment {:?} of packet: {}",
-                        packet.session_id, packet
-                    ),
+                    message: message
+
                 };
                 self.log.push_back(new_log);
             }

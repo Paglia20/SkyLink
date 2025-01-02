@@ -147,6 +147,8 @@ pub trait NetworkEdge {
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64);
 
-    fn flood(&self);
+    fn flood(&mut self);
+
+    fn get_flood_id(&mut self) -> u64;
 
 }
