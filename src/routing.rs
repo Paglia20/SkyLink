@@ -1,12 +1,13 @@
+use std::fmt::{Display, Formatter};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Route {
     path: Vec<(NodeId, u64, u64)>,
-    // Every node keeps track of dropped and arrived messages.
+    // Every node keeps track of arrived and dropped messages.
     // This count doesn't consider errors different from the drop.
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RouteList {
     routes: Vec<Route>,
 }
@@ -111,7 +112,7 @@ impl RouteList {
         res // Will result as None if there are no more routes cut of errors.
     }
 
-    // I apply positive or negative feed to all routes to this destination
+    // I apply positive feed to all routes to this destination
     pub fn positive_feed(&mut self, route: Vec<NodeId>) {
         for i in route {
             for j in self.routes.iter_mut() {
@@ -119,10 +120,11 @@ impl RouteList {
             }
         }
     }
-    pub fn negative_feed(&mut self, route: Vec<NodeId>) {
-        for i in route {
-            for j in self.routes.iter_mut() {
-                j.negative_feed(i);
+    // i apply negative feed to the node to all the routes with that node,
+    pub fn negative_feed(&mut self, node: NodeId) {
+        for i in self.routes.iter_mut() {
+            if i.contains_node(&node) {
+                i.negative_feed(node);
             }
         }
     }

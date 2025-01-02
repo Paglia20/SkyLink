@@ -7,7 +7,9 @@ use crate::routing::{Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::NodeType::*;
+use wg_2024::packet::PacketType::*;
 use crate::message::TextRequest::*;
 
 pub struct ChatClient {
@@ -41,217 +43,221 @@ impl NetworkEdge for ChatClient {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
-        if *packet.routing_header.hops.last().unwrap() != self.node_id {
-            // If it's not his packet, but he has to act as a drone (that never misses)
-            packet.routing_header.hop_index += 1;
-            let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index){
-                Some(id) => *id,
-                None =>{
-                    //send nack NackType::ErrorInRouting(*next_hop))???
+        if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
+            flood_request
+                .path_trace
+                .push((self.node_id, NodeType::Client));
 
-                     return;
-                },
-            };
-
-            match self.packet_send.get(&next_id) {
-                None => {
-                    self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
-                }
-                Some(sender) => {
-                    match sender.try_send(packet.clone()) {
-                        Err(_) => {
-                            // !!You need to send back the same errors a drone would
-                            //send nack NackType::ErrorInRouting(*next_hop)) ??? ,
-                            self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
-                        }
-                        Ok(_) => {
-                            self.event_send
-                                .send(ClientEvent::PacketSent(packet.clone()))
-                                .unwrap();
-                            // If the message was sent, I also notify the sim controller.
+            if self.flood_ids.insert((
+                flood_request.flood_id.clone(),
+                flood_request.initiator_id.clone(),
+            )) {
+                if self.packet_send.len() == 1 {
+                    self.send_flood_response(flood_request);
+                } else {
+                    let mut prev = flood_request.initiator_id.clone();
+                    if flood_request.path_trace.clone().len() > 1 {
+                        prev = flood_request
+                            .path_trace
+                            .get(flood_request.path_trace.len() - 2)
+                            .unwrap()
+                            .0;
+                    }
+                    //I update the path_trace in the packet.
+                    packet.pack_type = PacketType::FloodRequest(flood_request);
+                    for (key, _) in self.packet_send.iter() {
+                        //println!("Previous: {}", prev);
+                        //println!("Key: {}", key);
+                        if *key != prev {
+                            //I send the flooding to everyone except the node I received it from.
+                            if let Ok(_) =
+                                self.packet_send.get(key).unwrap().send(packet.clone())
+                            {
+                                self.event_send
+                                    .send(ClientEvent::PacketSent(packet.clone()))
+                                    .unwrap();
+                                //If the message was sent, I also notify the sim controller.
+                            } //There's no else, since I don't care of nodes which can't be reached.
                         }
                     }
                 }
+            } else {
+                self.send_flood_response(flood_request);
             }
         } else {
-            // We can take for granted he is the destination
-            match packet.pack_type.clone() {
-                PacketType::MsgFragment(fragment) => {
-                    let tot_num_frag = fragment.total_n_fragments as usize;
-                    let session_id = packet.session_id;
-                    let initiator_id = packet.routing_header.hops[0];
-                    let destination = self.node_id; //he is the destination
-                    let frag_index = fragment.fragment_index;
-                    //add new frag
-                    if !self.fragments.contains_key(&(packet.session_id, initiator_id, destination)) {
-                        self.fragments.insert((session_id, initiator_id, destination), vec![fragment]);
-                    } else {
-                        self.fragments.get_mut(&(session_id, initiator_id, destination)).unwrap().push(fragment);
+            if packet.routing_header.destination().unwrap() != self.node_id {
+                // If it's not his packet, but he has to act as a drone (that never misses)
+                packet.routing_header.hop_index += 1;
+                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
+                    Some(id) => *id,
+                    None => {
+                        //send nack NackType::ErrorInRouting(*next_hop))???
+
+                        return;
+                    },
+                };
+
+                match self.packet_send.get(&next_id) {
+                    None => {
+                        self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                     }
-
-                    //for each arrived frag, send back an ack
-                    self.send_ack(packet.clone(), frag_index);
-
-
-                    // If all the frag have arrived recreate message
-                    let frags_clone = self.fragments.get(&(packet.session_id, initiator_id, destination )).unwrap();
-                    if frags_clone.len() == tot_num_frag {
-                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                            Ok(mess) => { mess }
-                            Err(_e) => {
-                                unimplemented!() //
+                    Some(sender) => {
+                        match sender.try_send(packet.clone()) {
+                            Err(_) => {
+                                // !!You need to send back the same errors a drone would
+                                //send nack NackType::ErrorInRouting(*next_hop)) ??? ,
+                                self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
                             }
-                        };
-                        //handle message
-                        self.handle_message(message);
-
-                        //svuota hashmap
-                        self.fragments.remove(&(packet.session_id, initiator_id, destination));
-
-                    }
-                }
-                PacketType::Ack(ack) => {
-
-                    self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
-
-                    //the ack will have the source that was the destination of the initial packet
-                    match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())){
-                        None => {}
-                        Some(vec) => {
-                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
-
-                            //if it's empty i retained all fragments because i received all the acks, hence i can remove my entry from hashmap
-                            if (vec.is_empty()) {
-                                self.fragments.remove_entry(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap()));
+                            Ok(_) => {
+                                self.event_send
+                                    .send(ClientEvent::PacketSent(packet.clone()))
+                                    .unwrap();
+                                // If the message was sent, I also notify the sim controller.
                             }
                         }
                     }
-
-                    // !!I have also implemented positive feedback for routes, that'll need to be
-                    // !!applied after the Ack, similar to how the negative one is applied in dropped,
-                    // !!but this time with every node of the route.
-
-                    //the source of the nack will be the destination for witch i want to apply feedback
-                    let source = packet.routing_header.source().unwrap();
-                    let mut r_list = match self.paths.get_mut(&source){
-                        None => {
-                            self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
-                            return;
-                        }
-                        Some( rl) => {rl}
-                    };
-                    r_list.positive_feed(packet.routing_header.hops);
                 }
-
-                PacketType::Nack(nack) => {
-                    match nack.nack_type.clone() {
-                        NackType::UnexpectedRecipient(wrong_node) => {
-                            // I remove all the routes with that destination, since it's probably faulty
-                            for (_, route) in self.paths.iter_mut() {
-                                route.remove_faulty_node(wrong_node);
-                            }
-                            self.send_fragment_after_nack(packet, nack);
-                        },
-                        NackType::ErrorInRouting(wrong_node) => {
-                            // I again remove the routes containing the (probably) crushed drone
-                            for (_, route) in self.paths.iter_mut() {
-                                route.remove_faulty_node(wrong_node);
-                            }
-                            self.send_fragment_after_nack(packet, nack);
-                        },
-                        NackType::DestinationIsDrone => {
-                            let wrong_node = packet.routing_header.hops.last().unwrap();
-                            for (_, route) in self.paths.iter_mut() {
-                                route.remove_faulty_node(*wrong_node);
-                            }
-                            // Since the destination was a drone, the message was faulty,
-                            // so I remove the destination and consider the message as lost.
-                            self.paths.remove(wrong_node);
-                        },
-                        NackType::Dropped => {
-                            // I just send it again
-                            self.send_fragment_after_nack(packet.clone(), nack);
-
-
-                            //who dropped will be source for the nack
-                            let dropper = packet.routing_header.source().unwrap();
-                            let mut r_list = match self.paths.get_mut(&dropper){
-                                None => {
-                                    self.event_send.send(ClientEvent::MissingRoute(dropper)).unwrap();
-                                    return;
-                                }
-                                Some( rl) => {rl}
-                            };
-                            r_list.negative_feed(packet.routing_header.hops);
-                            // Still WIP because for some fucking reason Dropped doesn't tell by which drone.
-                            //gio: i think we good now
-                        }
-                    }
-                }
-                PacketType::FloodRequest(mut flood_request) => {
-                    flood_request
-                        .path_trace
-                        .push((self.node_id, NodeType::Client));
-
-                    if self.flood_ids.insert((
-                        flood_request.flood_id.clone(),
-                        flood_request.initiator_id.clone(),
-                    )) {
-                        if self.packet_send.len() == 1 {
-                            self.send_flood_response(flood_request);
+            } else {
+                // We can take for granted he is the destination
+                match packet.pack_type.clone() {
+                    PacketType::MsgFragment(fragment) => {
+                        let tot_num_frag = fragment.total_n_fragments as usize;
+                        let session_id = packet.session_id;
+                        let initiator_id = packet.routing_header.hops[0];
+                        let destination = self.node_id; //he is the destination
+                        let frag_index = fragment.fragment_index;
+                        //add new frag
+                        if !self.fragments.contains_key(&(packet.session_id, initiator_id, destination)) {
+                            self.fragments.insert((session_id, initiator_id, destination), vec![fragment]);
                         } else {
-                            let mut prev = flood_request.initiator_id.clone();
-                            if flood_request.path_trace.clone().len() > 1 {
-                                prev = flood_request
-                                    .path_trace
-                                    .get(flood_request.path_trace.len() - 2)
-                                    .unwrap()
-                                    .0;
-                            }
-                            //I update the path_trace in the packet.
-                            packet.pack_type = PacketType::FloodRequest(flood_request);
-                            for (key, _) in self.packet_send.iter() {
-                                //println!("Previous: {}", prev);
-                                //println!("Key: {}", key);
-                                if *key != prev {
-                                    //I send the flooding to everyone except the node I received it from.
-                                    if let Ok(_) =
-                                        self.packet_send.get(key).unwrap().send(packet.clone())
-                                    {
-                                        self.event_send
-                                            .send(ClientEvent::PacketSent(packet.clone()))
-                                            .unwrap();
-                                        //If the message was sent, I also notify the sim controller.
-                                    } //There's no else, since I don't care of nodes which can't be reached.
-                                }
-                            }
+                            self.fragments.get_mut(&(session_id, initiator_id, destination)).unwrap().push(fragment);
                         }
-                    } else {
-                        self.send_flood_response(flood_request);
-                    }
-                }
-                PacketType::FloodResponse(flood_resp) => {
-                    //as of rn it "saves" all possible servers... we want something else I think...
-                    let mut current_path = Vec::new();
-                    for (node_id, node_type) in flood_resp.path_trace {
-                        current_path.push(node_id);
 
-                        if node_type == NodeType::Server {
-                            if !self.paths.contains_key(&node_id) {
-                                //if it's first time this server gets seen
-                                self.paths.insert(node_id.clone(), RouteList::new());
-                            }
-                            // Clone the current path for the server and insert it into the route list
-                            match self.paths.get_mut(&node_id) {
-                                None => {
-                                    unreachable!()
-                                    //i hope it's unreachable
+                        //for each arrived frag, send back an ack
+                        self.send_ack(packet.clone(), frag_index);
+
+                        //notify sc i got a packet
+                        self.event_send.send(ClientEvent::PacketReceived(packet.clone())).unwrap();
+
+
+
+
+                        // If all the frag have arrived recreate message
+                        let frags_clone = self.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap();
+                        if frags_clone.len() == tot_num_frag {
+                            let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                                Ok(mess) => { mess }
+                                Err(_e) => {
+                                    unimplemented!() //
                                 }
-                                Some(rl) => {
-                                    rl.add_route(Route::new(current_path.clone()));
+                            };
+                            //handle message
+                            self.handle_message(message);
+
+                            //svuota hashmap
+                            self.fragments.remove(&(packet.session_id, initiator_id, destination));
+                        }
+                    }
+                    PacketType::Ack(ack) => {
+                        self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
+
+                        //the ack will have the source that was the destination of the initial packet
+                        match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())) {
+                            None => {}
+                            Some(vec) => {
+                                vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                                //if it's empty i retained all fragments because i received all the acks, hence i can remove my entry from hashmap
+                                if (vec.is_empty()) {
+                                    self.fragments.remove_entry(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap()));
                                 }
                             }
                         }
+
+                        // !!I have also implemented positive feedback for routes, that'll need to be
+                        // !!applied after the Ack, similar to how the negative one is applied in dropped,
+                        // !!but this time with every node of the route.
+
+                        //the source of the nack will be the destination for witch i want to apply feedback
+                        let source = packet.routing_header.source().unwrap();
+                        let mut r_list = match self.paths.get_mut(&source) {
+                            None => {
+                                self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
+                                return;
+                            }
+                            Some(rl) => { rl }
+                        };
+                        r_list.positive_feed(packet.routing_header.hops);
+                    }
+
+                    PacketType::Nack(nack) => {
+                        self.event_send.send(ClientEvent::NackReceived(packet.clone())).unwrap();
+                        match nack.nack_type.clone() {
+                            NackType::UnexpectedRecipient(wrong_node) => {
+                                // I remove all the routes with that destination, since it's probably faulty
+                                for (_, route) in self.paths.iter_mut() {
+                                    route.remove_faulty_node(wrong_node);
+                                }
+                                self.send_fragment_after_nack(packet, nack);
+                            },
+                            NackType::ErrorInRouting(wrong_node) => {
+                                // I again remove the routes containing the (probably) crushed drone
+                                for (_, route) in self.paths.iter_mut() {
+                                    route.remove_faulty_node(wrong_node);
+                                }
+                                self.send_fragment_after_nack(packet, nack);
+                            },
+                            NackType::DestinationIsDrone => {
+                                let wrong_node = packet.routing_header.hops.last().unwrap();
+                                for (_, route) in self.paths.iter_mut() {
+                                    route.remove_faulty_node(*wrong_node);
+                                }
+                                // Since the destination was a drone, the message was faulty,
+                                // so I remove the destination and consider the message as lost.
+                                self.paths.remove(wrong_node);
+                            },
+                            NackType::Dropped => {
+                                // I just send it again
+                                self.send_fragment_after_nack(packet.clone(), nack);
+
+                                //who dropped will be source for the nack
+                                let dropper = packet.routing_header.source().unwrap();
+                                for r_list in self.paths.values_mut() {
+                                    r_list.negative_feed(dropper);
+                                }
+                            }
+                        }
+                    }
+                    PacketType::FloodRequest(_) => {
+                        unreachable!()
+                    }
+                    PacketType::FloodResponse(flood_resp) => {
+                        //as of rn it "saves" all possible servers and client... we want something else I think...
+                        let mut current_path = Vec::new();
+                        for (node_id, node_type) in flood_resp.path_trace {
+                            //no point in having a route that return to yourself
+                            if (node_id != self.node_id) {
+                                current_path.push(node_id);
+
+                                if node_type == NodeType::Server || node_type == NodeType::Client {
+                                    if !self.paths.contains_key(&node_id) {
+                                        //if it's first time this server gets seen
+                                        self.paths.insert(node_id.clone(), RouteList::new());
+                                    }
+                                    // Clone the current path for the server and insert it into the route list
+                                    match self.paths.get_mut(&node_id) {
+                                        None => {
+                                            unreachable!()
+                                            //i hope it's unreachable
+                                        }
+                                        Some(rl) => {
+                                            rl.add_route(Route::new(current_path.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        println!("{:?}", self.paths); //to debug uncomment
                     }
                 }
             }
@@ -389,6 +395,36 @@ impl NetworkEdge for ChatClient {
             }
         }
     }
+
+    fn get_flood_id(&mut self) -> u64 {
+        let min = match self.flood_ids.iter().min(){
+            Some(min) => (*min).0,
+            None => {
+                let value = fastrand::u64(..30);
+                self.flood_ids.insert((value, self.node_id));
+                return value
+            }
+        };
+        let value = fastrand::u64(min..min + 40);
+        self.flood_ids.insert((value, self.node_id));
+        value
+    }
+
+    fn flood(&mut self) {
+        //initialize the flood informations we got before, because topology might have changed
+        self.paths.clear();
+        self.contact_list.clear();
+
+        let mut flood_request = FloodRequest{
+            flood_id: self.get_flood_id(),
+            initiator_id: self.node_id,
+            path_trace: vec![(self.node_id, Client)],
+        };
+        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), fastrand::u64(..500), flood_request);
+        self.packet_send.values().for_each(|sender| {
+            sender.send(packet.clone()).unwrap()
+        });
+    }
 }
 
 
@@ -467,6 +503,9 @@ impl Client for ChatClient {
             }
             ClientCommand::SendMessage(node_id, message) => {
                 self.send_message(message, node_id);
+            }
+            ClientCommand::Flood =>{
+                self.flood();
             }
         }
     }

@@ -11,6 +11,9 @@ use wg_2024::config::Config;
 use wg_2024::drone::Drone;
 use wg_2024::packet::NodeType;
 use wg_2024::packet::NodeType::*;
+use crate::clients_gio::*;
+use crate::clients_gio::client_chat::ChatClient;
+use crate::clients_gio::client_trait::Client;
 
 pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
@@ -113,8 +116,14 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
 
         //create the thread of the Client, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
-            //create client
-
+            let mut client = ChatClient::new(
+                client.id,
+                contr_recv,
+                node_event_send,
+                client_recv,
+                client_send,
+            );
+            client.run();
         }));
         //This will probably need to be changed based on the
         //implementation of other groups drones in our network.

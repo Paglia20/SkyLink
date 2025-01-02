@@ -180,6 +180,7 @@ impl MyApp {
                 match drone_event {
                     PacketDropped(packet) => {
                         let dropper = packet.routing_header.current_hop().unwrap();
+                        //println!("packet dropped by {dropper}"); debug printing
                         self.sim_contr.dropped_packets.push((dropper, packet));
                         self.side_panel_scenes = ManageDrop;
                     }
@@ -303,42 +304,20 @@ impl eframe::App for MyApp {
                         }
 
                         // for testing
-                        if ui.button("Test Drop").clicked() {
-                            let msg = create_packet(vec![0, 1, 8]);
-                            let drop = PacketDropped(msg);
-                            match self.sim_contr.channel_for_drone.try_send(drop) {
-                                Ok(_) => {
-                                    println!("sent dropping")
-                                }
-                                Err(_) => {
-                                    println!("error dropping packet");
-                                }
-                            }
+                        if ui.button("Test Drop with 5").clicked() {
+                            self.sim_contr.set_pdr(5, 100.0);
+
+                            let msg = create_packet(vec![0,1,8,5,2]);
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
                         }
 
                         if ui.button("Test sending packet").clicked() {
-                            let msg = create_packet(vec![4,1,8,5,2]);
+                            let msg = create_packet(vec![0,1,8,5,2]);
                             self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
                         }
 
-                        if ui.button("Test flooding -- crash").clicked() {
-                            let flod = FloodRequest{
-                                flood_id: 0,
-                                initiator_id: 4,
-                                path_trace: vec![],
-                            };
-
-                            let flood = FloodRequest(flod);
-                            let msg = Packet{
-                                routing_header: SourceRoutingHeader{
-                                    hop_index: 1,
-                                    hops: vec![],
-                                },
-                                session_id: 299,
-                                pack_type: flood,
-                            };
-
-                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+                        if ui.button("Test flooding with 0").clicked() {
+                            self.sim_contr.flood_with(0);
                         }
                         
                         if ui.button("Test Shortcut").clicked() {
@@ -576,6 +555,8 @@ impl eframe::App for MyApp {
                             let mut connections= String::new();
                             for connection in node.connections.clone() {
                                 connections.push_str(connection.to_string().as_str());
+                                connections.push_str(", ");
+
                             }
                             ui.label(format!("Connected to :{}", connections));
 
@@ -603,6 +584,8 @@ impl eframe::App for MyApp {
                                 let mut connections= String::new();
                                 for connection in node.connections.clone() {
                                     connections.push_str(connection.to_string().as_str());
+                                    connections.push_str(", ");
+
                                 }
                                 ui.label(format!("Connected to :{}", connections));
 
@@ -688,7 +671,7 @@ impl eframe::App for MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        println!("Drone selezionato: {:?}", value.id);
+                        println!("selected node: {:?}", value.id);
                     }
                 }
             });
