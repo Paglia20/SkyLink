@@ -7,7 +7,7 @@ use rusty_drones::RustyDrone;
 use wg_2024_rust::drone::RustDrone;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-type Tested = rusty_drones;
+type Tested = RollingDrone;
 const TIMEOUT: Duration = Duration::from_millis(20);
 const FLOOD_TIMEOUT: Duration = Duration::from_millis(50);
 
