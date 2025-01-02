@@ -226,12 +226,9 @@ impl SkyLinkDrone {
                                     }
                                     _ => {
 
-                                       if nack.nack_type != NackType::DestinationIsDrone {
-                                           self.controller_send.send(ControllerShortcut(err)).unwrap();
-                                       }
+                                        self.controller_send.send(ControllerShortcut(err)).unwrap();
                                         //If I had got an error from the checks of the routing of an
                                         //Ack, Nack or FloodResponse, I just forward it through the Simulation Controller.
-                                        //unless its a destination is drone
                                     }
                                 }
                             }
