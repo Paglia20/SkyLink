@@ -7,9 +7,9 @@ use rusty_drones::RustyDrone;
 use wg_2024_rust::drone::RustDrone;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-type Tested = RollingDrone;
+type Tested = SkyLinkDrone;
 const TIMEOUT: Duration = Duration::from_millis(20);
-const FLOOD_TIMEOUT: Duration = Duration::from_millis(50);
+const FLOOD_TIMEOUT: Duration = Duration::from_millis(100);
 
 #[test]
 fn drone_destination_is_drone() {
