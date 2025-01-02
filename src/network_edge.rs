@@ -1,10 +1,13 @@
-use crate::message::{ChatRequest, ChatResponse, ContentType, MediaRequest, MediaResponse, Message, MessageType,TextRequest, TextResponse};
+use crate::message::{ChatRequest, ChatResponse, ContentType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
 use std::collections::HashMap;
 use std::sync::Arc;
 use crossbeam_channel::Sender;
+use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
+use crate::clients_gio::client_type::ClientType;
 use crate::routing::RouteList;
+use crate::server::server_type::ServerType;
 
 pub trait NetworkEdge {
     fn send_message(&mut self, message: Message, destination: NodeId);
@@ -41,17 +44,22 @@ pub trait NetworkEdge {
         // We have all fragments, but we first put them in an HashMap to be able to order them.
 
         let keys_cap = to_content.len() as u64;
-        let mut string_to_cont = String::new();
+        let mut vec_cont = Vec::new();
         for key in 0..keys_cap {
             if let Some(values) = to_content.get(&key) {
                 for u8_value in values {
-                    string_to_cont.push_str(&u8_value.to_string());
-                    // We add the fragment to the string that will be converted to content.
+                    vec_cont.push(u8_value.clone());
+                    // We add the fragment to the vec that will be converted to content.
                 }
             }
         }
         // We repeat for every fragment of the HashMap (Since we have all of them,
         // we can just use an incremental counter).
+
+        let string_to_cont = match String::from_utf8(vec_cont){
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string()),
+        };
 
         // Attempt to deserialize into each possible type
         if let Ok(content) = MediaRequest::from_string(string_to_cont.clone()) {
@@ -102,8 +110,18 @@ pub trait NetworkEdge {
             });
         }
 
+        if let Ok(content) = TypeExchange::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContentType::TypeExchange(content),
+            });
+        }
+
         // no deserialization succeeds
-        Err("Failed to determine content type".to_string())
+       let err=  format!("Failed to determine content type for {}", string_to_cont);
+
+        Err(err)
     }
 
 
@@ -151,4 +169,16 @@ pub trait NetworkEdge {
 
     fn get_flood_id(&mut self) -> u64;
 
+    fn get_session_id(&mut self) -> u64;
+
+    fn check_type(&mut self, id: NodeId);
+
+    fn is_state_ok(&mut self, node_id: NodeId) -> bool;
+
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EdgeType{
+    Client(ClientType),
+    Server(ServerType),
 }

@@ -129,8 +129,8 @@ impl SimulationControl {
                         let (id, _) = flood.path_trace.last().unwrap();
                         *id
                     }
-                    _ => *{
-                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                    _ => {
+                        packet.routing_header.previous_hop().unwrap_or(255)
                     },
                 };
                 let new_log = LogEntry {
@@ -171,7 +171,7 @@ impl SimulationControl {
                         *id
                     }
                     _ => *{
-                        packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+                        packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap() //riguarda per type exchange
                     },
                 };
 
@@ -267,7 +267,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: MissingDestination,
                     node_id,
-                    message: format!("Couldn't reach {} with a pacekt (missing destination) ",
+                    message: format!("Couldn't reach {} with a packet (missing destination) ",
                                      node_id),
                 };
                 self.log.push_back(new_log);

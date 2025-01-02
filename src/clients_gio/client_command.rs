@@ -26,7 +26,9 @@ pub enum ClientEvent {
     LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     // OpenedChat(NodeID),
+
 }
 
 
 //?? i want to add floodreceived (Node_id) with the Node i got a path for
+// i want to add a WrongTypeDestination (node_id) for when i want to contact a destination that is not the right type

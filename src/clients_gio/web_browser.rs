@@ -59,6 +59,18 @@ impl NetworkEdge for WebBrowser {
     fn get_flood_id(&mut self) -> u64 {
         todo!()
     }
+
+    fn get_session_id(&mut self) -> u64 {
+        todo!()
+    }
+
+    fn check_type(&mut self, id: NodeId) {
+        todo!()
+    }
+
+    fn is_state_ok(&mut self, node_id: NodeId) -> bool {
+        todo!()
+    }
 }
 // impl Client for WebBrowser {
 //     fn new(id: NodeId, event_send: Sender<ClientEvent>, command_recv: Receiver<ClientCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
