@@ -1,6 +1,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::NodeId;
+use crate::network_edge::EdgeType;
 
 #[derive(Debug, Clone)]
 pub struct Message {
@@ -9,6 +10,13 @@ pub struct Message {
     pub content: ContentType,
 }
 impl Message {
+    pub fn new(source_id: NodeId, session_id: u64, content: ContentType) -> Self {
+        Self{
+            source_id,
+            session_id,
+            content,
+        }
+    }
     pub fn stringify_content(&self) -> String {
         match &self.content {
             ContentType::TextRequest(inner) =>  inner.stringify(),
@@ -17,9 +25,9 @@ impl Message {
             ContentType::MediaResponse(inner) =>  inner.stringify(),
             ContentType::ChatRequest(inner) =>  inner.stringify(),
             ContentType::ChatResponse(inner) => inner.stringify(),
+            ContentType::TypeExchange(inner) => inner.stringify(),
         }
     }
-
 
 }
 
@@ -31,6 +39,7 @@ pub enum ContentType{
     MediaResponse(MediaResponse),
     ChatRequest(ChatRequest),
     ChatResponse(ChatResponse),
+    TypeExchange(TypeExchange),
 }
 
 pub trait MessageType: Serialize + DeserializeOwned {
@@ -40,6 +49,16 @@ pub trait MessageType: Serialize + DeserializeOwned {
     fn from_string(raw: String) -> Result<Self, String> {
         serde_json::from_str(raw.as_str()).map_err(|e| e.to_string())
     }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TypeExchange {
+    TypeRequest{
+        from: NodeId,
+    },
+    TypeResponse{
+        edge_type: EdgeType,
+        from: NodeId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,3 +107,4 @@ impl MessageType for ChatRequest {}
 impl MessageType for TextResponse {}
 impl MessageType for MediaResponse {}
 impl MessageType for ChatResponse {}
+impl MessageType for TypeExchange {}
