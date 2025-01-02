@@ -278,7 +278,9 @@ impl NetworkEdge for ChatClient {
                                     }
 
                                     //lastly, start checktype
-                                     self.check_type(node_id);
+                                    if self.paths.get(&node_id).unwrap().0 == 0 {
+                                        self.check_type(node_id);
+                                    }
                                 }
                             }
                     }
@@ -310,6 +312,7 @@ impl NetworkEdge for ChatClient {
             ContentType::TypeExchange(exchange) => {
                 match exchange {
                     TypeExchange::TypeRequest { from } => {
+                        self.flood();
                         let type_resp = TypeExchange::TypeResponse {
                             edge_type: EdgeType::Client(ClientType::ChatClient),
                             from: self.node_id,
