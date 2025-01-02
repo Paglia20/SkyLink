@@ -1,67 +1,133 @@
-use std::fmt::{Display, Formatter};
+use std::cell::RefCell;
+// use std::fmt;
+use std::fmt::{Debug, Display};
+use std::sync::Arc;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::NodeType;
 
 #[derive(Clone, Debug)]
-pub struct Route {
-    path: Vec<(NodeId, u64, u64)>,
+pub struct Node {
+    id: NodeId,
+    node_type: NodeType,
+    arrived_packets: u64,
+    dropped_packets: u64,
     // Every node keeps track of arrived and dropped messages.
     // This count doesn't consider errors different from the drop.
+}
+#[derive(Clone, Debug)]
+pub struct Nodes {
+    nodes: Vec<Arc<RefCell<Node>>>,
+}
+#[derive(Clone, Debug)]
+pub struct Route {
+    path: Vec<Arc<RefCell<Node>>>,
 }
 #[derive(Clone, Debug)]
 pub struct RouteList {
     routes: Vec<Route>,
 }
 
+impl Node {
+    pub fn new(id: NodeId, node_type: NodeType) -> Node {
+        Node{id, arrived_packets: 1, dropped_packets: 0, node_type}
+    }
+    fn get_reliability(&self) -> f64 {
+        (self.arrived_packets as f64)/(self.arrived_packets as f64 + self.dropped_packets as f64)
+    }
+    fn positive_feed(&mut self) {
+        self.arrived_packets += 1;
+    }
+    fn negative_feed(&mut self) {
+        self.dropped_packets += 1;
+    }
+    fn is_drone(&self) -> bool {
+        match self.node_type {
+            NodeType::Drone => true,
+            _ => false,
+        }
+    }
+}
+
+impl Nodes {
+    pub fn new() -> Nodes {
+        Nodes{nodes: Vec::new()}
+    }
+
+    // I apply positive feed to all nodes in the received route.
+    // I exclude nodes that are NOT drones, since they can't drop the packets.
+    pub fn positive_feed(&mut self, route: Vec<NodeId>) {
+        for i in route {
+            for j in self.nodes.iter_mut() {
+                if i == j.borrow().id && j.borrow().is_drone() {
+                    j.borrow_mut().positive_feed();
+                }
+            }
+        }
+    }
+    // I apply negative feed to the node that dropped the packet.
+    // I exclude nodes that are NOT drones, since they can't drop the packets.
+    pub fn negative_feed(&mut self, node: NodeId) {
+        for i in self.nodes.iter_mut() {
+            if node == i.borrow().id && i.borrow().is_drone() {
+                i.borrow_mut().negative_feed();
+            }
+        }
+    }
+}
+/*
+// !!Might still need to use this, since now there are Arcs and RefCells
+impl Debug for Route {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Route")
+            .field("path", &self.get_path_debug())
+            .finish()
+    }
+}*/
 impl Route {
-    pub fn new(path: Vec<NodeId>) -> Route {
-        let path = path
-            .into_iter()
-            .map(|x| (x, 1, 0))
-            .collect::<Vec<(NodeId, u64, u64)>>();
+    pub fn new(path: Vec<(NodeId, NodeType)>) -> Route {
+        let path = path.iter().map(|x| {
+            Arc::new(RefCell::new(Node::new(x.0, x.1)))
+        }).collect();
         Route { path }
     }
-    pub fn get_weight(&self) -> f64 {
-        let mut weight = 0.0;
-        for (_,x,y) in self.path.iter() {
-            weight *= (*x as f64)/(*x as f64 + *y as f64);
+    // !!Needed if we need the impl Debug
+    /*pub fn get_path_debug(&self) -> String{
+        let mut res = String::new();
+        let _ = self.path.iter()
+            .map(|x| {
+                res.push_str(&x.borrow().id.to_string());
+                res.push_str(" -> ");
+            }).collect();
+        res
+    }*/
+    pub fn get_reliability(&self) -> f64 {
+        let mut reliability = 0.0;
+        for node in self.path.iter() {
+            reliability *= node.borrow().get_reliability();
         }
-        weight
-        // By weighting the routes, we should consider the drop rates
+        reliability
+        // By weighting the routes, we consider the drop rates.
     }
     pub fn to_source_routing_header(&self) -> SourceRoutingHeader {
         SourceRoutingHeader {
             hop_index: 1,
-            hops: self.path.iter().map(|(x,_,_)| *x).collect(),
+            hops: self.path
+                .iter()
+                .map(|(node)| node.borrow().id)
+                .collect(),
         }
     }
     fn contains_node(&self, node_id: &NodeId) -> bool {
-        self.path.iter().position(|(x,_,_)| x == node_id) != None
-    }
-
-    fn positive_feed(&mut self, node: NodeId) {
-        self.path = self.path.iter().map(|(x,y,z)|
-            if *x == node {
-                (*x, *y+1, *z)
-            } else {
-                (*x, *y, *z)
-            }
-        ).collect();
-    }
-    fn negative_feed(&mut self, node: NodeId) {
-        self.path = self.path.iter().map(|(x,y,z)|
-            if *x == node {
-                (*x, *y, *z+1)
-            } else {
-                (*x, *y, *z)
-            }
-        ).collect();
+        self.path
+            .iter()
+            .position(|(node)| node.borrow().id == *node_id) != None
     }
 
     fn check_for_100_pdr(&self) -> Option<NodeId> {
         let mut res = None;
-        for (x,y,z) in self.path.iter() {
-            if *y == 1 && *z > 1000 {
-                res = Some(*x);
+        for node in self.path.iter() {
+            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 1000 {
+                res = Some(node.borrow().id);
             }
         }
         res
@@ -89,14 +155,14 @@ impl RouteList {
 
     pub fn get_fastest_route(&mut self) -> Option<Route> {
         let mut res = None;
-        let mut weight: f64 = 0.0;
+        let mut reliability: f64 = 0.0;
         let mut to_remove = Vec::new();
         for route in self.routes.iter() {
 
-            if res.is_none() || route.get_weight() > weight{
+            if res.is_none() || route.get_reliability() > reliability{
                 res = Some(route.clone());
-                weight = route.get_weight();
-            } else if route.get_weight() < weight {
+                reliability = route.get_reliability();
+            } else if route.get_reliability() < reliability {
                 // Since this is called often, I put a check for nodes with PDR too high
                 match route.check_for_100_pdr() {
                     None => {},
@@ -110,22 +176,5 @@ impl RouteList {
             self.remove_faulty_node(*e);
         }
         res // Will result as None if there are no more routes cut of errors.
-    }
-
-    // I apply positive feed to all routes to this destination
-    pub fn positive_feed(&mut self, route: Vec<NodeId>) {
-        for i in route {
-            for j in self.routes.iter_mut() {
-                j.positive_feed(i);
-            }
-        }
-    }
-    // i apply negative feed to the node to all the routes with that node,
-    pub fn negative_feed(&mut self, node: NodeId) {
-        for i in self.routes.iter_mut() {
-            if i.contains_node(&node) {
-                i.negative_feed(node);
-            }
-        }
     }
 }
