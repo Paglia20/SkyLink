@@ -1,12 +1,13 @@
 #![cfg(test)]
 use rusty_tester::*;
 use std::time::Duration;
+use lockheedrustin_drone::LockheedRustin;
 use rolling_drone::RollingDrone;
 use rusty_drones::RustyDrone;
 use wg_2024_rust::drone::RustDrone;
 use crate::skylink_drone::drone::SkyLinkDrone;
 
-type Tested = SkyLinkDrone;
+type Tested = rusty_drones;
 const TIMEOUT: Duration = Duration::from_millis(20);
 const FLOOD_TIMEOUT: Duration = Duration::from_millis(50);
 
