@@ -68,13 +68,13 @@ impl SimulationControl {
 
                 match packet.clone().pack_type{
                     PacketType::MsgFragment(fragment) => {
-                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                        message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
                     }
                     PacketType::Ack(ack) => {
-                        message = format!("sent ack id: {}", ack.fragment_index);
+                        message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::Nack(nack) => {
-                        message = format!("sent nack id: {}", nack.fragment_index);
+                        message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::FloodRequest(rq) => {
                         message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
@@ -149,13 +149,13 @@ impl SimulationControl {
 
                 match packet.clone().pack_type{
                     PacketType::MsgFragment(fragment) => {
-                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                        message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
                     }
                     PacketType::Ack(ack) => {
-                        message = format!("sent ack id: {}", ack.fragment_index);
+                        message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::Nack(nack) => {
-                        message = format!("sent nack id: {}", nack.fragment_index);
+                        message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::FloodRequest(rq) => {
                         message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
@@ -317,13 +317,13 @@ impl SimulationControl {
 
                 match packet.clone().pack_type{
                     PacketType::MsgFragment(fragment) => {
-                        message = format!("sent fragment id: {}", fragment.fragment_index);
+                        message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
                     }
                     PacketType::Ack(ack) => {
-                        message = format!("sent ack id: {}", ack.fragment_index);
+                        message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::Nack(nack) => {
-                        message = format!("sent nack id: {}", nack.fragment_index);
+                        message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
                     }
                     PacketType::FloodRequest(rq) => {
                         message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);

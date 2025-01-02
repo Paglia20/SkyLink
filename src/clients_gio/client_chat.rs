@@ -411,6 +411,10 @@ impl NetworkEdge for ChatClient {
     }
 
     fn flood(&mut self) {
+        //initialize the flood informations we got before, because topology might have changed
+        self.paths.clear();
+        self.contact_list.clear();
+
         let mut flood_request = FloodRequest{
             flood_id: self.get_flood_id(),
             initiator_id: self.node_id,
