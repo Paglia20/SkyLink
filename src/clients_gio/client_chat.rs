@@ -592,14 +592,16 @@ impl Client for ChatClient {
                     self.send_fragment(fragment.clone(), identifier.1, identifier.0);
                 }
 
-                let mut path_printable = String::new();
-                self.paths.clone().iter_mut().for_each(|(dst, (state, path))| {
-                    let destination = format!("Node {}, State: {}, path: *not now* \n", dst, state);
-                    path_printable.push_str(destination.as_str());
-                });
-                println!("{} has paths: {:?}",self.node_id, path_printable);
+                //uncomment to check flood periodically
 
-                //uncomment to debug flood
+                // let mut path_printable = String::new();
+                // self.paths.clone().iter_mut().for_each(|(dst, (state, path))| {
+                //     let destination = format!("Node {}, State: {}, path: *not now* \n", dst, state);
+                //     path_printable.push_str(destination.as_str());
+                // });
+                // println!("{} has paths: {:?}",self.node_id, path_printable);
+
+
 
             } else {
                 self.unsent_fragments.0 += 1;
