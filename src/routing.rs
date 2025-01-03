@@ -73,6 +73,11 @@ impl Nodes {
             }
         }
     }
+
+    pub fn remove_faulty_node(&mut self, faulty_node: NodeId) {
+        self.nodes.retain(|node| node.borrow().id != faulty_node);
+        // I only keep the others.
+    }
 }
 /*
 // !!Might still need to use this, since now there are Arcs and RefCells
@@ -100,7 +105,7 @@ impl Route {
             }).collect();
         res
     }*/
-    pub fn get_reliability(&self) -> f64 {
+    fn get_reliability(&self) -> f64 {
         let mut reliability = 0.0;
         for node in self.path.iter() {
             reliability *= node.borrow().get_reliability();
@@ -132,6 +137,27 @@ impl Route {
         }
         res
     }
+
+    fn is_equal_to_path (&self, nodes: Vec<NodeId>) -> bool {
+        if self.path.len() != nodes.len() {
+            return false;
+        }
+
+        for i in 0..nodes.len() {
+            if let Some(a) = self.path.get(i) {
+                if let Some(b) = nodes.get(i) {
+                    if a.borrow().id != *b {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl RouteList {
@@ -139,7 +165,10 @@ impl RouteList {
         RouteList { routes: Vec::new() }
     }
     pub fn add_route(&mut self, route: Route) {
-        self.routes.push(route);
+        let vec = route.path.iter().map(|x| x.borrow().id).collect();
+        if !self.contains_route(vec) {
+            self.routes.push(route);
+        }
     }
 
     pub fn remove_faulty_node(&mut self, node_id: NodeId) {
@@ -176,5 +205,15 @@ impl RouteList {
             self.remove_faulty_node(*e);
         }
         res // Will result as None if there are no more routes cut of errors.
+    }
+
+    pub fn contains_route(&self, nodes: Vec<NodeId>) -> bool{
+        for route in self.routes.iter() {
+            if route.is_equal_to_path(nodes.clone()) {
+                return true;
+            }
+        }
+
+        false
     }
 }
