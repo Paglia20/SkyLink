@@ -25,7 +25,7 @@ pub struct ChatClient {
 
     paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
     nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.  
-    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the a vec of servers that make the connection possible
+    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
     arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
     unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
@@ -58,7 +58,7 @@ impl NetworkEdge for ChatClient {
                 }
             }
             else {
-                //new clientevent: state not good
+                //new ClientEvent: state not good
             }
         }
 
@@ -211,6 +211,7 @@ impl NetworkEdge for ChatClient {
                                 for (_, (_state,route)) in self.paths.iter_mut() {
                                     route.remove_faulty_node(wrong_node);
                                 }
+                                self.nodes.remove_faulty_node(wrong_node);
                                 self.send_fragment_after_nack(packet, nack);
                             },
                             NackType::ErrorInRouting(wrong_node) => {
@@ -218,6 +219,7 @@ impl NetworkEdge for ChatClient {
                                 for (_, (_state,route)) in self.paths.iter_mut() {
                                     route.remove_faulty_node(wrong_node);
                                 }
+                                self.nodes.remove_faulty_node(wrong_node);
                                 self.send_fragment_after_nack(packet, nack);
                             },
                             NackType::DestinationIsDrone => {
@@ -225,6 +227,7 @@ impl NetworkEdge for ChatClient {
                                 for (_, (_state,route)) in self.paths.iter_mut() {
                                     route.remove_faulty_node(*wrong_node);
                                 }
+                                self.nodes.remove_faulty_node(*wrong_node);
                                 // Since the destination was a drone, the message was faulty,
                                 // so I remove the destination and consider the message as lost.
                                 self.paths.remove(wrong_node);
@@ -243,7 +246,7 @@ impl NetworkEdge for ChatClient {
                         unreachable!()
                     }
                     PacketType::FloodResponse(flood_resp) => {
-                        //as of rn it "saves" all possible servers and client... we want something else I think...
+                        // As of rn it "saves" all possible servers and client... we want something else I think...
                         let mut current_path = Vec::new();
                         for (node_id, node_type) in flood_resp.path_trace {
                           
@@ -261,8 +264,9 @@ impl NetworkEdge for ChatClient {
                                         unreachable!()
                                         //i hope it's unreachable
                                     }
-                                    Some((_state,route)) => {
-                                        route.add_route(Route::new(current_path.clone()));
+                                    Some((_state,route_list)) => {
+                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
+                                        route_list.add_route(Route::new(current_path.clone()));
                                     }
                                 }
                             }
@@ -324,7 +328,7 @@ impl NetworkEdge for ChatClient {
                                 }
                             }
                         } else {
-                            //if its a client
+                            //if it's a client
                             self.paths.get_mut(&from).unwrap().0 = 2;
                         }
                     }
@@ -342,7 +346,7 @@ impl NetworkEdge for ChatClient {
     }
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        if (destination == self.node_id){
+        if destination == self.node_id {
             println!("Sending message to yourself with {:?}", destination);
             return;
         }
@@ -456,13 +460,9 @@ impl NetworkEdge for ChatClient {
 
     fn flood(&mut self) {
 
-        //instead of clearing path, keep dst and state, but clear routlist since it could have some routes that do not exist anymore
-        self.paths.iter_mut().for_each(|(_, (state, ref mut path))| {
-            *path = RouteList::new();
-        });
-
-        //think about this
-        self.contact_list.clear();
+        // !!I'm not sure if this is a good idea or not, since they can't crush I don't
+        // !!see why we would need to clear it
+        // self.contact_list.clear();
 
         let flood_request = FloodRequest{
             flood_id: self.get_flood_id(),
@@ -491,7 +491,7 @@ impl NetworkEdge for ChatClient {
 
     fn get_session_id(&mut self) -> u64 {
         let min = match self.used_session_id.iter().min(){
-            Some(min) => (*min),
+            Some(min) => *min,
             None => {
                 let value = fastrand::u64(..30);
                 self.used_session_id.insert(value);
@@ -564,12 +564,12 @@ impl Client for ChatClient {
                 }
                 default => {
                      sleep(Duration::from_millis(10));
-                    // Aspetta per 1 secondo prima di continuare
+                    // Wait a second before going on.
                 }
             }
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.unsent_fragments.0 >= 150 {
-                //if i have some unchecked nodes i try to check them
+                //if I have some unchecked nodes I try to check them
 
                 self.paths.clone().iter().for_each(|(dst, (state, path))| {
                     if *state == 0{
