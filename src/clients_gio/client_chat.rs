@@ -3,13 +3,11 @@ use crate::clients_gio::client_trait::Client;
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge};
-use crate::routing::{Route, RouteList};
+use crate::routing::{Nodes, Route, RouteList};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
-use wg_2024::packet::NodeType::*;
-use wg_2024::packet::PacketType::*;
 use crate::clients_gio::client_type::ClientType::*;
 use crate::message::TextRequest::*;
 use crate::server::server_type::ServerType;
@@ -24,6 +22,7 @@ pub struct ChatClient {
     used_session_id: HashSet<u64>,     // Do we need this?
 
     paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
+    nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.  
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the a vec of servers that make the connection possible
     fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
     arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
@@ -65,7 +64,7 @@ impl NetworkEdge for ChatClient {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
-        if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
+        if let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone(){
             flood_request
                 .path_trace
                 .push((self.node_id, NodeType::Client));
@@ -178,7 +177,7 @@ impl NetworkEdge for ChatClient {
                             //handle message
                             self.handle_message(message);
 
-                            //svuota hashmap
+                            // empty the hashmap
                             self.fragments.remove(&(packet.session_id, initiator_id, destination));
                         }
                     }
@@ -191,27 +190,16 @@ impl NetworkEdge for ChatClient {
                             Some(vec) => {
                                 vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
-                                //if it's empty i retained all fragments because i received all the acks, hence i can remove my entry from hashmap
-                                if (vec.is_empty()) {
+                                //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
+                                if vec.is_empty() {
                                     self.fragments.remove_entry(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap()));
                                 }
                             }
                         }
 
-                        // !!I have also implemented positive feedback for routes, that'll need to be
-                        // !!applied after the Ack, similar to how the negative one is applied in dropped,
-                        // !!but this time with every node of the route.
-
-                        //the source of the nack will be the destination for witch i want to apply feedback
-                        let source = packet.routing_header.source().unwrap();
-                        let mut r_list = match self.paths.get_mut(&source) {
-                            None => {
-                                self.event_send.send(ClientEvent::MissingRoute(source)).unwrap();
-                                return;
-                            }
-                            Some((_state,rl)) => { rl }
-                        };
-                        r_list.positive_feed(packet.routing_header.hops);
+                        // I apply the positive feed on all nodes in the path
+                        let nodes = packet.routing_header.hops;
+                        self.nodes.positive_feed(nodes);
                     }
 
                     PacketType::Nack(nack) => {
@@ -244,11 +232,9 @@ impl NetworkEdge for ChatClient {
                                 // I just send it again
                                 self.send_fragment_after_nack(packet.clone(), nack);
 
-                                //who dropped will be sourced for the nack
+                                // Who dropped will be source of the nack
                                 let dropper = packet.routing_header.source().unwrap();
-                                for (_state,r_list) in self.paths.values_mut() {
-                                    r_list.negative_feed(dropper);
-                                }
+                                self.nodes.negative_feed(dropper);
                             }
                         }
                     }
@@ -259,30 +245,31 @@ impl NetworkEdge for ChatClient {
                         //as of rn it "saves" all possible servers and client... we want something else I think...
                         let mut current_path = Vec::new();
                         for (node_id, node_type) in flood_resp.path_trace {
-                                current_path.push(node_id);
+                          
+                             current_path.push((node_id, node_type));
 
-                                if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.node_id {
-                                    if !self.paths.contains_key(&node_id) {
-                                        //if it's first time this server gets seen
-                                        self.paths.insert(node_id.clone(), (0,RouteList::new()));
+                            if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.node_id {
+                                if !self.paths.contains_key(&node_id) {
+                                    //if it's first time this server gets seen
+                                    self.paths.insert(node_id.clone(), (0,RouteList::new()));
+                                }
+                                // Clone the current path for the server and insert it into the route list
+                                match self.paths.get_mut(&node_id) {
+                                    None => {
+                                        unreachable!()
+                                        //i hope it's unreachable
                                     }
-                                    // Clone the current path for the server and insert it into the route list
-                                    match self.paths.get_mut(&node_id) {
-                                        None => {
-                                            unreachable!()
-                                            //i hope it's unreachable
-                                        }
-                                        Some((_state,route)) => {
-                                            route.add_route(Route::new(current_path.clone()));
-                                        }
-                                    }
-
-                                    //lastly, start checktype
-                                    if self.paths.get(&node_id).unwrap().0 == 0 {
-                                        self.check_type(node_id);
+                                    Some((_state,route)) => {
+                                        route.add_route(Route::new(current_path.clone()));
                                     }
                                 }
+
+                                //lastly, start checktype
+                                if self.paths.get(&node_id).unwrap().0 == 0 {
+                                    self.check_type(node_id);
+                                }
                             }
+                        }
                     }
                 }
             }
@@ -303,8 +290,8 @@ impl NetworkEdge for ChatClient {
                         self.arrived_messages.entry(from).or_insert(Vec::new()).push(message);
                     }
                     ChatResponse::MessageSent => {
-                        //not sure, is just an ack? i don't think we need this (also because if they
-                        // dont have any information i can't know which message are they refering too)
+                        // not sure, is just an ack? I don't think we need this (also because if they
+                        // don't have any information I can't know which message are they referring too)
                     }
                 }
             }
@@ -460,14 +447,13 @@ impl NetworkEdge for ChatClient {
     }
 
     fn flood(&mut self) {
-        //initialize the flood informations we got before, because topology might have changed
         self.paths.clear();
         self.contact_list.clear();
 
-        let mut flood_request = FloodRequest{
+        let flood_request = FloodRequest{
             flood_id: self.get_flood_id(),
             initiator_id: self.node_id,
-            path_trace: vec![(self.node_id, Client)],
+            path_trace: vec![(self.node_id, NodeType::Client)],
         };
         let packet = Packet::new_flood_request(SourceRoutingHeader::default(), fastrand::u64(..500), flood_request);
         self.packet_send.values().for_each(|sender| {
@@ -540,6 +526,7 @@ impl Client for ChatClient {
             flood_ids: HashSet::new(),
             used_session_id: HashSet::new(),
             paths: HashMap::new(),
+            nodes: Nodes::new(),
             contact_list: HashMap::new(),
             fragments: HashMap::new(),
             arrived_messages: HashMap::new(),
