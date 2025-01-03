@@ -305,7 +305,7 @@ impl NetworkEdge for ChatClient {
                         if !self.paths.contains_key(&from) {
                             println!("i don't have a path with {} to {from}", self.node_id);
                             self.flood();
-                            sleep(Duration::from_millis(100));
+                            // sleep(Duration::from_millis(100));
                         }
 
                         self.send_message(message, from);
@@ -343,7 +343,7 @@ impl NetworkEdge for ChatClient {
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         if (destination == self.node_id){
-            println!("Sending message to yourself");
+            println!("Sending message to yourself with {:?}", destination);
             return;
         }
 
