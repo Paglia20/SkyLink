@@ -442,8 +442,8 @@ impl eframe::App for MyApp {
                     Drone => {egui::Window::new(format!("Drone {}", node.id))
                         .resizable(true) // Permetti il ridimensionamento
                         .collapsible(true)
-                        .min_height(500.0)
                         .min_width(500.0)
+                        .max_height(400.0)
                         .show(ctx, |ui| {
                             match node.drone_window_scenes {
                                 DroneWindowScene::Start => {
@@ -457,11 +457,15 @@ impl eframe::App for MyApp {
                                     self.sender_id = 0;
                                     ui.label("Log:");
                                     ui.vertical(|ui| {
-                                        for s in &self.sim_contr.log {
-                                            if s.get_id() == node.id {
+                                        egui::ScrollArea::vertical()
+                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                            .show (ui, |ui|
+                                             for s in &self.sim_contr.log {
+                                                 if s.get_id() == node.id {
                                                 ui.label(format!("{}", s));
-                                            }
-                                        }
+                                                     }
+                                             }
+                                            )
                                     });
                                     //insert log of the drone (idk how)
                                     if ui.button("Add Channel").clicked(){
@@ -548,8 +552,8 @@ impl eframe::App for MyApp {
                     NodeType::Client => { {egui::Window::new(format!(" Client {}", node.id))
                         .resizable(true) // Permetti il ridimensionamento
                         .collapsible(true)
-                        .min_height(500.0)
                         .min_width(500.0)
+                        .max_height(400.0)
                         .show(ctx, |ui| {
 
                             let mut connections= String::new();
@@ -562,12 +566,17 @@ impl eframe::App for MyApp {
 
                             // Qui puoi aggiungere ulteriori informazioni o controlli
                             ui.label("Log:");
+
                             ui.vertical(|ui| {
-                                for s in &self.sim_contr.log {
-                                    if s.get_id() == node.id {
-                                        ui.label(format!("{}", s));
-                                    }
-                                }
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                    .show (ui, |ui|
+                                        for s in &self.sim_contr.log {
+                                            if s.get_id() == node.id {
+                                                ui.label(format!("{}", s));
+                                            }
+                                        }
+                                    )
                             });
 
                             if ui.button("Chiudi").clicked() {
@@ -578,8 +587,8 @@ impl eframe::App for MyApp {
                     NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
                             .resizable(true) // Permetti il ridimensionamento
                             .collapsible(true)
-                            .min_height(500.0)
-                            .min_width(500.0)
+                        .min_width(500.0)
+                        .max_height(400.0)
                             .show(ctx, |ui| {
                                 let mut connections= String::new();
                                 for connection in node.connections.clone() {
@@ -591,12 +600,17 @@ impl eframe::App for MyApp {
 
                                 // Qui puoi aggiungere ulteriori informazioni o controlli
                                 ui.label("Log:");
+
                                 ui.vertical(|ui| {
-                                    for s in &self.sim_contr.log {
-                                        if s.get_id() == node.id {
-                                            ui.label(format!("{}", s));
-                                        }
-                                    }
+                                    egui::ScrollArea::vertical()
+                                        .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                        .show (ui, |ui|
+                                            for s in &self.sim_contr.log {
+                                                if s.get_id() == node.id {
+                                                    ui.label(format!("{}", s));
+                                                }
+                                            }
+                                        )
                                 });
                                 //insert log of the drone (idk how)
                                 if ui.button("Chiudi").clicked() {
