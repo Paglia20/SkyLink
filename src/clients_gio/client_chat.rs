@@ -343,6 +343,7 @@ impl NetworkEdge for ChatClient {
 
             }
         }
+
     }
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
@@ -589,7 +590,7 @@ impl Client for ChatClient {
                 self.unsent_fragments.0 = 0;
 
                 for (fragment, identifier) in to_process {
-                    self.send_fragment(fragment.clone(), identifier.1, identifier.0);
+                    self.send_fragment(fragment.clone(), identifier.2, identifier.0);
                 }
 
                 //uncomment to check flood periodically
