@@ -1,23 +1,18 @@
-use std::any::Any;
+use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
+use crate::simulation_control::sim_control::Cause::Error;
+use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
+use egui::ahash::HashSet;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
-use std::ops::Deref;
-use egui::ahash::HashSet;
-use wg_2024::controller::DroneEvent;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, FloodResponse, NackType, NodeType, Packet, PacketType};
+use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
-use crate::clients_gio::client_command::ClientEvent;
-use crate::event_wrapper::Event;
-use crate::server::server_command::ServerEvent;
-use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
+use wg_2024::packet::{NodeType, PacketType};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -163,15 +158,6 @@ impl MyApp {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
     }
 
-    pub fn create_drone_id_vector(&self) -> Vec<NodeId> {
-        let mut ids: Vec<NodeId> = Vec::new();
-        for drone in self.nodes.iter() {
-            if drone.node_type == Drone{
-                ids.push(drone.id);
-            }
-        }
-        ids
-    }
 
     pub fn manage_event(&mut self, event: Event) {
         match event{
@@ -251,7 +237,6 @@ impl MyApp {
     }
 
 }
-
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
@@ -319,7 +304,7 @@ impl eframe::App for MyApp {
                         if ui.button("Test flooding with 0").clicked() {
                             self.sim_contr.flood_with(0);
                         }
-                        
+
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);
@@ -436,6 +421,7 @@ impl eframe::App for MyApp {
                 }
             });
 
+        //nodes windows
         for node in self.nodes.iter_mut() {
             if node.selected {
                 match node.node_type {
@@ -453,21 +439,8 @@ impl eframe::App for MyApp {
                                         connections.push_str(", ");
                                     }
                                     ui.label(format!("Connected to :{}", connections));
-                                    // Qui puoi aggiungere ulteriori informazioni o controlli
-                                    self.sender_id = 0;
-                                    ui.label("Log:");
-                                    ui.vertical(|ui| {
-                                        egui::ScrollArea::vertical()
-                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
-                                            .show (ui, |ui|
-                                             for s in &self.sim_contr.log {
-                                                 if s.get_id() == node.id {
-                                                ui.label(format!("{}", s));
-                                                     }
-                                             }
-                                            )
-                                    });
-                                    //insert log of the drone (idk how)
+
+
                                     if ui.button("Add Channel").clicked(){
                                         node.drone_window_scenes = AddSender;
                                     }
@@ -487,6 +460,22 @@ impl eframe::App for MyApp {
                                     if ui.button("Close").clicked() {
                                         node.selected = false; // Chiudi il popup
                                     }
+
+
+                                    // Qui puoi aggiungere ulteriori informazioni o controlli
+                                    self.sender_id = 0;
+                                    ui.label("Log:");
+                                    ui.vertical(|ui| {
+                                        egui::ScrollArea::vertical()
+                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                            .show (ui, |ui|
+                                             for s in &self.sim_contr.log {
+                                                 if s.get_id() == node.id {
+                                                ui.label(format!("{}", s));
+                                                     }
+                                             }
+                                            )
+                                    });
                                 }
                                 AddSender => {
                                     ui.horizontal(|ui| {
@@ -564,6 +553,10 @@ impl eframe::App for MyApp {
                             }
                             ui.label(format!("Connected to :{}", connections));
 
+                            if ui.button("Chiudi").clicked() {
+                                node.selected = false; // Chiudi il popup
+                            }
+
                             // Qui puoi aggiungere ulteriori informazioni o controlli
                             ui.label("Log:");
 
@@ -579,9 +572,7 @@ impl eframe::App for MyApp {
                                     )
                             });
 
-                            if ui.button("Chiudi").clicked() {
-                                node.selected = false; // Chiudi il popup
-                            }
+
                         });
                     } }
                     NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
@@ -598,6 +589,10 @@ impl eframe::App for MyApp {
                                 }
                                 ui.label(format!("Connected to :{}", connections));
 
+                                if ui.button("Chiudi").clicked() {
+                                    node.selected = false; // Chiudi il popup
+                                }
+
                                 // Qui puoi aggiungere ulteriori informazioni o controlli
                                 ui.label("Log:");
 
@@ -612,10 +607,7 @@ impl eframe::App for MyApp {
                                             }
                                         )
                                 });
-                                //insert log of the drone (idk how)
-                                if ui.button("Chiudi").clicked() {
-                                    node.selected = false; // Chiudi il popup
-                                }
+
                             });
                         } }
                 }
@@ -690,6 +682,8 @@ impl eframe::App for MyApp {
                 }
             });
         });
+
+        //event receivers
 
         match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
