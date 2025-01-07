@@ -157,8 +157,6 @@ impl MyApp {
     pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
     }
-
-
     pub fn manage_event(&mut self, event: Event) {
         match event{
             Event::Drone(drone_event) => {
@@ -236,16 +234,7 @@ impl MyApp {
         }
     }
 
-}
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
-        let enable_constant_read = true;
-        if enable_constant_read {
-            self.update_topology();
-        }
-
-        // BottomPanel ridimensionabile
+    pub fn render_bottom_panel(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
             .height_range(100.0..=400.0)
             .resizable(true)
@@ -265,8 +254,9 @@ impl eframe::App for MyApp {
                         });
                 });
             });
+    }
 
-        // SidePanel sulla sinistra
+    pub fn render_side_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .min_width(300.0)
@@ -333,7 +323,7 @@ impl eframe::App for MyApp {
                         ui.label("select drones to connect the new drone with:");
                         self.nodes.sort();
                         for (i, item) in self.nodes.iter().enumerate() {
-                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            ui.checkbox(&mut self.checked[i], item.id.to_string());
                         }
                         ui.separator();
                         ui.label("input pdr:");
@@ -420,8 +410,79 @@ impl eframe::App for MyApp {
                     }
                 }
             });
+    }
 
-        //nodes windows
+    pub fn render_central_panel(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
+                ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
+                ui.set_height(ui.available_height());
+
+                ui.heading("Network Topology");
+
+                let available_size = ui.available_size();
+                let center = egui::pos2(
+                    ui.min_rect().left() + available_size.x / 2.0,
+                    ui.min_rect().top() + available_size.y / 2.0,
+                );
+                let radius = available_size.x.min(available_size.y) * 0.4;
+
+                self.nodes.sort();
+                let total_items = self.nodes.len();
+
+                let mut positions = Vec::new();
+                for (index, _value) in self.nodes.iter().enumerate() {
+                    let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
+                    let x = center.x + radius * angle.cos();
+                    let y = center.y + radius * angle.sin();
+                    positions.push(egui::pos2(x, y));
+                }
+
+                let painter = ui.painter();
+
+                for (i, node) in self.nodes.iter().enumerate() {
+                    for &connection in &node.connections {
+                        if let Some(j) = self.nodes.iter().position(|n| n.id == connection) {
+                            let line_color = egui::Color32::WHITE;
+                            painter.line_segment([positions[i], positions[j]], (2.0, line_color));
+                        }
+                    }
+                }
+
+                for (index, value) in self.nodes.iter_mut().enumerate() {
+                    let rect =
+                        egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
+                    let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
+
+                    let circle_color = if value.selected {
+                        egui::Color32::BLUE
+                    } else {
+                        egui::Color32::from_rgb(216, 100, 56)
+                    };
+
+
+                    painter.circle_filled(rect.center(), 15.0, circle_color);
+
+                    // Disegna il testo
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        value.id.to_string(),
+                        FontId::proportional(16.0),
+                        egui::Color32::WHITE,
+                    );
+
+                    // Gestisci il clic
+                    if response.clicked() {
+                        value.selected = true;
+                        println!("selected node: {:?}", value.id);
+                    }
+                }
+            });
+        });
+    }
+
+    pub fn render_drones_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
             if node.selected {
                 match node.node_type {
@@ -469,11 +530,11 @@ impl eframe::App for MyApp {
                                         egui::ScrollArea::vertical()
                                             .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                                             .show (ui, |ui|
-                                             for s in &self.sim_contr.log {
-                                                 if s.get_id() == node.id {
-                                                ui.label(format!("{}", s));
-                                                     }
-                                             }
+                                                for s in &self.sim_contr.log {
+                                                    if s.get_id() == node.id {
+                                                        ui.label(format!("{}", s));
+                                                    }
+                                                }
                                             )
                                     });
                                 }
@@ -576,115 +637,54 @@ impl eframe::App for MyApp {
                         });
                     } }
                     NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
-                            .resizable(true) // Permetti il ridimensionamento
-                            .collapsible(true)
+                        .resizable(true) // Permetti il ridimensionamento
+                        .collapsible(true)
                         .min_width(500.0)
                         .max_height(400.0)
-                            .show(ctx, |ui| {
-                                let mut connections= String::new();
-                                for connection in node.connections.clone() {
-                                    connections.push_str(connection.to_string().as_str());
-                                    connections.push_str(", ");
+                        .show(ctx, |ui| {
+                            let mut connections= String::new();
+                            for connection in node.connections.clone() {
+                                connections.push_str(connection.to_string().as_str());
+                                connections.push_str(", ");
 
-                                }
-                                ui.label(format!("Connected to :{}", connections));
+                            }
+                            ui.label(format!("Connected to :{}", connections));
 
-                                if ui.button("Chiudi").clicked() {
-                                    node.selected = false; // Chiudi il popup
-                                }
+                            if ui.button("Chiudi").clicked() {
+                                node.selected = false; // Chiudi il popup
+                            }
 
-                                // Qui puoi aggiungere ulteriori informazioni o controlli
-                                ui.label("Log:");
+                            // Qui puoi aggiungere ulteriori informazioni o controlli
+                            ui.label("Log:");
 
-                                ui.vertical(|ui| {
-                                    egui::ScrollArea::vertical()
-                                        .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
-                                        .show (ui, |ui|
-                                            for s in &self.sim_contr.log {
-                                                if s.get_id() == node.id {
-                                                    ui.label(format!("{}", s));
-                                                }
+                            ui.vertical(|ui| {
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                    .show (ui, |ui|
+                                        for s in &self.sim_contr.log {
+                                            if s.get_id() == node.id {
+                                                ui.label(format!("{}", s));
                                             }
-                                        )
-                                });
-
+                                        }
+                                    )
                             });
-                        } }
+
+                        });
+                    } }
                 }
             }
         }
+    }
 
-        // Pannello centrale
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
-                ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
-                ui.set_height(ui.available_height());
+    pub fn enable_constant_read(&mut self) {
+        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
+        let enable_constant_read = true;
+        if enable_constant_read {
+            self.update_topology();
+        }
+    }
 
-                ui.heading("Network Topology");
-
-                let available_size = ui.available_size();
-                let center = egui::pos2(
-                    ui.min_rect().left() + available_size.x / 2.0,
-                    ui.min_rect().top() + available_size.y / 2.0,
-                );
-                let radius = available_size.x.min(available_size.y) * 0.4;
-
-                self.nodes.sort();
-                let total_items = self.nodes.len();
-
-                let mut positions = Vec::new();
-                for (index, _value) in self.nodes.iter().enumerate() {
-                    let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
-                    let x = center.x + radius * angle.cos();
-                    let y = center.y + radius * angle.sin();
-                    positions.push(egui::pos2(x, y));
-                }
-
-                let painter = ui.painter();
-
-                for (i, node) in self.nodes.iter().enumerate() {
-                    for &connection in &node.connections {
-                        if let Some(j) = self.nodes.iter().position(|n| n.id == connection) {
-                            let line_color = egui::Color32::WHITE;
-                            painter.line_segment([positions[i], positions[j]], (2.0, line_color));
-                        }
-                    }
-                }
-
-                for (index, value) in self.nodes.iter_mut().enumerate() {
-                    let rect =
-                        egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
-                    let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
-
-                    let circle_color = if value.selected {
-                        egui::Color32::BLUE
-                    } else {
-                        egui::Color32::from_rgb(216, 100, 56)
-                    };
-
-
-                    painter.circle_filled(rect.center(), 15.0, circle_color);
-
-                    // Disegna il testo
-                    painter.text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        value.id.to_string(),
-                        FontId::proportional(16.0),
-                        egui::Color32::WHITE,
-                    );
-
-                    // Gestisci il clic
-                    if response.clicked() {
-                        value.selected = true;
-                        println!("selected node: {:?}", value.id);
-                    }
-                }
-            });
-        });
-
-        //event receivers
-
+    pub fn update_event_receivers(&mut self) {
         match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
                 //manage event
@@ -709,6 +709,17 @@ impl eframe::App for MyApp {
             }
             _ => {}
         }
+    }
+
+}
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.enable_constant_read();
+        self.render_bottom_panel(ctx);
+        self.render_side_panel(ctx);
+        self.render_drones_windows(ctx);
+        self.render_central_panel(ctx);
+        self.update_event_receivers();
     }
 }
 
