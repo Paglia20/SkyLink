@@ -12,7 +12,7 @@ use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{NodeType, PacketType};
+use wg_2024::packet::{NodeType};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -44,7 +44,7 @@ impl Ord for MyNodes {
 }
 
 pub enum Scene {
-    InitialState,
+    InitialScene,
     ManageAdd,
     ManageCrash,
     ManageDrop,
@@ -96,7 +96,7 @@ impl MyApp {
 
         let mut app = Self {
             nodes: vec,
-            side_panel_scenes: InitialState,
+            side_panel_scenes: InitialScene,
             checked,
             sim_contr,
             pdr: 0.0,
@@ -176,13 +176,13 @@ impl MyApp {
                     }
                     ControllerShortcut(packet) => {
                         match packet.clone().pack_type {
-                            PacketType::MsgFragment(_) => {
+                            MsgFragment(_) => {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
                                     "Shortcut used for unusual packet type: msgfragment".to_string()))
                             }
-                            PacketType::FloodRequest(_) => {
+                            FloodRequest(_) => {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
@@ -206,7 +206,7 @@ impl MyApp {
                                 };
 
                                 let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
-                                if (*n_type == NodeType::Drone){
+                                if *n_type == Drone {
                                     self.sim_contr.log.push_back(LogEntry::new(
                                         Error,
                                         next_id,
@@ -269,7 +269,7 @@ impl MyApp {
             .show(ctx, |ui| {
                 ui.heading("Actions");
                 match self.side_panel_scenes {
-                    InitialState => {
+                    InitialScene => {
                         if ui.button("test log!").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(
                                 Cause::Sent,
@@ -321,7 +321,7 @@ impl MyApp {
                     }
                     ManageAdd => {
                         if ui.button("back").clicked() {
-                            self.side_panel_scenes = InitialState;
+                            self.side_panel_scenes = InitialScene;
                             self.reset_check();
                             self.pdr = 0.0;
                         }
@@ -352,7 +352,7 @@ impl MyApp {
                             let _id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
                             self.reset_check();
                             self.pdr = 0.0;
-                            self.side_panel_scenes = InitialState;
+                            self.side_panel_scenes = InitialScene;
                         }
                     }
                     ManageCrash => {
@@ -384,7 +384,7 @@ impl MyApp {
 
                             }
                             self.reset_check();
-                            self.side_panel_scenes = InitialState;
+                            self.side_panel_scenes = InitialScene;
                         }
                     }
                     ManageDrop => {
@@ -401,16 +401,16 @@ impl MyApp {
                             // Options for handling the packet
                             if ui.button("Resend it").clicked() {
                                 self.sim_contr.resend_packet(dropped_packet);
-                                self.side_panel_scenes = InitialState;
+                                self.side_panel_scenes = InitialScene;
                             }
                             if ui.button("Lose it").clicked() {
-                                self.side_panel_scenes = InitialState; // Navigate back to the start
+                                self.side_panel_scenes = InitialScene; // Navigate back to the start
                             }
                         } else {
                             // Inform the user if recovery is not possible
                             ui.label("Impossible to recover the packet.");
                             if ui.button("Close").clicked() {
-                                self.side_panel_scenes = InitialState; // Close the alert
+                                self.side_panel_scenes = InitialScene; // Close the alert
                             }
                         }
                     }
@@ -610,7 +610,7 @@ impl MyApp {
 
                         });
                     }
-                    NodeType::Client => {
+                    Client => {
                         egui::Window::new(format!("Client {}", node.id))
                             .resizable(true) // Allow resizing
                             .collapsible(true)
@@ -681,7 +681,7 @@ impl MyApp {
                                 });
                             });
                     }
-                    NodeType::Server => {
+                    Server => {
                         egui::Window::new(format!("Server {}", node.id))
                             .resizable(true) // Allow resizing
                             .collapsible(true)
