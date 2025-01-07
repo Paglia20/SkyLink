@@ -1,7 +1,7 @@
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
@@ -20,7 +20,7 @@ pub struct MyNodes {
     connections: HashSet<NodeId>,
     selected: bool,
     node_type: NodeType,
-    drone_window_scenes: DroneWindowScene,
+    node_window_scenes: NodeWindowScene,
 }
 
 impl Eq for MyNodes {}
@@ -51,12 +51,17 @@ pub enum Scene {
 }
 
 #[derive(Clone, Debug)]
-pub enum DroneWindowScene {
-    Start,
+pub enum NodeWindowScene {
+    //common between types
     AddSender,
     RemoveSender,
+    //drone scenes
+    Start,
     Crash,
-    SetPDR
+    SetPDR,
+
+    //client/server scenes
+    FloodState,
 }
 pub struct MyApp {
     sim_contr: SimulationControl,
@@ -82,7 +87,7 @@ impl MyApp {
                 connections: neighbors.1,
                 selected: false,
                 node_type: neighbors.0,
-                drone_window_scenes: DroneWindowScene::Start,
+                node_window_scenes: NodeWindowScene::Start,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -110,8 +115,8 @@ impl MyApp {
         let id_to_window = self
             .nodes
             .iter()
-            .map(|x| (x.id, x.drone_window_scenes.clone()))
-            .collect::<Vec<(NodeId, DroneWindowScene)>>();
+            .map(|x| (x.id, x.node_window_scenes.clone()))
+            .collect::<Vec<(NodeId, NodeWindowScene)>>();
 
         //aggiornamento
         self.nodes.clear();
@@ -122,7 +127,7 @@ impl MyApp {
                 connections: neighbors.1,
                 selected: false,
                 node_type: neighbors.0,
-                drone_window_scenes: DroneWindowScene::Start,
+                node_window_scenes: NodeWindowScene::Start,
             })
         }
 
@@ -131,7 +136,7 @@ impl MyApp {
         for node in self.nodes.iter_mut() {
             for (id, dws) in id_to_window.iter() {
                 if *id == node.id{
-                    node.drone_window_scenes = dws.clone();
+                    node.node_window_scenes = dws.clone();
                 }
 
             }
@@ -482,7 +487,7 @@ impl MyApp {
         });
     }
 
-    pub fn render_drones_windows(&mut self, ctx: &egui::Context) {
+    pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
             if node.selected {
                 match node.node_type {
@@ -492,8 +497,8 @@ impl MyApp {
                         .min_width(500.0)
                         .max_height(400.0)
                         .show(ctx, |ui| {
-                            match node.drone_window_scenes {
-                                DroneWindowScene::Start => {
+                            match node.node_window_scenes {
+                                NodeWindowScene::Start => {
                                     let mut connections= String::new();
                                     for connection in node.connections.clone() {
                                         connections.push_str(connection.to_string().as_str());
@@ -503,19 +508,19 @@ impl MyApp {
 
 
                                     if ui.button("Add Channel").clicked(){
-                                        node.drone_window_scenes = AddSender;
+                                        node.node_window_scenes = AddSender;
                                     }
 
                                     if ui.button("Remove Channel").clicked(){
-                                        node.drone_window_scenes = RemoveSender
+                                        node.node_window_scenes = RemoveSender
                                     }
 
                                     if ui.button("Crash This Drone").clicked(){
-                                        node.drone_window_scenes = Crash
+                                        node.node_window_scenes = Crash
                                     }
 
                                     if ui.button("set PDR").clicked(){
-                                        node.drone_window_scenes = SetPDR
+                                        node.node_window_scenes = SetPDR
                                     }
 
                                     if ui.button("Close").clicked() {
@@ -549,10 +554,10 @@ impl MyApp {
                                     if ui.button("Confirm").clicked() {
 
                                         self.sim_contr.add_sender(node.id, self.sender_id);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                     if ui.button("back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                 }
                                 RemoveSender => {
@@ -564,10 +569,10 @@ impl MyApp {
                                     if ui.button("Confirm").clicked() {
 
                                         self.sim_contr.remove_senders(node.id, self.sender_id);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                     if ui.button("back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                 }
                                 Crash => {
@@ -577,7 +582,7 @@ impl MyApp {
                                         node.selected = false;
                                     }
                                     if ui.button("no, go back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                 }
                                 SetPDR => {
@@ -589,88 +594,162 @@ impl MyApp {
                                     if ui.button("Set").clicked() {
 
                                         self.sim_contr.set_pdr(node.id, self.pdr);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                     if ui.button("Back").clicked(){
                                         self.pdr = 0.0;
-                                        node.drone_window_scenes = DroneWindowScene::Start;
+                                        node.node_window_scenes = NodeWindowScene::Start;
                                     }
                                 }
+
+                                _ => {
+                                    //since the others are for client and servers only
+                                    unreachable!()}
                             }
+
                         });
                     }
-                    NodeType::Client => { {egui::Window::new(format!(" Client {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
-                        .collapsible(true)
-                        .min_width(500.0)
-                        .max_height(400.0)
-                        .show(ctx, |ui| {
+                    NodeType::Client => {
+                        egui::Window::new(format!("Client {}", node.id))
+                            .resizable(true) // Allow resizing
+                            .collapsible(true)
+                            .min_width(500.0)
+                            .default_size((500.0, 400.0)) // Set default size
+                            .default_pos((100.0, 100.0)) // Set default position
+                            .show(ctx, |ui| {
+                                ui.push_id(format!("client_window_{}", node.id), |ui| {
+                                    egui::Frame::default()
+                                        .fill(egui::Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
+                                        .show(ui, |ui| {
+                                            // Split panels with proper layout
+                                            egui::SidePanel::left(format!("side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("Log:");
 
-                            let mut connections= String::new();
-                            for connection in node.connections.clone() {
-                                connections.push_str(connection.to_string().as_str());
-                                connections.push_str(", ");
+                                                    egui::ScrollArea::vertical()
+                                                        .auto_shrink([false; 2]) // Prevent shrinking
+                                                        .show(ui, |ui| {
+                                                            for s in &self.sim_contr.log {
+                                                                if s.get_id() == node.id {
+                                                                    ui.label(format!("{}", s));
+                                                                }
+                                                            }
+                                                        });
+                                                });
 
-                            }
-                            ui.label(format!("Connected to :{}", connections));
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
 
-                            if ui.button("Chiudi").clicked() {
-                                node.selected = false; // Chiudi il popup
-                            }
+                                                    ui.label(format!("Connected to: {}", connections));
 
-                            // Qui puoi aggiungere ulteriori informazioni o controlli
-                            ui.label("Log:");
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
 
-                            ui.vertical(|ui| {
-                                egui::ScrollArea::vertical()
-                                    .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
-                                    .show (ui, |ui|
-                                        for s in &self.sim_contr.log {
-                                            if s.get_id() == node.id {
-                                                ui.label(format!("{}", s));
-                                            }
-                                        }
-                                    )
+                                            egui::CentralPanel::default()
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("This is the central panel content.");
+                                                    ui.label("flood results and chat shits will be here.");
+
+                                                    match node.node_window_scenes{
+                                                        AddSender => {}
+                                                        RemoveSender => {}
+                                                        NodeWindowScene::FloodState => {
+                                                            //questo fammici pensare, se hai idee scrivi pure.
+                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        }
+                                                        _ => {
+                                                            unreachable!()
+                                                        }
+                                                    }
+                                                });
+                                        });
+                                });
                             });
+                    }
+                    NodeType::Server => {
+                        egui::Window::new(format!("Server {}", node.id))
+                            .resizable(true) // Allow resizing
+                            .collapsible(true)
+                            .min_width(500.0)
+                            .default_size((500.0, 400.0)) // Set default size
+                            .default_pos((100.0, 100.0)) // Set default position
+                            .show(ctx, |ui| {
+                                ui.push_id(format!("server_window_{}", node.id), |ui| {
+                                    egui::Frame::default()
+                                        .fill(egui::Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
+                                        .show(ui, |ui| {
+                                            // Split panels with proper layout
+                                            egui::SidePanel::left(format!("side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("Log:");
+
+                                                    egui::ScrollArea::vertical()
+                                                        .auto_shrink([false; 2]) // Prevent shrinking
+                                                        .show(ui, |ui| {
+                                                            for s in &self.sim_contr.log {
+                                                                if s.get_id() == node.id {
+                                                                    ui.label(format!("{}", s));
+                                                                }
+                                                            }
+                                                        });
+                                                });
+
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
+                                            egui::CentralPanel::default()
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("This is the central panel content.");
+                                                    ui.label("flood results and chat shits will be here.");
 
 
-                        });
-                    } }
-                    NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
-                        .collapsible(true)
-                        .min_width(500.0)
-                        .max_height(400.0)
-                        .show(ctx, |ui| {
-                            let mut connections= String::new();
-                            for connection in node.connections.clone() {
-                                connections.push_str(connection.to_string().as_str());
-                                connections.push_str(", ");
-
-                            }
-                            ui.label(format!("Connected to :{}", connections));
-
-                            if ui.button("Chiudi").clicked() {
-                                node.selected = false; // Chiudi il popup
-                            }
-
-                            // Qui puoi aggiungere ulteriori informazioni o controlli
-                            ui.label("Log:");
-
-                            ui.vertical(|ui| {
-                                egui::ScrollArea::vertical()
-                                    .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
-                                    .show (ui, |ui|
-                                        for s in &self.sim_contr.log {
-                                            if s.get_id() == node.id {
-                                                ui.label(format!("{}", s));
-                                            }
-                                        }
-                                    )
+                                                    match node.node_window_scenes{
+                                                        AddSender => {}
+                                                        RemoveSender => {}
+                                                        NodeWindowScene::FloodState => {
+                                                            //questo fammici pensare, se hai idee scrivi pure.
+                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        }
+                                                        _ => {
+                                                            unreachable!()
+                                                        }
+                                                    }
+                                                });
+                                        });
+                                });
                             });
-
-                        });
-                    } }
+                    }
                 }
             }
         }
@@ -717,7 +796,7 @@ impl eframe::App for MyApp {
         self.enable_constant_read();
         self.render_bottom_panel(ctx);
         self.render_side_panel(ctx);
-        self.render_drones_windows(ctx);
+        self.render_nodes_windows(ctx);
         self.render_central_panel(ctx);
         self.update_event_receivers();
     }
@@ -737,26 +816,18 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
 
 /*
 feel free to update this list.
-STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
 
-STRICTLY FOR SIM APP PART:
-- TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
-0) add field in MyNodes that tell the Type of the Node (NodeType).
-2) add in each pop up what type the node is (client/server)
+- cambiare i cerchi in droni
 
-the field node type is important also because the pop up has to have different buttons depending on the type:
+- ho cambiato le dronewindowscene in nodewindowscene, quello che dovresti fare è aggiungere come hai fatto con i droni le "common" scene (tipo add sender..) e le "server/client" scene alle windows di server e client
+il match io lo metterei nel central panel che se vedi ho lasciato da fare. ma poi fai tu
 
-//please help me here:
-drone: crash? /...
-client: send flood req / send message to (open a manage) / ..
-server:...
+se hai altre idee di scene dimmelo
 
---test everything, then continue with other things
+- aggiungere alle actions dei client e server un bottone per flooddare (puoi prendere come il bottone "flood with zero" che ho messo nelle actions)
+questo passa anche alla scena floodstate... poi penserò a come renderla graficamente.
 
-6) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
-7) add bottons in the pop ups for clients/servers that send flood req or certain messages
-8) at the end, change the circles in drones/clients/server small entities, so you have to change the creation accordingly to nodetype (matches again)
+(..)
 
-(.. more to come)
 
  */
