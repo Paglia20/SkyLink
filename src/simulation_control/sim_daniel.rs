@@ -819,8 +819,6 @@ feel free to update this list.
 
 - se vuoi anche fare un "render drone window" "render client"..., insomma spezzare il match alla riga 493 in tre funzioni (che prenderanno sia ctx che anche il nodo stesso)
 
-- cambiare i cerchi in droni
-
 - ho cambiato le dronewindowscene in nodewindowscene, quello che dovresti fare è aggiungere come hai fatto con i droni le "common" scene (tipo add sender..) e le "server/client" scene alle windows di server e client
 il match io lo metterei nel central panel che se vedi ho lasciato da fare. ma poi fai tu
 
@@ -828,6 +826,8 @@ se hai altre idee di scene dimmelo
 
 - aggiungere alle actions dei client e server un bottone per flooddare (puoi prendere come il bottone "flood with zero" che ho messo nelle actions)
 questo passa anche alla scena floodstate... poi penserò a come renderla graficamente.
+
+- cambiare i cerchi in droni
 
 (..)
 
