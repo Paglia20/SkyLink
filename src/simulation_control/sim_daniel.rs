@@ -817,6 +817,8 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
 /*
 feel free to update this list.
 
+- se vuoi anche fare un "render drone window" "render client"..., insomma spezzare il match alla riga 493 in tre funzioni (che prenderanno sia ctx che anche il nodo stesso)
+
 - cambiare i cerchi in droni
 
 - ho cambiato le dronewindowscene in nodewindowscene, quello che dovresti fare è aggiungere come hai fatto con i droni le "common" scene (tipo add sender..) e le "server/client" scene alle windows di server e client
