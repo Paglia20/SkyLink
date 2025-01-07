@@ -44,7 +44,7 @@ impl Ord for MyNodes {
 }
 
 pub enum Scene {
-    Start,
+    InitialState,
     ManageAdd,
     ManageCrash,
     ManageDrop,
@@ -53,10 +53,11 @@ pub enum Scene {
 #[derive(Clone, Debug)]
 pub enum NodeWindowScene {
     //common between types
+    Start,
     AddSender,
     RemoveSender,
+
     //drone scenes
-    Start,
     Crash,
     SetPDR,
 
@@ -95,7 +96,7 @@ impl MyApp {
 
         let mut app = Self {
             nodes: vec,
-            side_panel_scenes: Start,
+            side_panel_scenes: InitialState,
             checked,
             sim_contr,
             pdr: 0.0,
@@ -268,7 +269,7 @@ impl MyApp {
             .show(ctx, |ui| {
                 ui.heading("Actions");
                 match self.side_panel_scenes {
-                    Start => {
+                    InitialState => {
                         if ui.button("test log!").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(
                                 Cause::Sent,
@@ -320,7 +321,7 @@ impl MyApp {
                     }
                     ManageAdd => {
                         if ui.button("back").clicked() {
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialState;
                             self.reset_check();
                             self.pdr = 0.0;
                         }
@@ -351,7 +352,7 @@ impl MyApp {
                             let _id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
                             self.reset_check();
                             self.pdr = 0.0;
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialState;
                         }
                     }
                     ManageCrash => {
@@ -383,7 +384,7 @@ impl MyApp {
 
                             }
                             self.reset_check();
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialState;
                         }
                     }
                     ManageDrop => {
@@ -400,16 +401,16 @@ impl MyApp {
                             // Options for handling the packet
                             if ui.button("Resend it").clicked() {
                                 self.sim_contr.resend_packet(dropped_packet);
-                                self.side_panel_scenes = Start;
+                                self.side_panel_scenes = InitialState;
                             }
                             if ui.button("Lose it").clicked() {
-                                self.side_panel_scenes = Start; // Navigate back to the start
+                                self.side_panel_scenes = InitialState; // Navigate back to the start
                             }
                         } else {
                             // Inform the user if recovery is not possible
                             ui.label("Impossible to recover the packet.");
                             if ui.button("Close").clicked() {
-                                self.side_panel_scenes = Start; // Close the alert
+                                self.side_panel_scenes = InitialState; // Close the alert
                             }
                         }
                     }
@@ -664,6 +665,7 @@ impl MyApp {
                                                     ui.label("flood results and chat shits will be here.");
 
                                                     match node.node_window_scenes{
+                                                        NodeWindowScene::Start => {}
                                                         AddSender => {}
                                                         RemoveSender => {}
                                                         NodeWindowScene::FloodState => {
@@ -735,6 +737,7 @@ impl MyApp {
 
 
                                                     match node.node_window_scenes{
+                                                        NodeWindowScene::Start => {}
                                                         AddSender => {}
                                                         RemoveSender => {}
                                                         NodeWindowScene::FloodState => {
