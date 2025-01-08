@@ -14,6 +14,8 @@ mod skylink_drone;
 mod test;
 mod event_wrapper;
 
+pub const DEBUG_MODE : bool = true;
+
 fn main() {
     // println!("Hello, world!");
     //change switch to change the run
