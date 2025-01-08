@@ -15,7 +15,7 @@ use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{NodeType};
 use crate::clients_gio::client_command::ClientEvent;
 use crate::message::{ContentType, Message, TextRequest};
-use crate::message::ChatRequest::{ClientList, SendMessage};
+use crate::message::ChatRequest::{ClientList, Register, SendMessage};
 use crate::simulation_control::sim_daniel::MessageScene::Id;
 
 #[derive(Debug, Clone)]
@@ -712,6 +712,7 @@ impl MyApp {
                                                     }
                                                     if ui.button("Test Message").clicked(){
                                                         node.node_window_scenes = CreateMessage;
+                                                        self.msg = MyMsg::new();
                                                     }
 
                                                     if ui.button("Chiudi").clicked() {
@@ -776,7 +777,7 @@ impl MyApp {
                                                                         self.msg.msg_scene = MessageScene::Send;
                                                                     }
                                                                     if ui.button("Register").clicked() {
-                                                                        self.msg.content = ContentType::ChatRequest(ClientList);
+                                                                        self.msg.content = ContentType::ChatRequest(Register(node.id));
                                                                         self.msg.msg_scene = MessageScene::Send;
 
                                                                     }
