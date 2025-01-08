@@ -1,10 +1,9 @@
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
-use egui::ahash::HashSet;
 use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::*;
@@ -14,7 +13,8 @@ use wg_2024::packet::{NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, LostMessage, MissingDestination, NackReceived};
+use crate::message::Message;
+use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived};
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -31,6 +31,8 @@ pub struct SimulationControl {
     pub(crate) log: VecDeque<LogEntry>,
 
     pub dropped_packets: Vec<(NodeId, Packet)>,
+    
+    pub contacts: HashMap<NodeId, HashSet<NodeId>>
 }
 
 impl SimulationControl {
@@ -56,7 +58,8 @@ impl SimulationControl {
             all_sender_packets,
             network_graph,
             log: VecDeque::new(),
-            dropped_packets: Vec::new()
+            dropped_packets: Vec::new(),
+            contacts: Default::default(),
         }
     }
 
@@ -308,6 +311,16 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             }
+
+            ClientEvent::SendContacts(src, vec) => {
+                let new_log = LogEntry{
+                    cause: Flood,
+                    node_id: src,
+                    message: format!("Flood infos received by: {}",
+                                     src)
+                };
+                self.log.push_back(new_log);
+            }
         }
     }
     pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){
@@ -428,6 +441,24 @@ impl SimulationControl {
                     }
                 }
             }
+        }
+    }
+
+    pub fn add_contacts (&mut self, src: NodeId, contacts: Vec<NodeId>){
+        let mut set = HashSet::new();
+        for cont in contacts{
+            set.insert(cont);
+        }
+        self.contacts.insert(src, set);
+    }
+
+    pub fn force_send_message(&mut self, dst: NodeId, dst_type: NodeType, msg: Message){
+        match dst_type{
+            Client => {
+                self.client_command_senders.get(&dst).unwrap().send(ClientCommand::SendMessage(dst, msg.clone())).unwrap();
+                println!("Sim Controller Forced {} to send message {:?}", dst, msg);
+            },
+            _ => {todo!()}
         }
     }
 
@@ -996,7 +1027,8 @@ pub enum Cause {
     MissingDestination,
     LostMessage,
     LostFragment,
-    DroneInsideDestination
+    DroneInsideDestination,
+    Flood,
 }
 
 pub struct LogEntry {

@@ -1,18 +1,22 @@
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, FloodState, RemoveSender, SetPDR, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
-use egui::ahash::HashSet;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
+use std::collections::HashSet;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{NodeType};
+use crate::clients_gio::client_command::ClientEvent;
+use crate::message::{ContentType, Message, TextRequest};
+use crate::message::ChatRequest::{ClientList, SendMessage};
+use crate::simulation_control::sim_daniel::MessageScene::Id;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -43,11 +47,40 @@ impl Ord for MyNodes {
     }
 }
 
+
+pub struct MyMsg{
+    dst_id: NodeId,
+    session: u64,
+    content:ContentType,
+    msg_scene: MessageScene,
+    input_text:String,
+}
+
+impl MyMsg{
+    pub fn new() -> Self{
+        Self{
+            dst_id: 0,
+            session: fastrand::u64(..300),
+            content: Default::default(),
+            msg_scene: MessageScene::Id,
+            input_text: "Type here".to_string(),
+        }
+    }
+}
+
 pub enum Scene {
     InitialScene,
     ManageAdd,
     ManageCrash,
     ManageDrop,
+}
+
+pub enum MessageScene{
+    Id,
+    Content,
+    AddInput,
+    Send,
+    Error,
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +96,7 @@ pub enum NodeWindowScene {
 
     //client/server scenes
     FloodState,
+    CreateMessage
 }
 pub struct MyApp {
     sim_contr: SimulationControl,
@@ -71,6 +105,8 @@ pub struct MyApp {
     checked: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
+
+    msg: MyMsg,
 }
 
 impl MyApp {
@@ -101,6 +137,7 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
+            msg: MyMsg::new(),
         };
         //app.generate_random_connections();
         app
@@ -236,6 +273,13 @@ impl MyApp {
             }
             Event::Client(client_event) => {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
+
+                match client_event {
+                    ClientEvent::SendContacts(src, vec) => {
+                        self.sim_contr.add_contacts(src, vec);
+                    }
+                    _ => {/* degli altri niente */}
+                }
             }
         }
     }
@@ -654,6 +698,22 @@ impl MyApp {
 
                                                     ui.label(format!("Connected to: {}", connections));
 
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Flood").clicked(){
+                                                        self.sim_contr.flood_with(node.id);
+                                                        node.node_window_scenes = FloodState;
+                                                    }
+                                                    if ui.button("Test Message").clicked(){
+                                                        node.node_window_scenes = CreateMessage;
+                                                    }
+
                                                     if ui.button("Chiudi").clicked() {
                                                         node.selected = false; // Close the window
                                                     }
@@ -665,12 +725,93 @@ impl MyApp {
                                                     ui.label("flood results and chat shits will be here.");
 
                                                     match node.node_window_scenes{
-                                                        NodeWindowScene::Start => {}
+                                                        Start => {}
                                                         AddSender => {}
                                                         RemoveSender => {}
-                                                        NodeWindowScene::FloodState => {
+                                                        FloodState => {
                                                             //questo fammici pensare, se hai idee scrivi pure.
                                                             //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+
+                                                            let node_contacts = match self.sim_contr.contacts.get(&node.id){
+                                                                Some(contacts) => contacts.clone(),
+                                                                None => HashSet::new()
+                                                            };
+
+                                                            let mut contacts = String::new();
+                                                            for node in node_contacts {
+                                                                contacts.push_str("\n ");
+                                                                contacts.push_str(node.to_string().as_str());
+                                                            }
+
+                                                            ui.label(format!("MyContacts are: {}", contacts));
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        }
+
+                                                        CreateMessage =>{
+                                                            match self.msg.msg_scene {
+                                                                MessageScene::Id => {
+                                                                    let ids = match self.sim_contr.contacts.get(&node.id) {
+                                                                        Some(contacts) => { contacts.into_iter().collect()},
+                                                                        None => {
+                                                                            self.msg.msg_scene = MessageScene::Error;
+                                                                            Vec::new()
+                                                                        }
+                                                                    };
+
+                                                                    for id in ids{
+                                                                        if ui.button(id.to_string()).clicked() {
+                                                                            self.msg.dst_id = *id;
+                                                                            self.msg.msg_scene = MessageScene::Content;
+                                                                            println!("{}", self.msg.dst_id);
+                                                                        }
+                                                                    }
+
+                                                                },
+                                                                MessageScene::Content => {
+                                                                    if ui.button("ClientList").clicked() {
+                                                                        self.msg.content = ContentType::ChatRequest(ClientList);
+                                                                        self.msg.msg_scene = MessageScene::Send;
+                                                                    }
+                                                                    if ui.button("Register").clicked() {
+                                                                        self.msg.content = ContentType::ChatRequest(ClientList);
+                                                                        self.msg.msg_scene = MessageScene::Send;
+
+                                                                    }
+                                                                    if ui.button("SendMessage").clicked() {
+                                                                        self.msg.msg_scene = MessageScene::AddInput;
+                                                                    }
+                                                                }
+                                                                MessageScene::AddInput => {
+                                                                    ui.label("Enter a message:");
+                                                                    let response = ui.add(egui::TextEdit::singleline(&mut self.msg.input_text));
+                                                                    if response.lost_focus() {
+                                                                        // Handle Enter key press
+                                                                        self.msg.content = ContentType::ChatRequest(SendMessage {
+                                                                            from: node.id,
+                                                                            to: self.msg.dst_id,
+                                                                            message: self.msg.input_text.clone(),
+                                                                        });
+                                                                        self.msg.msg_scene = MessageScene::Send;
+                                                                    }
+                                                                }
+                                                                MessageScene::Send =>{
+                                                                    if ui.button("Send").clicked() {
+                                                                        let msg = Message::new(node.id, self.msg.session, self.msg.content.clone());
+                                                                        self.sim_contr.force_send_message(node.id, NodeType::Client, msg);
+                                                                        node.node_window_scenes = Start; // Close the window
+                                                                    }
+                                                                }
+                                                                MessageScene::Error => {
+                                                                    ui.label("You dont have contanct: did you Flood?");
+                                                                }
+                                                            }
+                                                            if ui.button("Chiudi").clicked() {
+                                                                self.msg.msg_scene = Id;
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
                                                         }
                                                         _ => {
                                                             unreachable!()
@@ -724,6 +865,14 @@ impl MyApp {
                                                     }
 
                                                     ui.label(format!("Connected to: {}", connections));
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
 
                                                     if ui.button("Chiudi").clicked() {
                                                         node.selected = false; // Close the window
@@ -792,7 +941,6 @@ impl MyApp {
             _ => {}
         }
     }
-
 }
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

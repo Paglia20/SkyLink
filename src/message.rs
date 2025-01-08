@@ -33,13 +33,19 @@ impl Message {
 
 #[derive(Clone, Debug)]
 pub enum ContentType{
+    TypeExchange(TypeExchange),
     TextRequest(TextRequest),
     TextResponse(TextResponse),
     MediaRequest(MediaRequest),
     MediaResponse(MediaResponse),
     ChatRequest(ChatRequest),
     ChatResponse(ChatResponse),
-    TypeExchange(TypeExchange),
+}
+
+impl Default for ContentType {
+    fn default() -> Self {
+        Self::TypeExchange(TypeExchange::default())
+    }
 }
 
 pub trait MessageType: Serialize + DeserializeOwned {
@@ -60,6 +66,12 @@ pub enum TypeExchange {
         from: NodeId,
     },
 }
+impl Default for TypeExchange {
+    fn default() -> Self {
+        Self::TypeRequest{from: Default::default() }
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextRequest {

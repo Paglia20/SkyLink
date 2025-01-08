@@ -10,6 +10,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use crate::clients_gio::client_command::ClientEvent::SendContacts;
 use crate::clients_gio::client_type::ClientType::*;
 use crate::message::TextRequest::*;
 use crate::server::server_type::ServerType;
@@ -520,6 +521,10 @@ impl NetworkEdge for ChatClient {
             }
             None =>{false}
         };
+        if !out {
+            println!("dst state was not ok");
+            //send nack?
+        }
         out
     }
 }
@@ -577,6 +582,19 @@ impl Client for ChatClient {
                         self.check_type(dst.clone());
                     }
                 });
+
+
+                if self.paths.clone().iter().any(|(dst, (state, path))|{
+                    *state == 2 }) {
+                    let mut my_contacts = self.paths.clone()
+                        .iter()
+                        .filter(|(_, (state, _))| *state == 2)
+                        .map(|(first, (_,_))| *first)
+                        .collect::<Vec<NodeId>>();
+
+                    my_contacts.sort();
+                    self.event_send.send(SendContacts(self.node_id, my_contacts)).unwrap();
+                }
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();
