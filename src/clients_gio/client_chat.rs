@@ -12,6 +12,7 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::clients_gio::client_command::ClientEvent::SendContacts;
 use crate::clients_gio::client_type::ClientType::*;
+use crate::DEBUG_MODE;
 use crate::message::TextRequest::*;
 use crate::server::server_type::ServerType;
 
@@ -334,7 +335,10 @@ impl NetworkEdge for ChatClient {
                         } else {
                             //if it's a client
                             self.paths.get_mut(&from).unwrap().0 = 2;
-                            // self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); //to debug
+
+                            if DEBUG_MODE {
+                            self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); }
+
                         }
                     }
                 }
