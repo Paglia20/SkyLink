@@ -312,7 +312,7 @@ impl SimulationControl {
                 self.log.push_back(new_log);
             }
 
-            ClientEvent::SendContacts(src, vec) => {
+            ClientEvent::SendContacts(src, _dst) => {
                 let new_log = LogEntry{
                     cause: Flood,
                     node_id: src,
@@ -444,12 +444,17 @@ impl SimulationControl {
         }
     }
 
-    pub fn add_contacts (&mut self, src: NodeId, contacts: Vec<NodeId>){
-        let mut set = HashSet::new();
-        for cont in contacts{
-            set.insert(cont);
+    pub fn add_contacts (&mut self, src: NodeId, contact: NodeId){
+        match self.contacts.get_mut(&src){
+            Some(contacts) => {
+                contacts.insert(contact);
+            }
+            None => {
+                let set = HashSet::from([contact]);
+                self.contacts.insert(src, set);
+
+            }
         }
-        self.contacts.insert(src, set);
     }
 
     pub fn force_send_message(&mut self, dst: NodeId, dst_type: NodeType, msg: Message){

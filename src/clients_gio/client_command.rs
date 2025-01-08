@@ -26,7 +26,7 @@ pub enum ClientEvent {
     LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     // OpenedChat(NodeID),
-    SendContacts(NodeId,Vec<NodeId>),
+    SendContacts(NodeId,NodeId), //first is src second is dst
 }
 
 

@@ -323,14 +323,18 @@ impl NetworkEdge for ChatClient {
                             match server_type{
                                 ServerType::Chat => {
                                     self.paths.get_mut(&from).unwrap().0 = 1;
+                                    self.event_send.send(SendContacts(self.node_id, from)).unwrap();
                                     },
                                 _ => {
                                     self.paths.get_mut(&from).unwrap().0 = 2;
+                                    // self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); to debug
+
                                 }
                             }
                         } else {
                             //if it's a client
                             self.paths.get_mut(&from).unwrap().0 = 2;
+                            // self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); //to debug
                         }
                     }
                 }
@@ -582,19 +586,6 @@ impl Client for ChatClient {
                         self.check_type(dst.clone());
                     }
                 });
-
-
-                if self.paths.clone().iter().any(|(dst, (state, path))|{
-                    *state == 2 }) {
-                    let mut my_contacts = self.paths.clone()
-                        .iter()
-                        .filter(|(_, (state, _))| *state == 2)
-                        .map(|(first, (_,_))| *first)
-                        .collect::<Vec<NodeId>>();
-
-                    my_contacts.sort();
-                    self.event_send.send(SendContacts(self.node_id, my_contacts)).unwrap();
-                }
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();

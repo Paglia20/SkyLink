@@ -275,8 +275,8 @@ impl MyApp {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
 
                 match client_event {
-                    ClientEvent::SendContacts(src, vec) => {
-                        self.sim_contr.add_contacts(src, vec);
+                    ClientEvent::SendContacts(src, dst) => {
+                        self.sim_contr.add_contacts(src, dst);
                     }
                     _ => {/* degli altri niente */}
                 }
