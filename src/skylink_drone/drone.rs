@@ -1,7 +1,7 @@
 use crate::skylink_drone::checks::{
     final_destination_check, id_hop_match_check, is_next_hop_check, pdr_check,
 };
-use crate::skylink_drone::error::create_error;
+use crate::skylink_drone::error::{crashing_create_error, create_error};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::DroneEvent::ControllerShortcut;
@@ -242,13 +242,8 @@ impl SkyLinkDrone {
     fn crashing_handle_packet(&mut self, packet: Packet) {
         match packet.clone().pack_type {
             PacketType::MsgFragment(_fragment) => {
-                self.controller_send
-                    .send(DroneEvent::PacketDropped(packet.clone()))
-                    .unwrap();
-                // Notify the sim contr that the packet was dropped.
-
                 // If the message is a fragment, I send back a Nack
-                let err = create_error(self.id, packet, NackType::ErrorInRouting(self.id));
+                let err = crashing_create_error(self.id, packet);
                 self.send_nack(&err.routing_header.hops[1].clone(), err);
             }
             PacketType::FloodRequest(_flood_request) => {} //I discard them.
