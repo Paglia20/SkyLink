@@ -26,6 +26,7 @@ impl Message {
             ContentType::ChatRequest(inner) =>  inner.stringify(),
             ContentType::ChatResponse(inner) => inner.stringify(),
             ContentType::TypeExchange(inner) => inner.stringify(),
+            ContentType::EdgeNack(inner) => inner.stringify(),
         }
     }
 
@@ -40,6 +41,7 @@ pub enum ContentType{
     MediaResponse(MediaResponse),
     ChatRequest(ChatRequest),
     ChatResponse(ChatResponse),
+    EdgeNack(EdgeNackType),
 }
 
 impl Default for ContentType {
@@ -113,6 +115,12 @@ pub enum ChatResponse {
     MessageSent,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EdgeNackType{
+    //..
+    UnexpectedMessage, //tipo se un chat client trova un messaggio da text client...
+}
+
 impl MessageType for TextRequest {}
 impl MessageType for MediaRequest {}
 impl MessageType for ChatRequest {}
@@ -120,3 +128,4 @@ impl MessageType for TextResponse {}
 impl MessageType for MediaResponse {}
 impl MessageType for ChatResponse {}
 impl MessageType for TypeExchange {}
+impl MessageType for EdgeNackType {}

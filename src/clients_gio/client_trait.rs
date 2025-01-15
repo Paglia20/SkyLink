@@ -1,12 +1,12 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_type::ClientType;
-use crate::network_edge::NetworkEdge;
+use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::network::*;
-use wg_2024::packet::{Fragment, Packet};
+use wg_2024::packet::{Packet};
 
-pub trait Client: NetworkEdge {
+pub trait Client: NetworkEdge + NetworkEdgeErrors{
     fn new(
         id: NodeId,
         command_recv: Receiver<ClientCommand>,

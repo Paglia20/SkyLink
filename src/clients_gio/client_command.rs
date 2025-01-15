@@ -27,8 +27,8 @@ pub enum ClientEvent {
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     // OpenedChat(NodeID),
     SendContacts(NodeId,NodeId), //first is src second is dst
+    WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
 }
 
 
-//?? i want to add floodreceived (Node_id) with the Node i got a path for
 // i want to add a WrongTypeDestination (node_id) for when i want to contact a destination that is not the right type

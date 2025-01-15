@@ -1,18 +1,20 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::Client;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
-use crate::network_edge::{EdgeType, NetworkEdge};
+use crate::message::{ChatResponse, ContentType, EdgeNackType, Message, TypeExchange};
+use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::routing::{Nodes, Route, RouteList};
-use crossbeam_channel::{select_biased, Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender, TrySendError};
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
-use crate::clients_gio::client_command::ClientEvent::SendContacts;
+use wg_2024::packet::PacketType::*;
+use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendContacts, WrongDestinationType};
 use crate::clients_gio::client_type::ClientType::*;
 use crate::DEBUG_MODE;
+use crate::message::EdgeNackType::*;
 use crate::message::TextRequest::*;
 use crate::server::server_type::ServerType;
 
@@ -60,7 +62,15 @@ impl NetworkEdge for ChatClient {
                 }
             }
             else {
-                //new ClientEvent: state not good
+                let new_nack = WrongDestinationType(self.get_src_id(), destination);
+                match self.event_send.try_send(new_nack){
+                    Ok(_) => {}
+                    Err(_err) => {
+                        if DEBUG_MODE {
+                            println!("simulation control unreachable")
+                        }
+                    }
+                }
             }
         }
 
@@ -116,6 +126,8 @@ impl NetworkEdge for ChatClient {
                     Some(id) => *id,
                     None => {
                         //send nack NackType::ErrorInRouting(*next_hop))???
+
+
                         return;
                     },
                 };
@@ -342,13 +354,31 @@ impl NetworkEdge for ChatClient {
                     }
                 }
             }
+            ContentType::EdgeNack(nack) => {
+                match nack {
+                    UnexpectedMessage => {
+                        //vuol dire che ha mandato un message al dst con state sbagliato.
+                       if let Some((state, _route)) = self.paths.get_mut(&message.source_id){
+                           *state = 2;
+                       }
+
+                        //e il messaggio viene scartato credo
+
+                        if DEBUG_MODE{
+                            println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.node_id, message.source_id)
+                        }
+
+                    }
+                }
+
+            },
             _ => {
                 // Gio: no point in getting other types of req
                 // !!Leo: We still need to tell that it was an error tho, probably by
                 // !!sending a Nack UnexpectedRecipient(self.NodeId),
 
-                //todo send_nack()
-
+                let new_nack = self.create_nack(UnexpectedMessage);
+                self.send_nack_message(message.source_id, new_nack);
             }
         }
 
@@ -467,18 +497,6 @@ impl NetworkEdge for ChatClient {
         }
     }
 
-    fn send_nack(&mut self, dst: NodeId, nack: Packet) {
-        match self.packet_send.get(&dst) {
-            Some(sender) => {
-                sender.send(nack.clone()).unwrap();
-                self.event_send.send(ClientEvent::PacketSent(nack.clone())).unwrap();
-            }
-            None => {
-                self.event_send.send(ClientEvent::MissingDestination(dst)).unwrap();
-            }
-        }
-    }
-
     //first need to create a create error like in drones
     //then adjust all the calls
 
@@ -528,7 +546,12 @@ impl NetworkEdge for ChatClient {
         value
     }
 
+    fn get_src_id(&self) -> NodeId {
+        self.node_id
+    }
+}
 
+impl NetworkEdgeErrors for ChatClient {
     fn check_type(&mut self, id: NodeId) {
         let req = TypeExchange::TypeRequest { from: self.node_id };
         let exc = ContentType::TypeExchange(req);
@@ -548,13 +571,55 @@ impl NetworkEdge for ChatClient {
             None =>{false}
         };
         if !out {
-            println!("dst state was not ok");
+            if DEBUG_MODE{
+            println!("dst state was not ok");}
+
             //send nack?
         }
         out
     }
-}
 
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
+        self.send_message(nack, dst);
+    }
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+        let new_nack = Nack{
+            fragment_index: 0,
+            nack_type: nack,
+        };
+        let shr = match self.paths.get_mut(&dst){
+            None => {
+                self.event_send.send(MissingDestination(dst)).unwrap();
+                return;
+            }
+            Some((_state, route)) => {
+                if let Some(fastest_route) = route.get_fastest_route(){
+                    fastest_route.to_source_routing_header()
+                }else {
+                    self.event_send.send(MissingRoute(dst)).unwrap();
+                    return;
+                }
+            }
+        };
+        let first_hop = shr.next_hop().unwrap_or(self.node_id);
+
+        let packet = Packet{
+            routing_header: shr,
+            session_id: self.get_session_id(),
+            pack_type: Nack(new_nack),
+        };
+
+        match self.packet_send.get(&first_hop){
+            None => {self.event_send.send(MissingDestination(dst)).unwrap();
+                return;
+            }
+            Some(sender) => {
+                sender.send(packet).unwrap();
+            }
+        }
+    }
+}
 
 impl Client for ChatClient {
     fn new(

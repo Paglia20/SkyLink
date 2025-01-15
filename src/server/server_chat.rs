@@ -58,10 +58,6 @@ impl NetworkEdge for ChatServer {
         todo!()
     }
 
-    fn send_nack(&mut self, dst: NodeId, nack: Packet) {
-        todo!()
-    }
-
     fn flood(&mut self) {
         todo!()
     }
@@ -73,12 +69,8 @@ impl NetworkEdge for ChatServer {
         todo!()
     }
 
-    fn check_type(&mut self, id: NodeId) {
-        todo!()
-    }
-
-    fn is_state_ok(&self, node_id: NodeId) -> bool {
-        todo!()
+    fn get_src_id(&self) -> NodeId {
+        self.node_id
     }
 }
 impl Server for ChatServer {

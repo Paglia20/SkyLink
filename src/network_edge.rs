@@ -1,4 +1,4 @@
-use crate::message::{ChatRequest, ChatResponse, ContentType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
+use crate::message::{ChatRequest, ChatResponse, ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
 use std::collections::HashMap;
 use std::sync::Arc;
 use crossbeam_channel::Sender;
@@ -124,7 +124,6 @@ pub trait NetworkEdge {
         Err(err)
     }
 
-
     fn handle_packet(&mut self, packet: Packet);
 
     fn handle_message(&mut self, message: Message);
@@ -165,18 +164,31 @@ pub trait NetworkEdge {
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64);
 
-    fn send_nack(&mut self, dst: NodeId, nack: Packet);
-
     fn flood(&mut self);
 
     fn get_flood_id(&mut self) -> u64;
 
     fn get_session_id(&mut self) -> u64;
 
+    fn get_src_id(&self) -> NodeId;
+}
+
+pub trait NetworkEdgeErrors: NetworkEdge {
     fn check_type(&mut self, id: NodeId);
 
     fn is_state_ok(&self, node_id: NodeId) -> bool;
 
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message); //for edges nack
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType);  //for drone nack
+
+    fn create_nack(&mut self, nack_type: EdgeNackType) -> Message {
+        Message{
+            source_id: self.get_src_id(),
+            session_id: self.get_session_id(),
+            content: ContentType::EdgeNack(nack_type),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
