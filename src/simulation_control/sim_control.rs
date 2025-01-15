@@ -32,7 +32,7 @@ pub struct SimulationControl {
 
     pub dropped_packets: Vec<(NodeId, Packet)>,
     
-    pub contacts: HashMap<NodeId, HashSet<NodeId>>
+    pub contacts: HashMap<NodeId, HashSet<NodeId>>  //if you want them sort change this in a BtreeSet
 }
 
 impl SimulationControl {

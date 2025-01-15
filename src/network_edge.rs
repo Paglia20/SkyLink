@@ -165,6 +165,8 @@ pub trait NetworkEdge {
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64);
 
+    fn send_nack(&mut self, dst: NodeId, nack: Packet);
+
     fn flood(&mut self);
 
     fn get_flood_id(&mut self) -> u64;
@@ -173,7 +175,7 @@ pub trait NetworkEdge {
 
     fn check_type(&mut self, id: NodeId);
 
-    fn is_state_ok(&mut self, node_id: NodeId) -> bool;
+    fn is_state_ok(&self, node_id: NodeId) -> bool;
 
 }
 

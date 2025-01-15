@@ -116,7 +116,6 @@ impl NetworkEdge for ChatClient {
                     Some(id) => *id,
                     None => {
                         //send nack NackType::ErrorInRouting(*next_hop))???
-
                         return;
                     },
                 };
@@ -468,6 +467,22 @@ impl NetworkEdge for ChatClient {
         }
     }
 
+    fn send_nack(&mut self, dst: NodeId, nack: Packet) {
+        match self.packet_send.get(&dst) {
+            Some(sender) => {
+                sender.send(nack.clone()).unwrap();
+                self.event_send.send(ClientEvent::PacketSent(nack.clone())).unwrap();
+            }
+            None => {
+                self.event_send.send(ClientEvent::MissingDestination(dst)).unwrap();
+            }
+        }
+    }
+
+    //first need to create a create error like in drones
+    //then adjust all the calls
+
+
     fn flood(&mut self) {
 
         // !!I'm not sure if this is a good idea or not, since they can't crush I don't
@@ -519,10 +534,13 @@ impl NetworkEdge for ChatClient {
         let exc = ContentType::TypeExchange(req);
         let s_id = self.get_session_id();
         self.send_message(Message::new(self.node_id, s_id, exc), id);
-        println!("sent check from {}", self.node_id);
+
+        if DEBUG_MODE {
+            println!("sent check from {}", self.node_id);
+        }
     }
 
-    fn is_state_ok(&mut self, node_id: NodeId) -> bool {
+    fn is_state_ok(&self, node_id: NodeId) -> bool {
         let out =  match self.paths.get(&node_id){
             Some(path) => {
                 path.0 == 1
