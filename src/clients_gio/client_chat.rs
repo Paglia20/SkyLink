@@ -10,6 +10,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
 use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendContacts, WrongDestinationType};
 use crate::clients_gio::client_type::ClientType::*;
@@ -125,10 +126,8 @@ impl NetworkEdge for ChatClient {
                 let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
                     Some(id) => *id,
                     None => {
-                        //send nack NackType::ErrorInRouting(*next_hop))???
-
-
-                        return;
+                        //teoricamente se è none è perchè è lui stesso la destinazione
+                        unreachable!()
                     },
                 };
 
@@ -140,8 +139,8 @@ impl NetworkEdge for ChatClient {
                         match sender.try_send(packet.clone()) {
                             Err(_) => {
                                 // !!You need to send back the same errors a drone would
-                                //send nack NackType::ErrorInRouting(*next_hop)) ??? ,
-                                self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
+                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                                self.event_send.send(ClientEvent::PacketSendingError(packet)).unwrap()
                             }
                             Ok(_) => {
                                 self.event_send
