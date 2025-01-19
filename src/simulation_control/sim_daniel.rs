@@ -1,13 +1,14 @@
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, FloodState, RemoveSender, SetPDR, Start};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, ShowContacts, RemoveSender, SetPDR, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::HashSet;
+use std::process::Command;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
@@ -95,7 +96,7 @@ pub enum NodeWindowScene {
     SetPDR,
 
     //client/server scenes
-    FloodState,
+    ShowContacts,
     CreateMessage
 }
 pub struct MyApp {
@@ -524,6 +525,7 @@ impl MyApp {
         });
     }
 
+
     pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
             if node.selected {
@@ -700,8 +702,13 @@ impl MyApp {
 
                                                     if ui.button("Flood").clicked(){
                                                         self.sim_contr.flood_with(node.id);
-                                                        node.node_window_scenes = FloodState;
+                                                        node.node_window_scenes = ShowContacts;
                                                     }
+
+                                                    if ui.button("Show Contact").clicked(){
+                                                        node.node_window_scenes = ShowContacts;
+                                                    }
+
                                                     if ui.button("Test Message").clicked(){
                                                         node.node_window_scenes = CreateMessage;
                                                         self.msg = MyMsg::new();
@@ -720,8 +727,8 @@ impl MyApp {
                                                             ui.label("flood results and chat shits will be here.");
                                                         }
                                                         AddSender => {}
-                                                        RemoveSender => {}
-                                                        FloodState => {
+                                                        RemoveSender => {},
+                                                        ShowContacts => {
                                                             //questo fammici pensare, se hai idee scrivi pure.
                                                             //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
 
@@ -886,7 +893,7 @@ impl MyApp {
                                                         Start => {}
                                                         AddSender => {}
                                                         RemoveSender => {}
-                                                        FloodState => {
+                                                        ShowContacts => {
                                                             //questo fammici pensare, se hai idee scrivi pure.
                                                             //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
                                                         }
