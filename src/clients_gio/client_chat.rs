@@ -37,44 +37,51 @@ pub struct ChatClient {
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
+
 impl NetworkEdge for ChatClient {
     fn send_message(&mut self, message: Message, destination: NodeId) {
-        if let ContentType::TypeExchange(_exc) = message.clone().content {
-            let session_id = message.session_id;
-            let frags = Self::fragment_message(&message);
-            self.fragments.insert((session_id, self.node_id, destination), frags.clone());
-            // I also save the fragments in the memory, in case I have to send them again.
-
-            for fragment in frags {
-                self.send_fragment(fragment, destination, session_id);
-                // I apply the send operation on each single fragment.
-            }
-        } else {
-            if self.is_state_ok(destination) {
+        match message.clone().content{
+            ContentType::TypeExchange(_exc) =>{
                 let session_id = message.session_id;
                 let frags = Self::fragment_message(&message);
                 self.fragments.insert((session_id, self.node_id, destination), frags.clone());
                 // I also save the fragments in the memory, in case I have to send them again.
 
+                for fragment in frags {
+                    self.send_fragment(fragment, destination, session_id);
+                    // I apply the send operation on each single fragment.
+                }
+            },
+            ContentType::EdgeNack(_nack) => {
+                let session_id = message.session_id;
+                let frags = Self::fragment_message(&message);
+                self.fragments.insert((session_id, self.node_id, destination), frags.clone());
+                // I also save the fragments in the memory, in case I have to send them again.
 
                 for fragment in frags {
                     self.send_fragment(fragment, destination, session_id);
                     // I apply the send operation on each single fragment.
                 }
             }
-            else {
-                let new_nack = WrongDestinationType(self.get_src_id(), destination);
-                match self.event_send.try_send(new_nack){
-                    Ok(_) => {}
-                    Err(_err) => {
-                        if DEBUG_MODE {
-                            println!("simulation control unreachable")
-                        }
+            _=>{
+                if self.is_state_ok(destination) {
+                    let session_id = message.session_id;
+                    let frags = Self::fragment_message(&message);
+                    self.fragments.insert((session_id, self.node_id, destination), frags.clone());
+                    // I also save the fragments in the memory, in case I have to send them again.
+
+
+                    for fragment in frags {
+                        self.send_fragment(fragment, destination, session_id);
+                        // I apply the send operation on each single fragment.
                     }
+                }
+                else {
+                    let new_nack = WrongDestinationType(self.get_src_id(), destination);
+                    self.send_event(new_nack);
                 }
             }
         }
-
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
@@ -108,9 +115,7 @@ impl NetworkEdge for ChatClient {
                             if let Ok(_) =
                                 self.packet_send.get(key).unwrap().send(packet.clone())
                             {
-                                self.event_send
-                                    .send(ClientEvent::PacketSent(packet.clone()))
-                                    .unwrap();
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
                                 //If the message was sent, I also notify the sim controller.
                             } //There's no else, since I don't care of nodes which can't be reached.
                         }
@@ -133,19 +138,17 @@ impl NetworkEdge for ChatClient {
 
                 match self.packet_send.get(&next_id) {
                     None => {
-                        self.event_send.send(ClientEvent::MissingRoute(next_id)).unwrap()
+                        self.send_event(ClientEvent::MissingRoute(next_id))
                     }
                     Some(sender) => {
                         match sender.try_send(packet.clone()) {
                             Err(_) => {
                                 // !!You need to send back the same errors a drone would
                                 self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                                self.event_send.send(ClientEvent::PacketSendingError(packet)).unwrap()
+                                self.send_event(ClientEvent::PacketSendingError(packet));
                             }
                             Ok(_) => {
-                                self.event_send
-                                    .send(ClientEvent::PacketSent(packet.clone()))
-                                    .unwrap();
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
                                 // If the message was sent, I also notify the sim controller.
                             }
                         }
@@ -171,7 +174,7 @@ impl NetworkEdge for ChatClient {
                         self.send_ack(packet.clone(), frag_index);
 
                         //notify sc i got a packet
-                        self.event_send.send(ClientEvent::PacketReceived(packet.clone())).unwrap();
+                        self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
 
 
@@ -195,7 +198,7 @@ impl NetworkEdge for ChatClient {
                         }
                     }
                     PacketType::Ack(ack) => {
-                        self.event_send.send(ClientEvent::AckReceived(packet.clone())).unwrap();
+                        self.send_event(ClientEvent::AckReceived(packet.clone()));
 
                         //the ack will have the source that was the destination of the initial packet
                         match self.fragments.get_mut(&(packet.session_id, self.node_id, packet.routing_header.source().unwrap())) {
@@ -216,7 +219,7 @@ impl NetworkEdge for ChatClient {
                     }
 
                     PacketType::Nack(nack) => {
-                        self.event_send.send(ClientEvent::NackReceived(packet.clone())).unwrap();
+                        self.send_event(ClientEvent::NackReceived(packet.clone()));
                         match nack.nack_type.clone() {
                             NackType::UnexpectedRecipient(wrong_node) => {
                                 // I remove all the routes with that destination, since it's probably faulty
@@ -334,11 +337,11 @@ impl NetworkEdge for ChatClient {
                             match server_type{
                                 ServerType::Chat => {
                                     self.paths.get_mut(&from).unwrap().0 = 1;
-                                    self.event_send.send(SendContacts(self.node_id, from)).unwrap();
+                                    self.send_event(SendContacts(self.node_id, from));
                                     },
                                 _ => {
                                     self.paths.get_mut(&from).unwrap().0 = 2;
-                                    // self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); to debug
+                                    // self.send_event(ClientEvent::SendContacts(self.node_id, from)).unwrap(); to debug
 
                                 }
                             }
@@ -347,7 +350,7 @@ impl NetworkEdge for ChatClient {
                             self.paths.get_mut(&from).unwrap().0 = 2;
 
                             if DEBUG_MODE {
-                            self.event_send.send(ClientEvent::SendContacts(self.node_id, from)).unwrap(); }
+                            self.send_event(ClientEvent::SendContacts(self.node_id, from)) }
 
                         }
                     }
@@ -373,9 +376,6 @@ impl NetworkEdge for ChatClient {
             },
             _ => {
                 // Gio: no point in getting other types of req
-                // !!Leo: We still need to tell that it was an error tho, probably by
-                // !!sending a Nack UnexpectedRecipient(self.NodeId),
-
                 let new_nack = self.create_nack(UnexpectedMessage);
                 self.send_nack_message(message.source_id, new_nack);
             }
@@ -393,18 +393,14 @@ impl NetworkEdge for ChatClient {
             None => {
                 //I first check if I have any path to the destination
                 println!("Tried to send fragment without path to {destination} with {}", self.node_id);
-                self.event_send
-                    .send(ClientEvent::MissingDestination(destination))
-                    .unwrap();
+                self.send_event(ClientEvent::MissingDestination(destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some((_state, route_list)) => {
                 match route_list.get_fastest_route() {
                     None => {
                         // I then check that we have an available route to the destination.
-                        self.event_send
-                            .send(ClientEvent::MissingRoute(destination))
-                            .unwrap();
+                        self.send_event(ClientEvent::MissingRoute(destination));
 
                         self.add_unsent_fragment(fragment, session_id, destination);
                     },
@@ -417,17 +413,13 @@ impl NetworkEdge for ChatClient {
                         match self.packet_send.get(&first_dst) {
                             Some(sender) => {
                                 sender.send(packet.clone()).unwrap();
-                                self.event_send
-                                    .send(ClientEvent::PacketSent(packet.clone()))
-                                    .expect(format!("panicked with {}", self.node_id).as_str());
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
 
                             }
                             None => {
                                 // If I want to pass for a node that I don't have as a neighbour, I need to remove
                                 // channels who contain it.
-                                self.event_send
-                                    .send(ClientEvent::MissingRoute(destination))
-                                    .unwrap();
+                                self.send_event(ClientEvent::MissingRoute(destination));
                                 self.add_unsent_fragment(fragment, session_id, destination);
                                 for (_, (_state,route)) in self.paths.iter_mut() {
                                     route.remove_faulty_node(destination);
@@ -458,16 +450,12 @@ impl NetworkEdge for ChatClient {
         match self.fragments.get(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap())) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
-                self.event_send
-                    .send(ClientEvent::LostMessage(packet.session_id, self.node_id))
-                    .unwrap();
+                self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
             },
             Some(fragments) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
-                        self.event_send
-                            .send(ClientEvent::LostFragment(packet.session_id, self.node_id, nack.fragment_index))
-                            .unwrap();
+                        self.send_event(ClientEvent::LostFragment(packet.session_id, self.node_id, nack.fragment_index));
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
@@ -488,10 +476,10 @@ impl NetworkEdge for ChatClient {
         match self.packet_send.get(&next_id) {
             Some(sender) => {
                 sender.send(packet_ack.clone()).unwrap();
-                self.event_send.send(ClientEvent::PacketSent(packet_ack)).unwrap();
+                self.send_event(ClientEvent::PacketSent(packet_ack))
             }
             None => {
-                self.event_send.send(ClientEvent::MissingDestination(next_id)).unwrap();
+                self.send_event(ClientEvent::MissingDestination(next_id))
             }
         }
     }
@@ -589,14 +577,14 @@ impl NetworkEdgeErrors for ChatClient {
         };
         let shr = match self.paths.get_mut(&dst){
             None => {
-                self.event_send.send(MissingDestination(dst)).unwrap();
+                self.send_event(MissingDestination(dst));
                 return;
             }
             Some((_state, route)) => {
                 if let Some(fastest_route) = route.get_fastest_route(){
                     fastest_route.to_source_routing_header()
                 }else {
-                    self.event_send.send(MissingRoute(dst)).unwrap();
+                    self.send_event(MissingRoute(dst));
                     return;
                 }
             }
@@ -610,7 +598,8 @@ impl NetworkEdgeErrors for ChatClient {
         };
 
         match self.packet_send.get(&first_hop){
-            None => {self.event_send.send(MissingDestination(dst)).unwrap();
+            None => {
+                self.send_event(MissingDestination(dst));
                 return;
             }
             Some(sender) => {
@@ -729,5 +718,16 @@ impl Client for ChatClient {
 
     fn get_client_type(&self) -> ClientType {
         ClientType::ChatClient
+    }
+
+    fn send_event(&self, ce: ClientEvent) {
+       match self.event_send.try_send(ce){
+         Ok(_) => {}
+         Err(_err) => {
+             if DEBUG_MODE {
+                 println!("simulation control unreachable")
+             }
+         }
+       }
     }
 }

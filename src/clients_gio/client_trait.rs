@@ -20,4 +20,6 @@ pub trait Client: NetworkEdge + NetworkEdgeErrors{
     fn handle_command(&mut self, command: ClientCommand);
 
     fn get_client_type(&self) -> ClientType;
+
+    fn send_event(&self, ce: ClientEvent);
 }

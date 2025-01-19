@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 use crate::clients_gio::client_type::ClientType;
+use crate::message::ContentType::EdgeNack;
 use crate::routing::RouteList;
 use crate::server::server_type::ServerType;
 
@@ -115,6 +116,13 @@ pub trait NetworkEdge {
                 source_id,
                 session_id,
                 content: ContentType::TypeExchange(content),
+            });
+        }
+        if let Ok(content) = EdgeNackType::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContentType::EdgeNack(content),
             });
         }
 

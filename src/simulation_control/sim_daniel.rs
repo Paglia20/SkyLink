@@ -525,6 +525,7 @@ impl MyApp {
         });
     }
 
+
     pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
             if node.selected {
