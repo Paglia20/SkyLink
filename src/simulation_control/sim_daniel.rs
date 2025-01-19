@@ -1,23 +1,22 @@
-use std::any::Any;
+use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
+use crate::simulation_control::sim_control::Cause::Error;
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, FloodState, RemoveSender, SetPDR, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
-use std::ops::Deref;
-use egui::ahash::HashSet;
-use wg_2024::controller::DroneEvent;
+use std::collections::HashSet;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, FloodResponse, NackType, NodeType, Packet, PacketType};
+use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
+use wg_2024::packet::{NodeType};
 use crate::clients_gio::client_command::ClientEvent;
-use crate::event_wrapper::Event;
-use crate::server::server_command::ServerEvent;
-use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::DroneWindowScene::{AddSender, Crash, RemoveSender, SetPDR};
+use crate::message::{ContentType, Message};
+use crate::message::ChatRequest::{ClientList, Register, SendMessage};
+use crate::simulation_control::sim_daniel::MessageScene::Id;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -25,7 +24,7 @@ pub struct MyNodes {
     connections: HashSet<NodeId>,
     selected: bool,
     node_type: NodeType,
-    drone_window_scenes: DroneWindowScene,
+    node_window_scenes: NodeWindowScene,
 }
 
 impl Eq for MyNodes {}
@@ -48,20 +47,56 @@ impl Ord for MyNodes {
     }
 }
 
+
+pub struct MyMsg{
+    dst_id: NodeId,
+    session: u64,
+    content:ContentType,
+    msg_scene: MessageScene,
+    input_text:String,
+}
+
+impl MyMsg{
+    pub fn new() -> Self{
+        Self{
+            dst_id: 0,
+            session: fastrand::u64(..300),
+            content: Default::default(),
+            msg_scene: Id,
+            input_text: "Type here".to_string(),
+        }
+    }
+}
+
 pub enum Scene {
-    Start,
+    InitialScene,
     ManageAdd,
     ManageCrash,
     ManageDrop,
 }
 
+pub enum MessageScene{
+    Id,
+    Content,
+    AddInput,
+    Send,
+    Error,
+}
+
 #[derive(Clone, Debug)]
-pub enum DroneWindowScene {
+pub enum NodeWindowScene {
+    //common between types
     Start,
     AddSender,
     RemoveSender,
+
+    //drone scenes
     Crash,
-    SetPDR
+    SetPDR,
+
+    //client/server scenes
+    FloodState,
+    CreateMessage
 }
 pub struct MyApp {
     sim_contr: SimulationControl,
@@ -70,6 +105,8 @@ pub struct MyApp {
     checked: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
+
+    msg: MyMsg,
 }
 
 impl MyApp {
@@ -87,7 +124,7 @@ impl MyApp {
                 connections: neighbors.1,
                 selected: false,
                 node_type: neighbors.0,
-                drone_window_scenes: DroneWindowScene::Start,
+                node_window_scenes: Start,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -95,11 +132,12 @@ impl MyApp {
 
         let mut app = Self {
             nodes: vec,
-            side_panel_scenes: Start,
+            side_panel_scenes: InitialScene,
             checked,
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
+            msg: MyMsg::new(),
         };
         //app.generate_random_connections();
         app
@@ -115,8 +153,8 @@ impl MyApp {
         let id_to_window = self
             .nodes
             .iter()
-            .map(|x| (x.id, x.drone_window_scenes.clone()))
-            .collect::<Vec<(NodeId, DroneWindowScene)>>();
+            .map(|x| (x.id, x.node_window_scenes.clone()))
+            .collect::<Vec<(NodeId, NodeWindowScene)>>();
 
         //aggiornamento
         self.nodes.clear();
@@ -127,7 +165,7 @@ impl MyApp {
                 connections: neighbors.1,
                 selected: false,
                 node_type: neighbors.0,
-                drone_window_scenes: DroneWindowScene::Start,
+                node_window_scenes: Start,
             })
         }
 
@@ -136,7 +174,7 @@ impl MyApp {
         for node in self.nodes.iter_mut() {
             for (id, dws) in id_to_window.iter() {
                 if *id == node.id{
-                    node.drone_window_scenes = dws.clone();
+                    node.node_window_scenes = dws.clone();
                 }
 
             }
@@ -159,20 +197,24 @@ impl MyApp {
         }
     }
 
+    fn get_checked (&self) -> Vec<NodeId>{
+        self
+            .checked
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &is_checked)| {
+                if is_checked {
+                    Some(self.nodes[i].id)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<NodeId>>()
+    }
+
     pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
     }
-
-    pub fn create_drone_id_vector(&self) -> Vec<NodeId> {
-        let mut ids: Vec<NodeId> = Vec::new();
-        for drone in self.nodes.iter() {
-            if drone.node_type == Drone{
-                ids.push(drone.id);
-            }
-        }
-        ids
-    }
-
     pub fn manage_event(&mut self, event: Event) {
         match event{
             Event::Drone(drone_event) => {
@@ -186,13 +228,13 @@ impl MyApp {
                     }
                     ControllerShortcut(packet) => {
                         match packet.clone().pack_type {
-                            PacketType::MsgFragment(_) => {
+                            MsgFragment(_) => {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
                                     "Shortcut used for unusual packet type: msgfragment".to_string()))
                             }
-                            PacketType::FloodRequest(_) => {
+                            FloodRequest(_) => {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
@@ -216,7 +258,7 @@ impl MyApp {
                                 };
 
                                 let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
-                                if (*n_type == NodeType::Drone){
+                                if *n_type == Drone {
                                     self.sim_contr.log.push_back(LogEntry::new(
                                         Error,
                                         next_id,
@@ -246,21 +288,18 @@ impl MyApp {
             }
             Event::Client(client_event) => {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
+
+                match client_event {
+                    ClientEvent::SendContacts(src, dst) => {
+                        self.sim_contr.add_contacts(src, dst);
+                    }
+                    _ => {/* degli altri niente */}
+                }
             }
         }
     }
 
-}
-
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
-        let enable_constant_read = true;
-        if enable_constant_read {
-            self.update_topology();
-        }
-
-        // BottomPanel ridimensionabile
+    pub fn render_bottom_panel(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
             .height_range(100.0..=400.0)
             .resizable(true)
@@ -280,15 +319,16 @@ impl eframe::App for MyApp {
                         });
                 });
             });
+    }
 
-        // SidePanel sulla sinistra
+    pub fn render_side_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("side_panel")
             .resizable(true)
             .min_width(300.0)
             .show(ctx, |ui| {
                 ui.heading("Actions");
                 match self.side_panel_scenes {
-                    Start => {
+                    InitialScene => {
                         if ui.button("test log!").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(
                                 Cause::Sent,
@@ -319,7 +359,7 @@ impl eframe::App for MyApp {
                         if ui.button("Test flooding with 0").clicked() {
                             self.sim_contr.flood_with(0);
                         }
-                        
+
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
                             let cs_shortcut = ControllerShortcut(msg);
@@ -340,7 +380,7 @@ impl eframe::App for MyApp {
                     }
                     ManageAdd => {
                         if ui.button("back").clicked() {
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialScene;
                             self.reset_check();
                             self.pdr = 0.0;
                         }
@@ -348,7 +388,7 @@ impl eframe::App for MyApp {
                         ui.label("select drones to connect the new drone with:");
                         self.nodes.sort();
                         for (i, item) in self.nodes.iter().enumerate() {
-                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            ui.checkbox(&mut self.checked[i], item.id.to_string());
                         }
                         ui.separator();
                         ui.label("input pdr:");
@@ -356,22 +396,11 @@ impl eframe::App for MyApp {
                         ui.separator();
 
                         if ui.button("Confirm").clicked() {
-                            let checked_indices: Vec<NodeId> = self
-                                .checked
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, &is_checked)| {
-                                    if is_checked {
-                                        Some(self.nodes[i].id)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
+                            let checked_indices: Vec<NodeId> = self.get_checked();
                             let _id = self.sim_contr.spawn_drone(self.pdr, checked_indices.clone()).1;
                             self.reset_check();
                             self.pdr = 0.0;
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialScene;
                         }
                     }
                     ManageCrash => {
@@ -385,25 +414,13 @@ impl eframe::App for MyApp {
                         }
 
                         if ui.button("Confirm").clicked() {
-                            let checked_indices: Vec<NodeId> = self
-                                .checked
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, &is_checked)| {
-                                    if is_checked {
-                                        Some(self.nodes[i].id)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                            for node_id in checked_indices {
+                            for node_id in self.get_checked() {
                                 self.sim_contr.crash_drone(node_id);
                                 self.nodes.retain(|item| item.id != node_id);
 
                             }
                             self.reset_check();
-                            self.side_panel_scenes = Start;
+                            self.side_panel_scenes = InitialScene;
                         }
                     }
                     ManageDrop => {
@@ -420,195 +437,24 @@ impl eframe::App for MyApp {
                             // Options for handling the packet
                             if ui.button("Resend it").clicked() {
                                 self.sim_contr.resend_packet(dropped_packet);
-                                self.side_panel_scenes = Start;
+                                self.side_panel_scenes = InitialScene;
                             }
                             if ui.button("Lose it").clicked() {
-                                self.side_panel_scenes = Start; // Navigate back to the start
+                                self.side_panel_scenes = InitialScene; // Navigate back to the start
                             }
                         } else {
                             // Inform the user if recovery is not possible
                             ui.label("Impossible to recover the packet.");
                             if ui.button("Close").clicked() {
-                                self.side_panel_scenes = Start; // Close the alert
+                                self.side_panel_scenes = InitialScene; // Close the alert
                             }
                         }
                     }
                 }
             });
+    }
 
-        for node in self.nodes.iter_mut() {
-            if node.selected {
-                match node.node_type {
-                    Drone => {egui::Window::new(format!("Drone {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
-                        .collapsible(true)
-                        .min_height(500.0)
-                        .min_width(500.0)
-                        .show(ctx, |ui| {
-                            match node.drone_window_scenes {
-                                DroneWindowScene::Start => {
-                                    let mut connections= String::new();
-                                    for connection in node.connections.clone() {
-                                        connections.push_str(connection.to_string().as_str());
-                                        connections.push_str(", ");
-                                    }
-                                    ui.label(format!("Connected to :{}", connections));
-                                    // Qui puoi aggiungere ulteriori informazioni o controlli
-                                    self.sender_id = 0;
-                                    ui.label("Log:");
-                                    ui.vertical(|ui| {
-                                        for s in &self.sim_contr.log {
-                                            if s.get_id() == node.id {
-                                                ui.label(format!("{}", s));
-                                            }
-                                        }
-                                    });
-                                    //insert log of the drone (idk how)
-                                    if ui.button("Add Channel").clicked(){
-                                        node.drone_window_scenes = AddSender;
-                                    }
-
-                                    if ui.button("Remove Channel").clicked(){
-                                        node.drone_window_scenes = RemoveSender
-                                    }
-
-                                    if ui.button("Crash This Drone").clicked(){
-                                        node.drone_window_scenes = Crash
-                                    }
-
-                                    if ui.button("set PDR").clicked(){
-                                        node.drone_window_scenes = SetPDR
-                                    }
-
-                                    if ui.button("Close").clicked() {
-                                        node.selected = false; // Chiudi il popup
-                                    }
-                                }
-                                AddSender => {
-                                    ui.horizontal(|ui| {
-                                        ui.label("Add Channel With Drone:");
-                                        ui.add(egui::DragValue::new(&mut self.sender_id));
-
-                                    }
-                                    );
-
-                                    if ui.button("Confirm").clicked() {
-
-                                        self.sim_contr.add_sender(node.id, self.sender_id);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                    if ui.button("back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                }
-                                RemoveSender => {
-                                    ui.horizontal(|ui| {
-                                        ui.label("Remove Channel With Drone:");
-                                        ui.add(egui::DragValue::new(&mut self.sender_id))
-                                    });
-
-                                    if ui.button("Confirm").clicked() {
-
-                                        self.sim_contr.remove_senders(node.id, self.sender_id);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                    if ui.button("back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                }
-                                Crash => {
-                                    ui.label("Are you sure you want to crash this drone?");
-                                    if ui.button("yes, crash").clicked(){
-                                        self.sim_contr.crash_drone(node.id);
-                                        node.selected = false;
-                                    }
-                                    if ui.button("no, go back").clicked(){
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                }
-                                SetPDR => {
-                                    ui.horizontal(|ui| {
-                                        ui.label("insert PDR:");
-                                        ui.add(egui::DragValue::new(&mut self.pdr).speed(0.1));
-                                    });
-
-                                    if ui.button("Set").clicked() {
-
-                                        self.sim_contr.set_pdr(node.id, self.pdr);
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                    if ui.button("Back").clicked(){
-                                        self.pdr = 0.0;
-                                        node.drone_window_scenes = DroneWindowScene::Start;
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    NodeType::Client => { {egui::Window::new(format!(" Client {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
-                        .collapsible(true)
-                        .min_height(500.0)
-                        .min_width(500.0)
-                        .show(ctx, |ui| {
-
-                            let mut connections= String::new();
-                            for connection in node.connections.clone() {
-                                connections.push_str(connection.to_string().as_str());
-                                connections.push_str(", ");
-
-                            }
-                            ui.label(format!("Connected to :{}", connections));
-
-                            // Qui puoi aggiungere ulteriori informazioni o controlli
-                            ui.label("Log:");
-                            ui.vertical(|ui| {
-                                for s in &self.sim_contr.log {
-                                    if s.get_id() == node.id {
-                                        ui.label(format!("{}", s));
-                                    }
-                                }
-                            });
-
-                            if ui.button("Chiudi").clicked() {
-                                node.selected = false; // Chiudi il popup
-                            }
-                        });
-                    } }
-                    NodeType::Server => { {egui::Window::new(format!("Server {}", node.id))
-                            .resizable(true) // Permetti il ridimensionamento
-                            .collapsible(true)
-                            .min_height(500.0)
-                            .min_width(500.0)
-                            .show(ctx, |ui| {
-                                let mut connections= String::new();
-                                for connection in node.connections.clone() {
-                                    connections.push_str(connection.to_string().as_str());
-                                    connections.push_str(", ");
-
-                                }
-                                ui.label(format!("Connected to :{}", connections));
-
-                                // Qui puoi aggiungere ulteriori informazioni o controlli
-                                ui.label("Log:");
-                                ui.vertical(|ui| {
-                                    for s in &self.sim_contr.log {
-                                        if s.get_id() == node.id {
-                                            ui.label(format!("{}", s));
-                                        }
-                                    }
-                                });
-                                //insert log of the drone (idk how)
-                                if ui.button("Chiudi").clicked() {
-                                    node.selected = false; // Chiudi il popup
-                                }
-                            });
-                        } }
-                }
-            }
-        }
-
-        // Pannello centrale
+    pub fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
                 ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
@@ -676,7 +522,396 @@ impl eframe::App for MyApp {
                 }
             });
         });
+    }
 
+    pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
+        for node in self.nodes.iter_mut() {
+            if node.selected {
+                match node.node_type {
+                    Drone => {egui::Window::new(format!("Drone {}", node.id))
+                        .resizable(true) // Permetti il ridimensionamento
+                        .collapsible(true)
+                        .min_width(500.0)
+                        .max_height(400.0)
+                        .show(ctx, |ui| {
+                            match node.node_window_scenes {
+                                Start => {
+                                    let mut connections= String::new();
+                                    for connection in node.connections.clone() {
+                                        connections.push_str(connection.to_string().as_str());
+                                        connections.push_str(", ");
+                                    }
+                                    ui.label(format!("Connected to :{}", connections));
+
+
+                                    if ui.button("Add Channel").clicked(){
+                                        node.node_window_scenes = AddSender;
+                                    }
+
+                                    if ui.button("Remove Channel").clicked(){
+                                        node.node_window_scenes = RemoveSender
+                                    }
+
+                                    if ui.button("Crash This Drone").clicked(){
+                                        node.node_window_scenes = Crash
+                                    }
+
+                                    if ui.button("set PDR").clicked(){
+                                        node.node_window_scenes = SetPDR
+                                    }
+
+                                    if ui.button("Close").clicked() {
+                                        node.selected = false; // Chiudi il popup
+                                    }
+
+
+                                    // Qui puoi aggiungere ulteriori informazioni o controlli
+                                    self.sender_id = 0;
+                                    ui.label("Log:");
+                                    ui.vertical(|ui| {
+                                        egui::ScrollArea::vertical()
+                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                            .show (ui, |ui|
+                                                for s in &self.sim_contr.log {
+                                                    if s.get_id() == node.id {
+                                                        ui.label(format!("{}", s));
+                                                    }
+                                                }
+                                            )
+                                    });
+                                }
+                                AddSender => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("Add Channel With Drone:");
+                                        ui.add(egui::DragValue::new(&mut self.sender_id));
+
+                                    }
+                                    );
+
+                                    if ui.button("Confirm").clicked() {
+
+                                        self.sim_contr.add_sender(node.id, self.sender_id);
+                                        node.node_window_scenes = Start;
+                                    }
+                                    if ui.button("back").clicked(){
+                                        node.node_window_scenes = Start;
+                                    }
+                                }
+                                RemoveSender => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("Remove Channel With Drone:");
+                                        ui.add(egui::DragValue::new(&mut self.sender_id))
+                                    });
+
+                                    if ui.button("Confirm").clicked() {
+
+                                        self.sim_contr.remove_senders(node.id, self.sender_id);
+                                        node.node_window_scenes = Start;
+                                    }
+                                    if ui.button("back").clicked(){
+                                        node.node_window_scenes = Start;
+                                    }
+                                }
+                                Crash => {
+                                    ui.label("Are you sure you want to crash this drone?");
+                                    if ui.button("yes, crash").clicked(){
+                                        self.sim_contr.crash_drone(node.id);
+                                        node.selected = false;
+                                    }
+                                    if ui.button("no, go back").clicked(){
+                                        node.node_window_scenes = Start;
+                                    }
+                                }
+                                SetPDR => {
+                                    ui.horizontal(|ui| {
+                                        ui.label("insert PDR:");
+                                        ui.add(egui::DragValue::new(&mut self.pdr).speed(0.1));
+                                    });
+
+                                    if ui.button("Set").clicked() {
+
+                                        self.sim_contr.set_pdr(node.id, self.pdr);
+                                        node.node_window_scenes = Start;
+                                    }
+                                    if ui.button("Back").clicked(){
+                                        self.pdr = 0.0;
+                                        node.node_window_scenes = Start;
+                                    }
+                                }
+
+                                _ => {
+                                    //since the others are for client and servers only
+                                    unreachable!()}
+                            }
+
+                        });
+                    }
+                    Client => {
+                        egui::Window::new(format!("Client {}", node.id))
+                            .resizable(true) // Allow resizing
+                            .collapsible(true)
+                            .min_width(500.0)
+                            .default_size((500.0, 400.0)) // Set default size
+                            .default_pos((100.0, 100.0)) // Set default position
+                            .show(ctx, |ui| {
+                                ui.push_id(format!("client_window_{}", node.id), |ui| {
+                                    egui::Frame::default()
+                                        .fill(egui::Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
+                                        .show(ui, |ui| {
+                                            // Split panels with proper layout
+                                            egui::SidePanel::left(format!("side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("Log:");
+
+                                                    egui::ScrollArea::vertical()
+                                                        .auto_shrink([false; 2]) // Prevent shrinking
+                                                        .show(ui, |ui| {
+                                                            for s in &self.sim_contr.log {
+                                                                if s.get_id() == node.id {
+                                                                    ui.label(format!("{}", s));
+                                                                }
+                                                            }
+                                                        });
+                                                });
+
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Flood").clicked(){
+                                                        self.sim_contr.flood_with(node.id);
+                                                        node.node_window_scenes = FloodState;
+                                                    }
+                                                    if ui.button("Test Message").clicked(){
+                                                        node.node_window_scenes = CreateMessage;
+                                                        self.msg = MyMsg::new();
+                                                    }
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
+                                            egui::CentralPanel::default()
+                                                .show_inside(ui, |ui| {
+                                                    match node.node_window_scenes{
+                                                        Start => {
+                                                            ui.label("This is the central panel content.");
+                                                            ui.label("flood results and chat shits will be here.");
+                                                        }
+                                                        AddSender => {}
+                                                        RemoveSender => {}
+                                                        FloodState => {
+                                                            //questo fammici pensare, se hai idee scrivi pure.
+                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+
+                                                            let node_contacts = match self.sim_contr.contacts.get(&node.id){
+                                                                Some(contacts) => contacts.clone(),
+                                                                None => HashSet::new()
+                                                            };
+
+                                                            let mut contacts = String::new();
+                                                            for node in node_contacts {
+                                                                contacts.push_str("\n ");
+                                                                contacts.push_str(node.to_string().as_str());
+                                                            }
+
+                                                            ui.label(format!("MyContacts are: {}", contacts));
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        }
+
+                                                        CreateMessage =>{
+                                                            match self.msg.msg_scene {
+                                                                Id => {
+                                                                    let ids = match self.sim_contr.contacts.get(&node.id) {
+                                                                        Some(contacts) => { contacts.into_iter().collect()},
+                                                                        None => {
+                                                                            self.msg.msg_scene = MessageScene::Error;
+                                                                            Vec::new()
+                                                                        }
+                                                                    };
+                                                                    ui.label("select drones to contact:");
+
+
+                                                                    for id in ids{
+                                                                        if ui.button(id.to_string()).clicked() {
+                                                                            self.msg.dst_id = *id;
+                                                                            self.msg.msg_scene = MessageScene::Content;
+                                                                            println!("{}", self.msg.dst_id);
+                                                                        }
+                                                                    }
+
+                                                                },
+                                                                MessageScene::Content => {
+                                                                    ui.label("select message type:");
+
+                                                                    if ui.button("ClientList").clicked() {
+                                                                        self.msg.content = ContentType::ChatRequest(ClientList);
+                                                                        self.msg.msg_scene = MessageScene::Send;
+                                                                    }
+                                                                    if ui.button("Register").clicked() {
+                                                                        self.msg.content = ContentType::ChatRequest(Register(node.id));
+                                                                        self.msg.msg_scene = MessageScene::Send;
+
+                                                                    }
+                                                                    if ui.button("SendMessage").clicked() {
+                                                                        self.msg.msg_scene = MessageScene::AddInput;
+                                                                    }
+                                                                }
+                                                                MessageScene::AddInput => {
+                                                                    ui.label("Enter a message:");
+                                                                    let response = ui.add(egui::TextEdit::singleline(&mut self.msg.input_text));
+                                                                    if response.lost_focus() {
+                                                                        // Handle Enter key press
+                                                                        self.msg.content = ContentType::ChatRequest(SendMessage {
+                                                                            from: node.id,
+                                                                            to: self.msg.dst_id,
+                                                                            message: self.msg.input_text.clone(),
+                                                                        });
+                                                                        self.msg.msg_scene = MessageScene::Send;
+                                                                    }
+                                                                }
+                                                                MessageScene::Send =>{
+                                                                    if ui.button("Send").clicked() {
+                                                                        let msg = Message::new(node.id, self.msg.session, self.msg.content.clone());
+                                                                        self.sim_contr.force_send_message(node.id, Client, msg);
+                                                                        node.node_window_scenes = Start; // Close the window
+                                                                    }
+                                                                }
+                                                                MessageScene::Error => {
+                                                                    ui.label("You dont have contacts: did you Flood?");
+                                                                }
+                                                            }
+                                                            if ui.button("Close").clicked() {
+                                                                self.msg = MyMsg::new();
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        }
+                                                        _ => {
+                                                            unreachable!()
+                                                        }
+                                                    }
+                                                });
+                                        });
+                                });
+                            });
+                    }
+                    Server => {
+                        egui::Window::new(format!("Server {}", node.id))
+                            .resizable(true) // Allow resizing
+                            .collapsible(true)
+                            .min_width(500.0)
+                            .default_size((500.0, 400.0)) // Set default size
+                            .default_pos((100.0, 100.0)) // Set default position
+                            .show(ctx, |ui| {
+                                ui.push_id(format!("server_window_{}", node.id), |ui| {
+                                    egui::Frame::default()
+                                        .fill(egui::Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
+                                        .show(ui, |ui| {
+                                            // Split panels with proper layout
+                                            egui::SidePanel::left(format!("side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("Log:");
+
+                                                    egui::ScrollArea::vertical()
+                                                        .auto_shrink([false; 2]) // Prevent shrinking
+                                                        .show(ui, |ui| {
+                                                            for s in &self.sim_contr.log {
+                                                                if s.get_id() == node.id {
+                                                                    ui.label(format!("{}", s));
+                                                                }
+                                                            }
+                                                        });
+                                                });
+
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
+                                            egui::CentralPanel::default()
+                                                .show_inside(ui, |ui| {
+                                                    ui.label("This is the central panel content.");
+                                                    ui.label("flood results and chat shits will be here.");
+
+
+                                                    match node.node_window_scenes{
+                                                        Start => {}
+                                                        AddSender => {}
+                                                        RemoveSender => {}
+                                                        FloodState => {
+                                                            //questo fammici pensare, se hai idee scrivi pure.
+                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        }
+                                                        CreateMessage => {}
+                                                        _ => {}
+                                                    }
+                                                });
+                                        });
+                                });
+                            });
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn enable_constant_read(&mut self) {
+        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
+        let enable_constant_read = true;
+        if enable_constant_read {
+            self.update_topology();
+        }
+    }
+
+    pub fn update_event_receivers(&mut self) {
         match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
                 //manage event
@@ -703,6 +938,16 @@ impl eframe::App for MyApp {
         }
     }
 }
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.enable_constant_read();
+        self.render_bottom_panel(ctx);
+        self.render_side_panel(ctx);
+        self.render_nodes_windows(ctx);
+        self.render_central_panel(ctx);
+        self.update_event_receivers();
+    }
+}
 
 pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> {
     let mut options = eframe::NativeOptions::default();
@@ -718,26 +963,17 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
 
 /*
 feel free to update this list.
-STARTING FROM THIS BASE, WHAT DO I HAVE TO DO:
 
-STRICTLY FOR SIM APP PART:
-- TEST WITH TESTBENCH LAST FUNCTION ALL THE POSSIBLE DRONE EVENTS, THAT COME FROM NACK, ACK, PACKET DROPPED...
-0) add field in MyNodes that tell the Type of the Node (NodeType).
-2) add in each pop up what type the node is (client/server)
+- se vuoi anche fare un "render drone window" "render client"..., insomma spezzare il match alla riga 493 in tre funzioni (che prenderanno sia ctx che anche il nodo stesso)
 
-the field node type is important also because the pop up has to have different buttons depending on the type:
+- ho cambiato le dronewindowscene in nodewindowscene, quello che dovresti fare è aggiungere come hai fatto con i droni le "common" scene (tipo add sender, remove sender..).
+il match io lo metterei nel central panel che se vedi ho lasciato da fare. ma poi fai tu
 
-//please help me here:
-drone: crash? /...
-client: send flood req / send message to (open a manage) / ..
-server:...
+se hai altre idee di scene dimmelo
 
---test everything, then continue with other things
+- cambiare i cerchi in droni
 
-6) make functions add_drone and remove drone that not only eliminate graphically the drones and connections, but also in the network saved in sim controll
-7) add bottons in the pop ups for clients/servers that send flood req or certain messages
-8) at the end, change the circles in drones/clients/server small entities, so you have to change the creation accordingly to nodetype (matches again)
+(..)
 
-(.. more to come)
 
  */
