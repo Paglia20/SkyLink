@@ -14,8 +14,9 @@ use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::message::Message;
-use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived};
 use crate::simulation_control::sim_daniel::MessageScene;
+use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived, Sent};
+
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -33,7 +34,7 @@ pub struct SimulationControl {
 
     pub dropped_packets: Vec<(NodeId, Packet)>,
     
-    pub contacts: HashMap<NodeId, HashSet<NodeId>>
+    pub contacts: HashMap<NodeId, HashSet<NodeId>>  //if you want them sort change this in a BtreeSet
 }
 
 impl SimulationControl {
@@ -112,6 +113,15 @@ impl SimulationControl {
             }
             ClientEvent::SendContacts(src, _dst) => {
                 self.c_process_send_contacts(src, _dst)
+            }
+            ClientEvent::WrongDestinationType(src, node) =>{
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} think {} is at wrong stare",
+                                     node)
+                };
+                self.log.push_back(new_log);
             }
         }
     }

@@ -1,6 +1,6 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{Message, TextRequest, TextResponse};
+use crate::message::{ContentType, Message, TextRequest, TextResponse};
 use crate::network_edge::NetworkEdge;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -8,18 +8,27 @@ use std::sync::Arc;
 use std::thread;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, Packet};
-use crate::routing::RouteList;
+use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
+use crate::DEBUG_MODE;
+use crate::routing::{Nodes, RouteList};
 
 pub struct WebBrowser{
-    client_type: ClientType,
     node_id: NodeId,
     command_recv: Receiver<ClientCommand>,
     event_send: Sender<ClientEvent>,
     packet_recv: Receiver<Packet>,
     packet_send: HashMap<NodeId, Sender<Packet>>,
     flood_ids: HashSet<(u64, NodeId)>, // Just like drones
+    used_session_id: HashSet<u64>,     // Do we need this?
 
-    paths: HashMap<NodeId, Vec<NodeId>>, // NodeId will only be content Servers (text servers).
+
+    paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
+    nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
+    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
+    fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
+    arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
+    unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
+    // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
 impl NetworkEdge for WebBrowser {
@@ -64,12 +73,8 @@ impl NetworkEdge for WebBrowser {
         todo!()
     }
 
-    fn check_type(&mut self, id: NodeId) {
-        todo!()
-    }
-
-    fn is_state_ok(&mut self, node_id: NodeId) -> bool {
-        todo!()
+    fn get_src_id(&self) -> NodeId {
+        self.node_id
     }
 }
 // impl Client for WebBrowser {

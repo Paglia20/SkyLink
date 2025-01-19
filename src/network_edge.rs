@@ -1,4 +1,4 @@
-use crate::message::{ChatRequest, ChatResponse, ContentType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
+use crate::message::{ChatRequest, ChatResponse, ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
 use std::collections::HashMap;
 use std::sync::Arc;
 use crossbeam_channel::Sender;
@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 use crate::clients_gio::client_type::ClientType;
+use crate::message::ContentType::EdgeNack;
 use crate::routing::RouteList;
 use crate::server::server_type::ServerType;
 
@@ -117,13 +118,19 @@ pub trait NetworkEdge {
                 content: ContentType::TypeExchange(content),
             });
         }
+        if let Ok(content) = EdgeNackType::from_string(string_to_cont.clone()) {
+            return Ok(Message {
+                source_id,
+                session_id,
+                content: ContentType::EdgeNack(content),
+            });
+        }
 
         // no deserialization succeeds
        let err=  format!("Failed to determine content type for {}", string_to_cont);
 
         Err(err)
     }
-
 
     fn handle_packet(&mut self, packet: Packet);
 
@@ -171,10 +178,25 @@ pub trait NetworkEdge {
 
     fn get_session_id(&mut self) -> u64;
 
+    fn get_src_id(&self) -> NodeId;
+}
+
+pub trait NetworkEdgeErrors: NetworkEdge {
     fn check_type(&mut self, id: NodeId);
 
-    fn is_state_ok(&mut self, node_id: NodeId) -> bool;
+    fn is_state_ok(&self, node_id: NodeId) -> bool;
 
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message); //for edges nack
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType);  //for drone nack
+
+    fn create_nack(&mut self, nack_type: EdgeNackType) -> Message {
+        Message{
+            source_id: self.get_src_id(),
+            session_id: self.get_session_id(),
+            content: ContentType::EdgeNack(nack_type),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

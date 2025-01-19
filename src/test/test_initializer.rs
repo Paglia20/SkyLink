@@ -23,28 +23,28 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
     let mut packet_senders = HashMap::new();
     let mut packet_receivers = HashMap::new();
     //I create receivers and senders for every drone.
-    for drone in config.drone.iter() {
+    for drone_test in config.drone.iter() {
         let (send, recv) = unbounded();
-        packet_senders.insert(drone.id, send);
-        packet_receivers.insert(drone.id, recv);
+        packet_senders.insert(drone_test.id, send);
+        packet_receivers.insert(drone_test.id, recv);
     }
-    for client in config.client.iter() {
+    for client_test in config.client.iter() {
         let (send, recv) = unbounded();
-        packet_senders.insert(client.id, send);
-        packet_receivers.insert(client.id, recv);
+        packet_senders.insert(client_test.id, send);
+        packet_receivers.insert(client_test.id, recv);
     }
 
-    for drone in config.drone.into_iter() {
+    for drone_test in config.drone.into_iter() {
         //Adding the sender to this drone to the senders of the Sim Contr.
         let (contr_send, contr_recv) = unbounded();
-        command_send.insert(drone.id, contr_send);
+        command_send.insert(drone_test.id, contr_send);
 
         //Give the drone a copy of the sender of events to the Sim Contr.
         let node_event_send = event_send.clone();
 
         //Take the channels necessary to this drone.
-        let drone_recv = packet_receivers.remove(&drone.id).unwrap();
-        let drone_send = drone
+        let drone_recv = packet_receivers.remove(&drone_test.id).unwrap();
+        let drone_send = drone_test
             .connected_node_ids
             .into_iter()
             .map(|id| (id, packet_senders[&id].clone()))
@@ -55,12 +55,12 @@ pub fn test_initialize(file: &str) -> (MySimContr, Vec<MyClient>, Vec<JoinHandle
         //create the thread of the drone, and add it to a Vec to be pushed afterward
         handles.push(thread::spawn(move || {
             let mut drone = SkyLinkDrone::new(
-                drone.id,
+                drone_test.id,
                 node_event_send,
                 contr_recv,
                 drone_recv,
                 drone_send,
-                drone.pdr,
+                drone_test.pdr,
             );
             drone.run();
         }));
