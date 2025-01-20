@@ -1,6 +1,6 @@
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
@@ -13,6 +13,7 @@ use wg_2024::packet::{Fragment, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::DEBUG_MODE;
 use crate::message::Message;
 use crate::simulation_control::sim_daniel::MessageScene;
 use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived, Sent};
@@ -34,7 +35,10 @@ pub struct SimulationControl {
 
     pub dropped_packets: Vec<(NodeId, Packet)>,
     
-    pub contacts: HashMap<NodeId, HashSet<NodeId>>  //if you want them sort change this in a BtreeSet
+    pub node_destinations: HashMap<NodeId, BTreeSet<NodeId>>, //if you want them sort change this set in a BtreeSet
+    pub node_chats: HashMap<NodeId, HashMap<NodeId, Vec<(NodeId, String)>>>, //src - dst - chat
+    pub node_contents: HashMap<NodeId, HashMap<u8, Vec<u64>>>,//src - id - media
+
 }
 
 impl SimulationControl {
@@ -61,7 +65,9 @@ impl SimulationControl {
             network_graph,
             log: VecDeque::new(),
             dropped_packets: Vec::new(),
-            contacts: Default::default(),
+            node_destinations: Default::default(),
+            node_chats: Default::default(),
+            node_contents: Default::default(),
         }
     }
 
@@ -111,18 +117,35 @@ impl SimulationControl {
             ClientEvent::DroneInsideDestination(node_id) => {
                 self.c_process_drone_inside_destination(node_id);
             }
-            ClientEvent::SendContacts(src, _dst) => {
-                self.c_process_send_contacts(src, _dst)
+            ClientEvent::SendDestination(src, _dst) => {
+                self.c_process_send_dst(src, _dst)
             }
             ClientEvent::WrongDestinationType(src, node) =>{
                 let new_log = LogEntry{
                     cause: Sent,
                     node_id: src,
-                    message: format!("{src} think {} is at wrong stare",
+                    message: format!("{src} think {} is at wrong state",
                                      node)
                 };
                 self.log.push_back(new_log);
             }
+            ClientEvent::SendChats(src, _chats) =>{
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} updated chats ",)
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::SendContent(src, _contents) =>{
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} updated contents")
+                };
+                self.log.push_back(new_log);
+            }
+
         }
     }
     pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){
@@ -145,26 +168,35 @@ impl SimulationControl {
         }
     }
 
-    pub fn add_contacts (&mut self, src: NodeId, contact: NodeId){
-        match self.contacts.get_mut(&src){
+    pub fn add_dst(&mut self, src: NodeId, contact: NodeId){
+        match self.node_destinations.get_mut(&src){
             Some(contacts) => {
                 contacts.insert(contact);
             }
             None => {
-                let set = HashSet::from([contact]);
-                self.contacts.insert(src, set);
+                let set = BTreeSet::from([contact]);
+                self.node_destinations.insert(src, set);
 
             }
         }
+    }
+    pub fn add_chat(&mut self, src: NodeId, chat: HashMap<NodeId, Vec<(NodeId, String)>>){
+        self.node_chats.insert(src, chat);
+    }
+    pub fn add_media(&mut self, src: NodeId, cont: HashMap<u8, Vec<u64>>){
+       self.node_contents.insert(src, cont);
     }
 
     pub fn force_send_message(&mut self, dst: NodeId, dst_type: NodeType, msg: Message){
         match dst_type{
             Client => {
                 self.client_command_senders.get(&dst).unwrap().send(ClientCommand::SendMessage(dst, msg.clone())).unwrap();
-                println!("Sim Controller Forced {} to send message {:?}", dst, msg);
+                if DEBUG_MODE {
+                    println!("Sim Controller Forced {} to send message {:?}", dst, msg);
+                }
             },
-            _ => {todo!()}
+            _ => {todo!() //server?
+                 }
         }
     }
 
@@ -340,6 +372,49 @@ impl SimulationControl {
             }
         }
     }
+
+    pub fn get_chat_of(&mut self, node_id: NodeId){
+        if !self.does_drone_exist(node_id) {
+            self.log.push_back(LogEntry::new(
+                Cause::Error,
+                node_id,
+                format!("drone {} does not exist in this network.", node_id),
+            ));
+            return;
+        }
+        match self.get_type(node_id) {
+            None => {self.log.push_back(LogEntry::new(
+                Cause::Error,
+                node_id,
+                format!("drone {node_id} is not in network",
+                )));
+                return;},
+
+            Some(n_type) => {
+                match n_type {
+                    Client => {
+                        if let Some(sender) = self.client_command_senders.get(&node_id) {
+                            if let Err(_e) = sender.send(ClientCommand::OpenChat) {
+                                println!("error getting chats");
+                            } else {
+                                println!("sent chat request");
+                            }
+
+                        }
+                        else {
+                            self.log.push_back(LogEntry::new(
+                                Cause::Managing,
+                                node_id,
+                                format!("error in chats"),
+                            ));
+                        }
+                    }
+                    _ => {},
+                }
+            }
+        }
+    }
+
 
     pub fn add_sender(&mut self, id: NodeId, id_to_add: NodeId) {
 
@@ -605,7 +680,7 @@ impl SimulationControl {
         };
         self.log.push_back(new_log);
     }
-    fn c_process_send_contacts(&mut self, src:NodeId, dst:NodeId){
+    fn c_process_send_dst(&mut self, src:NodeId, dst:NodeId){
         let new_log = LogEntry{
             cause: Flood,
             node_id: src,

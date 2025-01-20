@@ -26,7 +26,6 @@ pub struct WebBrowser{
     nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
-    arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
     unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }

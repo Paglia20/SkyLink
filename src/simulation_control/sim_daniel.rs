@@ -1,13 +1,13 @@
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, ShowContacts, RemoveSender, SetPDR, Start};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, ShowDestinations, RemoveSender, SetPDR, Start, ShowChats};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
-use egui::{FontId, RichText, Vec2};
+use egui::{FontId, RichText, TextBuffer, Ui, Vec2};
 use std::cmp::{Ordering, PartialEq};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::process::Command;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
@@ -15,9 +15,10 @@ use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{NodeType};
 use crate::clients_gio::client_command::ClientEvent;
+use crate::DEBUG_MODE;
 use crate::message::{ContentType, Message};
 use crate::message::ChatRequest::{ClientList, Register, SendMessage};
-use crate::simulation_control::sim_daniel::MessageScene::Id;
+use crate::simulation_control::sim_daniel::MessageScene::{Id};
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -96,7 +97,8 @@ pub enum NodeWindowScene {
     SetPDR,
 
     //client/server scenes
-    ShowContacts,
+    ShowDestinations,
+    ShowChats,
     CreateMessage
 }
 pub struct MyApp {
@@ -108,6 +110,7 @@ pub struct MyApp {
     sender_id: NodeId,
 
     msg: MyMsg,
+    open_chat: Option<(NodeId, NodeId)>,
 }
 
 impl MyApp {
@@ -139,6 +142,7 @@ impl MyApp {
             pdr: 0.0,
             sender_id: 0,
             msg: MyMsg::new(),
+            open_chat: None,
         };
         //app.generate_random_connections();
         app
@@ -291,8 +295,14 @@ impl MyApp {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
 
                 match client_event {
-                    ClientEvent::SendContacts(src, dst) => {
-                        self.sim_contr.add_contacts(src, dst);
+                    ClientEvent::SendDestination(src, dst) => {
+                        self.sim_contr.add_dst(src, dst);
+                    }
+                    ClientEvent::SendChats(src, chat) => {
+                        self.sim_contr.add_chat(src ,chat);
+                    }
+                    ClientEvent::SendContent(src, contents) => {
+                        self.sim_contr.add_media(src, contents);
                     }
                     _ => {/* degli altri niente */}
                 }
@@ -525,6 +535,34 @@ impl MyApp {
         });
     }
 
+    pub fn add_sender(&mut self, src: NodeId, ui: &mut Ui){
+        ui.horizontal(|ui| {
+            ui.label("Add Channel:");
+            ui.add(egui::DragValue::new(&mut self.sender_id))
+        });
+
+        if ui.button("Confirm").clicked() {
+            self.sim_contr.add_sender(src, self.sender_id);
+        }
+        if ui.button("back").clicked(){
+            return;
+        }
+    }
+
+    pub fn remove_sender(&mut self, src: NodeId, ui: &mut Ui){
+        ui.horizontal(|ui| {
+            ui.label("Remove Channel:");
+            ui.add(egui::DragValue::new(&mut self.sender_id))
+        });
+
+        if ui.button("Confirm").clicked() {
+            self.sim_contr.remove_senders(src, self.sender_id);
+        }
+        if ui.button("back").clicked(){
+            return;
+        }
+    }
+
 
     pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
@@ -702,11 +740,15 @@ impl MyApp {
 
                                                     if ui.button("Flood").clicked(){
                                                         self.sim_contr.flood_with(node.id);
-                                                        node.node_window_scenes = ShowContacts;
+                                                        node.node_window_scenes = ShowDestinations;
                                                     }
 
-                                                    if ui.button("Show Contact").clicked(){
-                                                        node.node_window_scenes = ShowContacts;
+                                                    if ui.button("Show Destinations").clicked(){
+                                                        node.node_window_scenes = ShowDestinations;
+                                                    }
+                                                    if ui.button("Show Chats").clicked(){
+                                                        self.sim_contr.get_chat_of(node.id);
+                                                        node.node_window_scenes = ShowChats;
                                                     }
 
                                                     if ui.button("Test Message").clicked(){
@@ -726,34 +768,100 @@ impl MyApp {
                                                             ui.label("This is the central panel content.");
                                                             ui.label("flood results and chat shits will be here.");
                                                         }
-                                                        AddSender => {}
-                                                        RemoveSender => {},
-                                                        ShowContacts => {
-                                                            //questo fammici pensare, se hai idee scrivi pure.
-                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        AddSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Add Channel With Client:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
 
-                                                            let node_contacts = match self.sim_contr.contacts.get(&node.id){
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+
+                                                                self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        RemoveSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Remove Channel With Client:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id))
+                                                            });
+
+                                                            if ui.button("Confirm").clicked() {
+
+                                                                self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        ShowDestinations => {
+                                                            //questo fammici pensare, se hai idee scrivi pure.
+                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un packet
+
+                                                            let node_dst = match self.sim_contr.node_destinations.get(&node.id){
                                                                 Some(contacts) => contacts.clone(),
-                                                                None => HashSet::new()
+                                                                None => BTreeSet::new()
                                                             };
 
                                                             let mut contacts = String::new();
-                                                            for node in node_contacts {
+                                                            for node in node_dst{
                                                                 contacts.push_str("\n ");
                                                                 contacts.push_str(node.to_string().as_str());
                                                             }
 
-                                                            ui.label(format!("MyContacts are: {}", contacts));
+                                                            ui.label(format!("MyDestinations are: {}", contacts));
 
                                                             if ui.button("Chiudi").clicked() {
                                                                 node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        }
+                                                        ShowChats => {
+                                                            let node_contacts: BTreeSet<NodeId> = match self.sim_contr.node_chats.get(&node.id){
+                                                                Some(contacts) => contacts.keys().copied().collect(),
+                                                                None => BTreeSet::new()
+                                                            };
+                                                            ui.label(format!("MyContacts are:"));
+
+                                                            for id in node_contacts{
+                                                                if ui.button(id.to_string()).clicked() {
+                                                                    self.open_chat = Some((node.id, id));
+                                                                    if DEBUG_MODE {
+                                                                        println!("show chat with {}", self.msg.dst_id);
+                                                                    }
+                                                                }
+                                                            }
+                                                            if let Some((src, dst)) = self.open_chat{
+                                                                if src == node.id {
+                                                                    if let Some(hash) = self.sim_contr.node_chats.get(&src) {
+                                                                        if let Some(chat) = hash.get(&dst) {
+                                                                            let mut str = String::new();
+                                                                            for (from, mess) in chat {
+                                                                                str.push_str("\n ");
+                                                                                str.push_str(format!("{from} - {mess}").as_str());
+                                                                            }
+
+                                                                            ui.label(format!("MyChat with {dst} is: {}", str));
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.node_window_scenes = Start; // Close the window
+                                                                self.open_chat = None;
                                                             }
                                                         }
 
                                                         CreateMessage =>{
                                                             match self.msg.msg_scene {
                                                                 Id => {
-                                                                    let ids = match self.sim_contr.contacts.get(&node.id) {
+                                                                    let ids = match self.sim_contr.node_destinations.get(&node.id) {
                                                                         Some(contacts) => { contacts.into_iter().collect()},
                                                                         None => {
                                                                             self.msg.msg_scene = MessageScene::Error;
@@ -767,7 +875,9 @@ impl MyApp {
                                                                         if ui.button(id.to_string()).clicked() {
                                                                             self.msg.dst_id = *id;
                                                                             self.msg.msg_scene = MessageScene::Content;
-                                                                            println!("{}", self.msg.dst_id);
+                                                                            if DEBUG_MODE {
+                                                                                println!("{}", self.msg.dst_id);
+                                                                            }
                                                                         }
                                                                     }
 
@@ -891,9 +1001,37 @@ impl MyApp {
 
                                                     match node.node_window_scenes{
                                                         Start => {}
-                                                        AddSender => {}
-                                                        RemoveSender => {}
-                                                        ShowContacts => {
+                                                        AddSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Add Channel With Server:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+                                                                 }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+                                                                self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        RemoveSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Remove Channel With Server:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id))
+                                                            });
+
+                                                            if ui.button("Confirm").clicked() {
+
+                                                                self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        ShowDestinations => {
                                                             //questo fammici pensare, se hai idee scrivi pure.
                                                             //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
                                                         }

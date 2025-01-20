@@ -14,7 +14,10 @@ mod skylink_drone;
 mod test;
 mod event_wrapper;
 
-pub const DEBUG_MODE : bool = true;
+pub const DEBUG_MODE : bool = true; //some more printlns
+pub const ALL_FLOOD : bool = true; //when true, flooding will advise the SC that you have seen nodes regardless of their type, this is just for debug
+
+
 
 fn main() {
     // println!("Hello, world!");

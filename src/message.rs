@@ -111,7 +111,7 @@ pub enum MediaResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
     ClientList(Vec<NodeId>),
-    MessageFrom { from: NodeId, message: Vec<u8> },
+    MessageFrom { from: NodeId, message: String },
     MessageSent,
 }
 

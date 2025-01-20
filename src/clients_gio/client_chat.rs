@@ -1,23 +1,23 @@
+use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendDestination, WrongDestinationType};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::Client;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{ChatResponse, ContentType, EdgeNackType, Message, TypeExchange};
+use crate::clients_gio::client_type::ClientType::*;
+use crate::message::EdgeNackType::*;
+use crate::message::TextRequest::*;
+use crate::message::{ChatRequest, ChatResponse, ContentType, Message, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::routing::{Nodes, Route, RouteList};
-use crossbeam_channel::{select_biased, Receiver, Sender, TrySendError};
+use crate::server::server_type::ServerType;
+use crate::{ALL_FLOOD, DEBUG_MODE};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
-use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendContacts, WrongDestinationType};
-use crate::clients_gio::client_type::ClientType::*;
-use crate::DEBUG_MODE;
-use crate::message::EdgeNackType::*;
-use crate::message::TextRequest::*;
-use crate::server::server_type::ServerType;
+use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 
 pub struct ChatClient {
     node_id: NodeId,
@@ -30,11 +30,12 @@ pub struct ChatClient {
 
     paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
     nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.  
-    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
-    arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
     unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+
+    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
+    all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
 }
 
 
@@ -303,7 +304,7 @@ impl NetworkEdge for ChatClient {
                         }
                     }
                     ChatResponse::MessageFrom { from, message } => {
-                        self.arrived_messages.entry(from).or_insert(Vec::new()).push(message);
+                        self.all_messages.entry(from).or_insert(vec![(from,message.clone())]).push((from,message));
                     }
                     ChatResponse::MessageSent => {
                         // not sure, is just an ack? I don't think we need this (also because if they
@@ -337,20 +338,20 @@ impl NetworkEdge for ChatClient {
                             match server_type{
                                 ServerType::Chat => {
                                     self.paths.get_mut(&from).unwrap().0 = 1;
-                                    self.send_event(SendContacts(self.node_id, from));
+                                    self.send_event(SendDestination(self.node_id, from));
                                     },
                                 _ => {
                                     self.paths.get_mut(&from).unwrap().0 = 2;
-                                    // self.send_event(ClientEvent::SendContacts(self.node_id, from)).unwrap(); to debug
-
+                                    if ALL_FLOOD {
+                                        self.send_event(ClientEvent::SendDestination(self.node_id, from)) }
                                 }
                             }
                         } else {
                             //if it's a client
                             self.paths.get_mut(&from).unwrap().0 = 2;
 
-                            if DEBUG_MODE {
-                            self.send_event(ClientEvent::SendContacts(self.node_id, from)) }
+                            if ALL_FLOOD {
+                            self.send_event(ClientEvent::SendDestination(self.node_id, from)) }
 
                         }
                     }
@@ -629,7 +630,7 @@ impl Client for ChatClient {
             nodes: Nodes::new(),
             contact_list: HashMap::new(),
             fragments: HashMap::new(),
-            arrived_messages: HashMap::new(),
+            all_messages: HashMap::new(),
             unsent_fragments: (0, HashMap::new()),
         }
     }
@@ -708,10 +709,22 @@ impl Client for ChatClient {
                 self.packet_send.insert(node_id, sender);
             }
             ClientCommand::SendMessage(node_id, message) => {
+                if let ContentType::ChatRequest(CR) = message.clone().content{
+                    if let ChatRequest::SendMessage {from, to, message: str } = CR {
+                        self.all_messages.entry(to).or_insert(vec![(to,str.clone())]).push((to,str));
+                    }
+                }
                 self.send_message(message, node_id);
             }
             ClientCommand::Flood =>{
                 self.flood();
+            }
+
+            ClientCommand::OpenChat => {
+                self.send_event(ClientEvent::SendChats(self.node_id, self.all_messages.clone()))
+            }
+            _ =>{
+                //wrong command type ignored
             }
         }
     }
