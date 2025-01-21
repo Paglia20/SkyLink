@@ -804,7 +804,7 @@ impl MyApp {
                                                                 MessageScene::Send =>{
                                                                     if ui.button("Send").clicked() {
                                                                         let msg = Message::new(node.id, self.msg.session, self.msg.content.clone());
-                                                                        self.sim_contr.force_send_message(node.id, Client, msg);
+                                                                        self.sim_contr.force_send_message(self.msg.dst_id, Client, msg);
                                                                         node.node_window_scenes = Start; // Close the window
                                                                     }
                                                                 }

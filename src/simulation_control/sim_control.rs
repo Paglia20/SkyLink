@@ -161,7 +161,7 @@ impl SimulationControl {
     pub fn force_send_message(&mut self, dst: NodeId, dst_type: NodeType, msg: Message){
         match dst_type{
             Client => {
-                self.client_command_senders.get(&dst).unwrap().send(ClientCommand::SendMessage(dst, msg.clone())).unwrap();
+                self.client_command_senders.get(&msg.source_id).unwrap().send(ClientCommand::SendMessage(dst, msg.clone())).unwrap();
                 println!("Sim Controller Forced {} to send message {:?}", dst, msg);
             },
             _ => {todo!()}
