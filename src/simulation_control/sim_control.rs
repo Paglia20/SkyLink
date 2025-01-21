@@ -125,7 +125,7 @@ impl SimulationControl {
             }
         }
     }
-    pub(crate) fn add_server_event_to_log(&mut self, e: ServerEvent){
+    pub fn add_server_event_to_log(&mut self, e: ServerEvent){
         match e {
             ServerEvent::PacketSent(packet) => {
                 self.s_process_packet_sent(packet);
@@ -142,6 +142,13 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
+            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
+            ServerEvent::MissingDestination(missing_destination) => {}
+            ServerEvent::MissingRoute(missing_node) => {}
+            ServerEvent::LostMessage(session_id, node_id) => {}
+            ServerEvent::LostFragment(session_id, node_id, fragment_index) => {}
+            ServerEvent::DroneInsideDestination(wrong_node_id) => {}
+            ServerEvent::WrongDestinationType(my_node_id, wrong_node_id) => {}
         }
     }
 
