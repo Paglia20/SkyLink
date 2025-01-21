@@ -1,60 +1,15 @@
 use crate::message::{ChatRequest, ChatResponse, ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
 use std::collections::HashMap;
-use std::sync::Arc;
-use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
+use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::ContentType::EdgeNack;
-use crate::routing::RouteList;
 use crate::server::server_type::ServerType;
+use crate::server::server_struct::ServerStruct;
 
 pub trait NetworkEdge {
-    fn send_message(&mut self, message: Message, destination: NodeId) {
-        match message.clone().content{
-            ContentType::TypeExchange(_exc) =>{
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), frags.clone());
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
-            },
-            ContentType::EdgeNack(_nack) => {
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), frags.clone());
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
-            }
-            _=>{
-                if self.is_state_ok(destination) {
-                    let session_id = message.session_id;
-                    let frags = Self::fragment_message(&message);
-                    self.fragments.insert((session_id, self.node_id, destination), frags.clone());
-                    // I also save the fragments in the memory, in case I have to send them again.
-
-
-                    for fragment in frags {
-                        self.send_fragment(fragment, destination, session_id);
-                        // I apply the send operation on each single fragment.
-                    }
-                }
-                else {
-                    let new_nack = WrongDestinationType(self.get_src_id(), destination);
-                    self.send_event(new_nack);
-                }
-            }
-        }
-    }
+    fn send_message(&mut self, message: Message, destination: NodeId);
 
     fn fragment_message(message: &Message) -> Vec<Fragment> {
         let all_bytes = message.stringify_content().into_bytes();
