@@ -1,14 +1,12 @@
 use crate::message::{ChatRequest, ChatResponse, ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, MessageType, TextRequest, TextResponse, TypeExchange};
 use std::collections::HashMap;
-use std::sync::Arc;
-use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
+use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::ContentType::EdgeNack;
-use crate::routing::RouteList;
 use crate::server::server_type::ServerType;
+use crate::server::server_struct::ServerStruct;
 
 pub trait NetworkEdge {
     fn send_message(&mut self, message: Message, destination: NodeId);
