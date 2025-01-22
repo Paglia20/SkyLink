@@ -486,19 +486,3 @@ pub fn test_busy_network() {
     }
 }
 
-pub fn test_log() {
-    // println!("Simulation of test log");
-    // let (sim_contr, handles) = initialize("inputs/input_star.toml");
-    // let mut sim = Rc::new(RefCell::new(sim_contr));
-    //
-    // // sim.borrow_mut().log.push_back(LogEntry::new(fastrand::u8(0..10), "ciao".to_string()));
-    // let packet = create_packet(vec![1,4,7,10]); //should send a destination is drone
-    //
-    // send_packet(packet, sim.borrow_mut().all_sender_packets.get(&1).unwrap());
-    //
-    // // run_sim_dan(sim).expect("TODO: panic message");
-    //
-    // for handle in handles.into_iter() {
-    //     handle.join().unwrap();
-    // }
-}

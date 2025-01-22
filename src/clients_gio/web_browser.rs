@@ -1,25 +1,18 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::clients_gio::client_struct::ClientStruct;
+use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{ContentType, MediaRequest, Message, TextRequest, TextResponse};
+use crate::message::MediaRequest::MediaList;
+use crate::message::TextRequest::TextList;
+use crate::message::{ContentType, Message};
 use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
+use crate::DEBUG_MODE;
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::thread;
+use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, Packet};
-use crate::clients_gio::client_chat::ChatClient;
-use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
-use crate::clients_gio::client_trait::ClientTrait;
-use crate::clients_gio::client_struct::ClientStruct;
-use crate::DEBUG_MODE;
-use crate::message::ChatRequest::ClientList;
-use crate::message::ContentType::ChatRequest;
-use crate::message::MediaRequest::MediaList;
-use crate::message::TextRequest::TextList;
-use crate::routing::{Nodes, RouteList};
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
@@ -192,8 +185,8 @@ impl ClientTrait for WebBrowser {
             }
 
             //commands for WebClient
-            ClientCommand::GetContent(dst, id) => {
-                self.get_content(dst, id);
+            ClientCommand::GetContent(id) => {
+                self.get_content(id);
             }
 
 
@@ -219,7 +212,7 @@ impl WebBrowser{
         let src = self.comm.get_src_id();
         let session = self.comm.get_session_id();
 
-        if let Some((state, catalogue)) = self.catalogue.get(&id) {
+        if let Some((state, _catalogue)) = self.catalogue.get(&id) {
             let content = match *state {
                 1 => ContentType::TextRequest(TextList),
                 2 => ContentType::MediaRequest(MediaList),
@@ -239,7 +232,7 @@ impl WebBrowser{
             // Add event?
         }
     }
-    fn get_content(&mut self, server_id: NodeId, cont_id: String) {
+    fn get_content(&mut self, _cont_id: String) {
         //todo
 
         //come distinguiamo se stiamo cercando un client o un server dall'id diobest

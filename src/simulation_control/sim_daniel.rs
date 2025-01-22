@@ -349,12 +349,12 @@ impl MyApp {
                             self.sim_contr.set_pdr(5, 100.0);
 
                             let msg = create_packet(vec![0,1,8,5,2]);
-                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
                         }
 
                         if ui.button("Test sending packet").clicked() {
                             let msg = create_packet(vec![0,1,8,5,2]);
-                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg);
+                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
                         }
 
                         if ui.button("Test flooding with 0").clicked() {

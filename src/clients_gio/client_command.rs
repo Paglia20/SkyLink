@@ -15,13 +15,14 @@ pub enum ClientCommand {
     SendMSG(NodeId, String), //contact id, not dst (that will be a server), nb: it's different from sendmessage
 
     //special command for webclient
-    GetContent(NodeId, String) //get a Content from any server with that given id (the string)
+    GetContent(String) //get a Content from any server with that given id (the string)
 }
 
 //add a send packet for testing??
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
+
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),

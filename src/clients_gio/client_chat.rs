@@ -310,7 +310,7 @@ impl NetworkEdge for ChatClient {
                     }
                 }
             }
-            ContentType::EdgeNack(nack) => {
+            EdgeNack(nack) => {
                 match nack {
                     UnexpectedMessage => {
                         //vuol dire che ha mandato un message al dst con state sbagliato.
