@@ -3,7 +3,7 @@ use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
 use crate::clients_gio::client_type::ClientType::*;
-use crate::clients_gio::comm_client::Client;
+use crate::clients_gio::client_struct::Client;
 use crate::message::EdgeNackType::*;
 use crate::message::TextRequest::*;
 use crate::message::{ChatResponse, ContentType, Message, TypeExchange};

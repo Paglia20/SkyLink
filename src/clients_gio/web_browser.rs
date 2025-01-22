@@ -11,7 +11,7 @@ use wg_2024::packet::{Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
 use crate::clients_gio::client_trait::ClientTrait;
-use crate::clients_gio::comm_client::Client;
+use crate::clients_gio::client_struct::Client;
 use crate::DEBUG_MODE;
 use crate::routing::{Nodes, RouteList};
 
