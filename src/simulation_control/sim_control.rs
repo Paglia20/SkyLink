@@ -17,7 +17,7 @@ use crate::DEBUG_MODE;
 use crate::message::Message;
 use crate::simulation_control::sim_daniel::{MessageScene, NodeNature};
 use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived, Sent};
-
+use crate::simulation_control::storage::SimulationStorage;
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -32,11 +32,9 @@ pub struct SimulationControl {
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
     pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
-    pub dropped_packets: Vec<(NodeId, Packet)>,
 
-    //to migrate to storage
-    pub contacts: HashMap<NodeId, HashSet<NodeId>>,  //if you want them sort change this in a BtreeSet
-    pub destinations: HashMap<NodeId, HashSet<NodeId>>
+    pub(crate) storage: SimulationStorage,
+
 }
 
 impl SimulationControl {
@@ -62,9 +60,7 @@ impl SimulationControl {
             all_sender_packets,
             network_graph,
             log: VecDeque::new(),
-            dropped_packets: Vec::new(),
-            contacts: Default::default(),
-            destinations: Default::default(),
+            storage: SimulationStorage::new(),
         }
     }
 
@@ -160,32 +156,6 @@ impl SimulationControl {
             }
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
-            }
-        }
-    }
-
-    pub fn add_contacts (&mut self, src: NodeId, contact: NodeId){
-        match self.contacts.get_mut(&src){
-            Some(contacts) => {
-                contacts.insert(contact);
-            }
-            None => {
-                let set = HashSet::from([contact]);
-                self.contacts.insert(src, set);
-
-            }
-        }
-    }
-
-    pub fn add_destionation (&mut self, src: NodeId, dst: NodeId){
-        match self.destinations.get_mut(&src){
-            Some(destinations) => {
-                destinations.insert(dst);
-            }
-            None => {
-                let set = HashSet::from([dst]);
-                self.destinations.insert(src, set);
-
             }
         }
     }

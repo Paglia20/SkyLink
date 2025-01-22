@@ -214,7 +214,7 @@ impl MyApp {
                     PacketDropped(packet) => {
                         let dropper = packet.routing_header.current_hop().unwrap();
                         //println!("packet dropped by {dropper}"); debug printing
-                        self.sim_contr.dropped_packets.push((dropper, packet));
+                        self.sim_contr.storage.dropped_packets.push((dropper, packet));
                         self.side_panel_scenes = ManageDrop;
                     }
                     ControllerShortcut(packet) => {
@@ -282,10 +282,10 @@ impl MyApp {
 
                 match client_event {
                     ClientEvent::SendContactsToSC(src, dst) => {
-                        self.sim_contr.add_contacts(src, dst);
+                        self.sim_contr.storage.add_contacts(src, dst);
                     }
                     ClientEvent::SendDestinations(src, dst) => {
-                        self.sim_contr.add_destionation(src, dst);
+                        self.sim_contr.storage.add_destionation(src, dst);
                     }
                     _ => {/* degli altri niente */}
                 }
@@ -422,6 +422,7 @@ impl MyApp {
                         // Attempt to find the last dropped packet in the log
                         if let Some((id,dropped_packet)) = self
                             .sim_contr
+                            .storage
                             .dropped_packets
                             .last()
                         {
@@ -754,7 +755,7 @@ impl MyApp {
                                                             }
                                                         },
                                                         ShowContents => {
-                                                            let node_contacts = match self.sim_contr.contacts.get(&node.id){
+                                                            let node_contacts = match self.sim_contr.storage.contacts.get(&node.id){
                                                                 Some(contacts) => contacts.clone(),
                                                                 None => HashSet::new()
                                                             };
@@ -787,7 +788,7 @@ impl MyApp {
                                                         }
 
                                                         ShowDestinations => {
-                                                            let node_dst = match self.sim_contr.destinations.get(&node.id){
+                                                            let node_dst = match self.sim_contr.storage.destinations.get(&node.id){
                                                                 Some(dsts) => dsts.clone(),
                                                                 None => HashSet::new()
                                                             };
