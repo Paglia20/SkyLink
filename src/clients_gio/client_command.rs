@@ -7,8 +7,15 @@ use wg_2024::packet::{Packet};
 pub enum ClientCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
-    SendMessage(NodeId, Message),
     Flood,
+    RetrieveList(NodeId), //both for a chat list or a text/media list
+
+    //special commands for chat client
+    Register(NodeId), //dst id
+    SendMSG(NodeId, String), //contact id, not dst (that will be a server), nb: it's different from sendmessage
+
+    //special command for webclient
+    GetContent(String) //get a Content from any server with that given id (the string)
 }
 
 //add a send packet for testing??
@@ -25,10 +32,25 @@ pub enum ClientEvent {
     LostMessage(u64, NodeId), // session_id and NodeId
     LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
-    // OpenedChat(NodeID),
-    SendContacts(NodeId,NodeId), //first is src second is dst
     WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
+
+    //chat client only
+    SendContactsToSC(NodeId, NodeId), //first is src second is dst
+    MissingContacts(NodeId, NodeId), //first is src second is dst
+    SendDestinations(NodeId, NodeId),
+
+
 }
 
 
 // i want to add a WrongTypeDestination (node_id) for when i want to contact a destination that is not the right type
+
+
+/*
+idee per dire al sc robe tipo chats ecc...
+
+1) clientevent messagesent, messagereceived, content received,
+
+
+
+*/

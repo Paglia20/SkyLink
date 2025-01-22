@@ -13,8 +13,9 @@ use wg_2024::packet::{Fragment, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::DEBUG_MODE;
 use crate::message::Message;
-use crate::simulation_control::sim_daniel::MessageScene;
+use crate::simulation_control::sim_daniel::{MessageScene, NodeNature};
 use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived, Sent};
 
 
@@ -29,12 +30,13 @@ pub struct SimulationControl {
 
     pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
-    pub(crate) network_graph: HashMap<NodeId, (NodeType, HashSet<NodeId>)>,
+    pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
-
     pub dropped_packets: Vec<(NodeId, Packet)>,
-    
-    pub contacts: HashMap<NodeId, HashSet<NodeId>>  //if you want them sort change this in a BtreeSet
+
+    //to migrate to storage
+    pub contacts: HashMap<NodeId, HashSet<NodeId>>,  //if you want them sort change this in a BtreeSet
+    pub destinations: HashMap<NodeId, HashSet<NodeId>>
 }
 
 impl SimulationControl {
@@ -47,7 +49,7 @@ impl SimulationControl {
         server_event_recv: Receiver<ServerEvent>,
         channel_for_drone: Sender<DroneEvent>,
         all_sender_packets: HashMap<NodeId, Sender<Packet>>,
-        network_graph: HashMap<NodeId, (NodeType, HashSet<NodeId>)>,
+        network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
     ) -> Self {
         SimulationControl {
             drone_command_senders,
@@ -62,6 +64,7 @@ impl SimulationControl {
             log: VecDeque::new(),
             dropped_packets: Vec::new(),
             contacts: Default::default(),
+            destinations: Default::default(),
         }
     }
 
@@ -111,15 +114,31 @@ impl SimulationControl {
             ClientEvent::DroneInsideDestination(node_id) => {
                 self.c_process_drone_inside_destination(node_id);
             }
-            ClientEvent::SendContacts(src, _dst) => {
+            ClientEvent::SendContactsToSC(src, _dst) => {
                 self.c_process_send_contacts(src, _dst)
             }
             ClientEvent::WrongDestinationType(src, node) =>{
                 let new_log = LogEntry{
                     cause: Sent,
                     node_id: src,
-                    message: format!("{src} think {} is at wrong stare",
+                    message: format!("{src} think {} is at wrong state",
                                      node)
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::MissingContacts(src, dst) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} do not have {dst} as contact")
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::SendDestinations(src, id) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} now have {id} as server destination")
                 };
                 self.log.push_back(new_log);
             }
@@ -158,21 +177,52 @@ impl SimulationControl {
         }
     }
 
-    pub fn force_send_message(&mut self, dst: NodeId, dst_type: NodeType, msg: Message){
-        match dst_type{
-            Client => {
-                self.client_command_senders.get(&msg.source_id).unwrap().send(ClientCommand::SendMessage(dst, msg.clone())).unwrap();
-                println!("Sim Controller Forced {} to send message {:?}", dst, msg);
-            },
-            _ => {todo!()}
+    pub fn add_destionation (&mut self, src: NodeId, dst: NodeId){
+        match self.destinations.get_mut(&src){
+            Some(destinations) => {
+                destinations.insert(dst);
+            }
+            None => {
+                let set = HashSet::from([dst]);
+                self.destinations.insert(src, set);
+
+            }
         }
     }
+
+
+    pub fn msg_another_client(&mut self, src: NodeId, dst: NodeId, str: String){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::SendMSG(dst, str.clone())).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to send str {str} to {}", dst);
+            }
+        }
+    }
+    pub fn register_client_to_server(&mut self, src: NodeId, dst: NodeId){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::Register(dst)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to register to {}", dst);
+            }
+        }
+    }
+    pub fn retrive_list_from_server(&mut self, src: NodeId, dst: NodeId){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::RetrieveList(dst)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to retrive list from {}", dst);
+            }
+        }
+    }
+
+
 
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
         println!("-");
         let new_id = self.generate_id();
         //aggiorna network graph
-        self.network_graph.insert(new_id, (NodeType::Drone, HashSet::from_iter(connections.clone().into_iter())));
+        self.network_graph.insert(new_id, (NodeNature::Drone, HashSet::from_iter(connections.clone().into_iter())));
 
         let (control_sender, control_receiver) = unbounded(); //canale per il Sim che manda drone command al drone
         self.drone_command_senders
@@ -335,7 +385,7 @@ impl SimulationControl {
                             ));
                         }
                     }
-                    _ => {},
+                    _ => {todo!()},
                 }
             }
         }
@@ -386,7 +436,7 @@ impl SimulationControl {
             Some(node) => node,
             None => return None,
         };
-        Some(*node_type)
+        Some(node_type.simple_type())
     }
 
     pub fn set_pdr(&mut self, id: NodeId, pdr: f32) {

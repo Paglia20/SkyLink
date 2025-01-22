@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::Ordering;
 // use std::fmt;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
@@ -88,6 +89,23 @@ impl Debug for Route {
             .finish()
     }
 }*/
+
+//i compare two routes based on their reliability
+// so a > b means route a is more reliable than b
+impl PartialEq<Self> for Route {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_reliability() == other.get_reliability()
+    }
+}
+
+impl PartialOrd for Route{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.get_reliability().partial_cmp(&other.get_reliability())
+    }
+}
+
+
+
 impl Route {
     pub fn new(path: Vec<(NodeId, NodeType)>) -> Route {
         let path = path.iter().map(|x| {

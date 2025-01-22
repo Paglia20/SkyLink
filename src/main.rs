@@ -15,6 +15,7 @@ mod test;
 mod event_wrapper;
 
 pub const DEBUG_MODE : bool = true;
+pub const ALL_FLOOD_MODE : bool = true; //provvisoria finchè non ci sono i client
 
 fn main() {
     // println!("Hello, world!");

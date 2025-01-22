@@ -4,14 +4,15 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
-use dr_ones::{NodeId, Packet};
 use wg_2024::config;
 use wg_2024::drone::Drone;
-use wg_2024::packet::NodeType;
+use wg_2024::network::NodeId;
+use wg_2024::packet::{NodeType, Packet};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use crate::clients_gio::client_trait::Client;
+use crate::clients_gio::client_trait::ClientTrait;
 use crate::server::server_command::{ServerCommand, ServerEvent};
+use crate::simulation_control::sim_daniel::NodeNature;
 
 pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
@@ -54,13 +55,7 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     //I crate a hashmap that will be used as graph by the Simulation Controller.
     let mut network_graph = HashMap::new();
     for drone in config.drone.iter() {
-        network_graph.insert(drone.id, (NodeType::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
-    }
-    for server in config.server.iter() {
-        network_graph.insert(server.id, (NodeType::Server, HashSet::from_iter(server.connected_drone_ids.clone())));
-    }
-    for client in config.client.iter() {
-        network_graph.insert(client.id, (NodeType::Client, HashSet::from_iter(client.connected_drone_ids.clone())));
+        network_graph.insert(drone.id, (NodeNature::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
     }
 
     for drone in config.drone.into_iter() {
@@ -103,6 +98,7 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
 
         //Give the client a copy of the sender of events to the Sim Contr.
         let node_event_send = client_event_send.clone();
+        network_graph.insert(client.id, (NodeNature::ChatClient, HashSet::from_iter(client.connected_drone_ids.clone())));
 
         //Take the channels necessary to this client.
         let client_recv = packet_receivers.remove(&client.id).unwrap();
@@ -283,4 +279,3 @@ fn create_clients(clients: Vec<config::Client>,
         panic!("Clients can't work without servers");
     }
 }
-

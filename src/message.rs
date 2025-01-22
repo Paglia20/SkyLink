@@ -97,13 +97,13 @@ pub enum ChatRequest {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextResponse {
-    TextList(Vec<u64>),
+    TextList(Vec<String>),
     Text(String),
     NotFound,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
-    MediaList(Vec<u64>),
+    MediaList(Vec<(NodeId, String)>),
     Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway I don't get the type inside MediaList
     // Leo: I've still no idea on how to use the medias, so we'll change these if needed.
 }
@@ -111,7 +111,7 @@ pub enum MediaResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
     ClientList(Vec<NodeId>),
-    MessageFrom { from: NodeId, message: Vec<u8> },
+    MessageFrom { from: NodeId, message: String },
     MessageSent,
 }
 
