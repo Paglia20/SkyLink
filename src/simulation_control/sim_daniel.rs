@@ -285,7 +285,7 @@ impl MyApp {
                         self.sim_contr.storage.add_contacts(src, dst);
                     }
                     ClientEvent::SendDestinations(src, dst) => {
-                        self.sim_contr.storage.add_destionation(src, dst);
+                        self.sim_contr.storage.add_destination(src, dst);
                     }
                     _ => {/* degli altri niente */}
                 }

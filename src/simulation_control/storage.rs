@@ -1,23 +1,9 @@
-use crate::event_wrapper::Event;
-use crate::sim_control::{Cause, LogEntry, SimulationControl};
-use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, ShowDestinations, ShowContents, RemoveSender, SetPDR, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
-use crate::test::test_bench::create_packet;
-use eframe::egui;
-use egui::{FontId, RichText, Vec2};
-use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
-use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
+use wg_2024::packet::Packet;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{NodeType, Packet};
-use crate::clients_gio::client_command::ClientEvent;
-use crate::message::{ContentType, Message};
-use crate::message::ChatRequest::{ClientList, Register, SendMessage};
-use crate::simulation_control::sim_daniel::MessageScene::Id;
 
 
 pub struct SimulationStorage {
@@ -51,7 +37,7 @@ impl SimulationStorage{
         }
     }
 
-    pub fn add_destionation (&mut self, src: NodeId, dst: NodeId){
+    pub fn add_destination(&mut self, src: NodeId, dst: NodeId){
         match self.destinations.get_mut(&src){
             Some(destinations) => {
                 destinations.insert(dst);
