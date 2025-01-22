@@ -43,8 +43,6 @@ pub enum ClientEvent {
 }
 
 
-// i want to add a WrongTypeDestination (node_id) for when i want to contact a destination that is not the right type
-
 
 /*
 idee per dire al sc robe tipo chats ecc...
@@ -54,3 +52,4 @@ idee per dire al sc robe tipo chats ecc...
 
 
 */
+
