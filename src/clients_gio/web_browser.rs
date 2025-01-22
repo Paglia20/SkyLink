@@ -1,34 +1,26 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{ContentType, Message, TextRequest, TextResponse};
-use crate::network_edge::NetworkEdge;
+use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::thread;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet};
+use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
+use crate::clients_gio::client_trait::ClientTrait;
+use crate::clients_gio::client_struct::Client;
 use crate::DEBUG_MODE;
 use crate::routing::{Nodes, RouteList};
 
 pub struct WebBrowser{
-    node_id: NodeId,
-    command_recv: Receiver<ClientCommand>,
-    event_send: Sender<ClientEvent>,
-    packet_recv: Receiver<Packet>,
-    packet_send: HashMap<NodeId, Sender<Packet>>,
-    flood_ids: HashSet<(u64, NodeId)>, // Just like drones
-    used_session_id: HashSet<u64>,     // Do we need this?
+    comm: Client, //common client duh
 
-
-    paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
-    nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
-    contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
-    fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
-    arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
-    unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
-    // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    //web browser specks
+    arrived_content: HashMap<NodeId, Vec<Vec<u8>>>,
+    catalogue: HashMap<NodeId, Vec<u64>>,
 }
 
 impl NetworkEdge for WebBrowser {
@@ -74,33 +66,56 @@ impl NetworkEdge for WebBrowser {
     }
 
     fn get_src_id(&self) -> NodeId {
-        self.node_id
+        self.comm.node_id
     }
 }
-// impl Client for WebBrowser {
-//     fn new(id: NodeId, event_send: Sender<ClientEvent>, command_recv: Receiver<ClientCommand>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
-//         WebBrowser{
-//             client_type: ClientType::WebBrowser,
-//             node_id: id,
-//             command_recv,
-//             event_send,
-//             packet_recv,
-//             packet_send,
-//             flood_ids: HashSet::new(),
-//             paths: HashMap::new(),
-//         }
-//     }
-//
-//
-//     fn send_request(&mut self, _request: Self::RequestType) {
-//         todo!()
-//     }
-//
-//     fn handle_response(&mut self, _response: Self::ResponseType) {
-//         todo!()
-//     }
-//
-//     fn get_client_type(&self) -> ClientType {
-//         todo!()
-//     }
-// }
+
+impl NetworkEdgeErrors for WebBrowser {
+    fn check_type(&mut self, id: NodeId) {
+        todo!()
+    }
+
+    fn is_state_ok(&self, node_id: NodeId) -> bool {
+        todo!()
+    }
+
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
+        todo!()
+    }
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+        todo!()
+    }
+}
+
+impl ClientTrait for WebBrowser {
+    fn new(
+        node_id: NodeId,
+        command_recv: Receiver<ClientCommand>,
+        event_send: Sender<ClientEvent>,
+        packet_recv: Receiver<Packet>,
+        packet_send: HashMap<NodeId, Sender<Packet>>,
+    ) -> Self {
+        WebBrowser {
+            comm: Client::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            arrived_content: Default::default(),
+            catalogue: Default::default(),
+        }
+    }
+
+    fn run(&mut self) {
+        self.comm.run();
+    }
+
+    fn handle_command(&mut self, command: ClientCommand) {
+        self.comm.handle_command(command);
+    }
+
+    fn get_client_type(&self) -> ClientType {
+        ClientType::WebBrowser
+    }
+
+    fn send_event(&self, ce: ClientEvent) {
+        self.comm.send_event(ce);
+    }
+}

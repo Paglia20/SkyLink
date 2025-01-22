@@ -1,31 +1,37 @@
+use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, CreateMessage, ShowContacts, RemoveSender, SetPDR, Start};
+use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, RegisterOrList};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
-use std::collections::HashSet;
-use std::process::Command;
+use std::collections::{HashMap, HashSet};
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{NodeType};
-use crate::clients_gio::client_command::ClientEvent;
-use crate::message::{ContentType, Message};
-use crate::message::ChatRequest::{ClientList, Register, SendMessage};
-use crate::simulation_control::sim_daniel::MessageScene::Id;
+use wg_2024::packet::NodeType;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
     id: NodeId,
     connections: HashSet<NodeId>,
     selected: bool,
-    node_type: NodeType,
+    node_type: NodeNature,
     node_window_scenes: NodeWindowScene,
+    content: Option<ContentIdentifier>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentIdentifier{
+    Chat(NodeId, NodeId), //first src, second destination
+    RegisterOrList(NodeId, NodeId)
+    // Text(NodeId, String),
+    // Media(NodeId, String),
 }
 
 impl Eq for MyNodes {}
@@ -48,23 +54,24 @@ impl Ord for MyNodes {
     }
 }
 
-
-pub struct MyMsg{
-    dst_id: NodeId,
-    session: u64,
-    content:ContentType,
-    msg_scene: MessageScene,
-    input_text:String,
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum NodeNature{ //more complex NodeType, may keep fields
+    Drone,
+    ChatClient,
+    WebClient,
+    ChatServer,
+    TextServer,
+    MediaServer,
 }
-
-impl MyMsg{
-    pub fn new() -> Self{
-        Self{
-            dst_id: 0,
-            session: fastrand::u64(..300),
-            content: Default::default(),
-            msg_scene: Id,
-            input_text: "Type here".to_string(),
+impl NodeNature{
+    pub fn simple_type(&self) -> NodeType{
+        match self{
+            NodeNature::Drone => {Drone}
+            NodeNature::ChatClient => {Client}
+            NodeNature::WebClient => {Client}
+            NodeNature::ChatServer => {Server}
+            NodeNature::TextServer => {Server}
+            NodeNature::MediaServer => {Server}
         }
     }
 }
@@ -95,9 +102,9 @@ pub enum NodeWindowScene {
     Crash,
     SetPDR,
 
-    //client/server scenes
-    ShowContacts,
-    CreateMessage
+    //client scenes
+    ShowContents, //for a chat client will be chats, for webclient will be medias
+    ShowDestinations,   // for a chat client are chat server available, for a web..
 }
 pub struct MyApp {
     sim_contr: SimulationControl,
@@ -106,9 +113,9 @@ pub struct MyApp {
     checked: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
-
-    msg: MyMsg,
+    input_text: String,
 }
+
 
 impl MyApp {
     pub(crate) fn new(sim_contr: SimulationControl) -> Self {
@@ -126,6 +133,7 @@ impl MyApp {
                 selected: false,
                 node_type: neighbors.0,
                 node_window_scenes: Start,
+                content: None,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -138,56 +146,34 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
-            msg: MyMsg::new(),
+            input_text: "".to_string(),
         };
         //app.generate_random_connections();
         app
     }
 
     pub fn update_topology(&mut self) {
-        let id_to_selected = self
+        // Create a single HashMap for storing the node data
+        let id_to_data: HashMap<_, _> = self
             .nodes
             .iter()
-            .map(|x| (x.id, x.selected))
-            .collect::<Vec<(NodeId, bool)>>();
+            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone()))})
+            .collect();
 
-        let id_to_window = self
-            .nodes
-            .iter()
-            .map(|x| (x.id, x.node_window_scenes.clone()))
-            .collect::<Vec<(NodeId, NodeWindowScene)>>();
-
-        //aggiornamento
+        // Clear and rebuild nodes
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
-        for (node_id, neighbors) in network_graph {
-            self.nodes.push(MyNodes{
+        for (node_id, (node_type, connections)) in network_graph {
+            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None));
+
+            self.nodes.push(MyNodes {
                 id: node_id,
-                connections: neighbors.1,
-                selected: false,
-                node_type: neighbors.0,
-                node_window_scenes: Start,
-            })
-        }
-
-        //ripristino selected e dws
-
-        for node in self.nodes.iter_mut() {
-            for (id, dws) in id_to_window.iter() {
-                if *id == node.id{
-                    node.node_window_scenes = dws.clone();
-                }
-
-            }
-        }
-
-        for node in self.nodes.iter_mut() {
-            for (id, selection) in id_to_selected.iter() {
-                if *id == node.id {
-                    node.selected = selection.clone();
-                }
-
-            }
+                connections,
+                selected: data.0,
+                node_type,
+                node_window_scenes: data.1,
+                content: data.2,
+            });
         }
     }
 
@@ -214,7 +200,7 @@ impl MyApp {
     }
 
     pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
-        self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.clone())
+        self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.simple_type())
     }
     pub fn manage_event(&mut self, event: Event) {
         match event{
@@ -224,7 +210,7 @@ impl MyApp {
                     PacketDropped(packet) => {
                         let dropper = packet.routing_header.current_hop().unwrap();
                         //println!("packet dropped by {dropper}"); debug printing
-                        self.sim_contr.dropped_packets.push((dropper, packet));
+                        self.sim_contr.storage.dropped_packets.push((dropper, packet));
                         self.side_panel_scenes = ManageDrop;
                     }
                     ControllerShortcut(packet) => {
@@ -259,7 +245,7 @@ impl MyApp {
                                 };
 
                                 let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
-                                if *n_type == Drone {
+                                if n_type.simple_type() == Drone {
                                     self.sim_contr.log.push_back(LogEntry::new(
                                         Error,
                                         next_id,
@@ -291,8 +277,11 @@ impl MyApp {
                 self.sim_contr.add_client_event_to_log(client_event.clone());
 
                 match client_event {
-                    ClientEvent::SendContacts(src, dst) => {
-                        self.sim_contr.add_contacts(src, dst);
+                    ClientEvent::SendContactsToSC(src, dst) => {
+                        self.sim_contr.storage.add_contacts(src, dst);
+                    }
+                    ClientEvent::SendDestinations(src, dst) => {
+                        self.sim_contr.storage.add_destination(src, dst);
                     }
                     _ => {/* degli altri niente */}
                 }
@@ -409,7 +398,7 @@ impl MyApp {
                         ui.label("select drones to crash:");
                         ui.separator();
                         for (i, item) in self.nodes.iter().enumerate() {
-                            if item.node_type == Drone {
+                            if item.node_type.simple_type() == Drone {
                                 ui.checkbox(&mut self.checked[i], item.id.to_string());
                             }
                         }
@@ -429,6 +418,7 @@ impl MyApp {
                         // Attempt to find the last dropped packet in the log
                         if let Some((id,dropped_packet)) = self
                             .sim_contr
+                            .storage
                             .dropped_packets
                             .last()
                         {
@@ -530,7 +520,7 @@ impl MyApp {
         for node in self.nodes.iter_mut() {
             if node.selected {
                 match node.node_type {
-                    Drone => {egui::Window::new(format!("Drone {}", node.id))
+                    NodeNature::Drone => {egui::Window::new(format!("Drone {}", node.id))
                         .resizable(true) // Permetti il ridimensionamento
                         .collapsible(true)
                         .min_width(500.0)
@@ -648,8 +638,8 @@ impl MyApp {
 
                         });
                     }
-                    Client => {
-                        egui::Window::new(format!("Client {}", node.id))
+                    NodeNature::ChatClient => {
+                        egui::Window::new(format!("Chat Client {}", node.id))
                             .resizable(true) // Allow resizing
                             .collapsible(true)
                             .min_width(500.0)
@@ -702,17 +692,18 @@ impl MyApp {
 
                                                     if ui.button("Flood").clicked(){
                                                         self.sim_contr.flood_with(node.id);
-                                                        node.node_window_scenes = ShowContacts;
+                                                        node.node_window_scenes = ShowDestinations;
                                                     }
 
-                                                    if ui.button("Show Contact").clicked(){
-                                                        node.node_window_scenes = ShowContacts;
+                                                    if ui.button("Show Chats").clicked(){
+                                                        node.node_window_scenes = ShowContents;
+                                                        self.input_text = "".to_string(); //reset input text
+
+                                                    }
+                                                    if ui.button("Show Servers Detected").clicked(){
+                                                        node.node_window_scenes = ShowDestinations;
                                                     }
 
-                                                    if ui.button("Test Message").clicked(){
-                                                        node.node_window_scenes = CreateMessage;
-                                                        self.msg = MyMsg::new();
-                                                    }
 
                                                     if ui.button("Chiudi").clicked() {
                                                         node.selected = false; // Close the window
@@ -726,98 +717,106 @@ impl MyApp {
                                                             ui.label("This is the central panel content.");
                                                             ui.label("flood results and chat shits will be here.");
                                                         }
-                                                        AddSender => {}
-                                                        RemoveSender => {},
-                                                        ShowContacts => {
-                                                            //questo fammici pensare, se hai idee scrivi pure.
-                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        AddSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Add Channel With Client:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
 
-                                                            let node_contacts = match self.sim_contr.contacts.get(&node.id){
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+                                                                self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        RemoveSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Remove Channel With Client:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+
+                                                                self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        },
+                                                        ShowContents => {
+                                                            let node_contacts = match self.sim_contr.storage.contacts.get(&node.id){
                                                                 Some(contacts) => contacts.clone(),
                                                                 None => HashSet::new()
                                                             };
+                                                            ui.label(format!("MyContacts are: "));
+                                                            for id in node_contacts{
+                                                                if ui.button(id.to_string()).clicked() {
+                                                                    node.content = Some(Chat(node.id, id))
+                                                                }
+                                                            }
+                                                            if let Some(Chat(src, dst)) = node.content.clone(){
+                                                                //print chat todo
 
-                                                            let mut contacts = String::new();
-                                                            for node in node_contacts {
-                                                                contacts.push_str("\n ");
-                                                                contacts.push_str(node.to_string().as_str());
+
+
+                                                                //send message
+                                                                ui.label("Enter a message:");
+                                                                let response = ui.add(egui::TextEdit::singleline(&mut self.input_text));
+                                                                if response.lost_focus() {
+                                                                    // Handle Enter key press
+                                                                   self.sim_contr.msg_another_client(src, dst, self.input_text.clone());
+                                                                    self.input_text = "".to_string(); //reset input text
+                                                                }
+
                                                             }
 
-                                                            ui.label(format!("MyContacts are: {}", contacts));
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        }
+
+                                                        ShowDestinations => {
+                                                            let node_dst = match self.sim_contr.storage.destinations.get(&node.id){
+                                                                Some(dsts) => dsts.clone(),
+                                                                None => HashSet::new()
+                                                            };
+                                                            ui.label(format!("My Servers are: "));
+                                                            if node.content.is_none() {
+                                                                for id in node_dst {
+                                                                    if ui.button(id.to_string()).clicked() {
+                                                                        node.content = Some(RegisterOrList(node.id, id))
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                if let Some(RegisterOrList(src, dst)) = node.content {
+                                                                    if ui.button("Register").clicked() {
+                                                                        self.sim_contr.register_client_to_server(src, dst);
+                                                                        node.content = None;
+                                                                        node.node_window_scenes = Start; // Close the window
+                                                                    }
+                                                                    if ui.button("Get List").clicked() {
+                                                                        self.sim_contr.retrive_list_from_server(src, dst);
+                                                                        node.content = None;
+                                                                        node.node_window_scenes = Start; // Close the window
+
+                                                                    }
+                                                                }
+                                                            }
 
                                                             if ui.button("Chiudi").clicked() {
                                                                 node.node_window_scenes = Start; // Close the window
                                                             }
                                                         }
-
-                                                        CreateMessage =>{
-                                                            match self.msg.msg_scene {
-                                                                Id => {
-                                                                    let ids = match self.sim_contr.contacts.get(&node.id) {
-                                                                        Some(contacts) => { contacts.into_iter().collect()},
-                                                                        None => {
-                                                                            self.msg.msg_scene = MessageScene::Error;
-                                                                            Vec::new()
-                                                                        }
-                                                                    };
-                                                                    ui.label("select drones to contact:");
-
-
-                                                                    for id in ids{
-                                                                        if ui.button(id.to_string()).clicked() {
-                                                                            self.msg.dst_id = *id;
-                                                                            self.msg.msg_scene = MessageScene::Content;
-                                                                            println!("{}", self.msg.dst_id);
-                                                                        }
-                                                                    }
-
-                                                                },
-                                                                MessageScene::Content => {
-                                                                    ui.label("select message type:");
-
-                                                                    if ui.button("ClientList").clicked() {
-                                                                        self.msg.content = ContentType::ChatRequest(ClientList);
-                                                                        self.msg.msg_scene = MessageScene::Send;
-                                                                    }
-                                                                    if ui.button("Register").clicked() {
-                                                                        self.msg.content = ContentType::ChatRequest(Register(node.id));
-                                                                        self.msg.msg_scene = MessageScene::Send;
-
-                                                                    }
-                                                                    if ui.button("SendMessage").clicked() {
-                                                                        self.msg.msg_scene = MessageScene::AddInput;
-                                                                    }
-                                                                }
-                                                                MessageScene::AddInput => {
-                                                                    ui.label("Enter a message:");
-                                                                    let response = ui.add(egui::TextEdit::singleline(&mut self.msg.input_text));
-                                                                    if response.lost_focus() {
-                                                                        // Handle Enter key press
-                                                                        self.msg.content = ContentType::ChatRequest(SendMessage {
-                                                                            from: node.id,
-                                                                            to: self.msg.dst_id,
-                                                                            message: self.msg.input_text.clone(),
-                                                                        });
-                                                                        self.msg.msg_scene = MessageScene::Send;
-                                                                    }
-                                                                }
-                                                                MessageScene::Send =>{
-                                                                    if ui.button("Send").clicked() {
-                                                                        let msg = Message::new(node.id, self.msg.session, self.msg.content.clone());
-                                                                        self.sim_contr.force_send_message(node.id, Client, msg);
-                                                                        node.node_window_scenes = Start; // Close the window
-                                                                    }
-                                                                }
-                                                                MessageScene::Error => {
-                                                                    ui.label("You dont have contacts: did you Flood?");
-                                                                }
-                                                            }
-                                                            if ui.button("Close").clicked() {
-                                                                self.msg = MyMsg::new();
-                                                                node.node_window_scenes = Start; // Close the window
-                                                            }
-                                                        }
                                                         _ => {
+                                                            //drone scenes should be
                                                             unreachable!()
                                                         }
                                                     }
@@ -826,7 +825,7 @@ impl MyApp {
                                 });
                             });
                     }
-                    Server => {
+                    NodeNature::ChatServer => {
                         egui::Window::new(format!("Server {}", node.id))
                             .resizable(true) // Allow resizing
                             .collapsible(true)
@@ -893,11 +892,11 @@ impl MyApp {
                                                         Start => {}
                                                         AddSender => {}
                                                         RemoveSender => {}
-                                                        ShowContacts => {
+                                                        ShowContents => {
                                                             //questo fammici pensare, se hai idee scrivi pure.
                                                             //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
                                                         }
-                                                        CreateMessage => {}
+                                                        ShowDestinations => {}
                                                         _ => {}
                                                     }
                                                 });
@@ -905,6 +904,9 @@ impl MyApp {
                                 });
                             });
                     }
+                    NodeNature::WebClient => {}
+                    NodeNature::TextServer => {}
+                    NodeNature::MediaServer => {}
                 }
             }
         }

@@ -40,11 +40,11 @@ pdr = 0.00
 
 [[client]]
 id = 9
-connected_drone_ids = [2,6,12]
+connected_drone_ids = [2,6]
 
 [[client]]
 id = 10
-connected_drone_ids = [7,3,12]
+connected_drone_ids = [7,3]
 
 [[client]]
 id = 11
@@ -52,7 +52,7 @@ connected_drone_ids = [2,6]
 
 [[client]]
 id = 12
-connected_drone_ids = [3,6,9,10]
+connected_drone_ids = [3,6]
 
 [[client]]
 id = 0
