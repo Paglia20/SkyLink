@@ -7,11 +7,10 @@ use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crate::routing::{Nodes, Route, RouteList};
 use crate::DEBUG_MODE;
 use crossbeam_channel::{Receiver, Sender};
-use dr_ones::{NodeId, Packet};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::SourceRoutingHeader;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType};
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
 
 //here the common struct of both the clients, important: some functions are left unreachable since will be called ad hoc by each client.
 //attention, also all function that call handle packet and handle message are unreachable obv

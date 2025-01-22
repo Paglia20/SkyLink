@@ -2,10 +2,9 @@ use crate::routing::{Nodes, RouteList};
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_trait::Server;
 use crossbeam_channel::{Receiver, Sender};
-use dr_ones::Packet;
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::Fragment;
+use wg_2024::packet::{Fragment, Packet};
 
 pub struct ServerStruct {
     pub node_id: NodeId,
@@ -20,7 +19,7 @@ pub struct ServerStruct {
     pub nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
     pub contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     pub fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
-    pub arrived_messages: HashMap<NodeId, Vec<Vec<u8>>>,
+    pub arrived_messages: HashMap<NodeId, Vec<String>>,
     pub unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>),
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
