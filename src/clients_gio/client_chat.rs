@@ -479,6 +479,8 @@ impl ClientTrait for ChatClient {
             ClientCommand::Flood =>{
                 self.flood();
             }
+
+            //commands for chatclient
             ClientCommand::RetrieveList(id) => {
                 self.get_list(id);
             }
@@ -488,8 +490,10 @@ impl ClientTrait for ChatClient {
             ClientCommand::SendMSG(id, str) => {
                 self.send_chat_text(id, str);
             }
+
+            //ignore other commands cause are webclients commands
             _ =>{
-                //ignore other commands
+
             }
         }
     }
