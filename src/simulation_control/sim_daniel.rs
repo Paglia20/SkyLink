@@ -1,24 +1,20 @@
+use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, ShowDestinations, ShowContents, RemoveSender, SetPDR, Start};
+use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, RegisterOrList};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{NodeType};
-use crate::clients_gio::client_command::ClientEvent;
-use crate::message::{ContentType, Message};
-use crate::message::ChatRequest::{ClientList, Register, SendMessage};
-use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, RegisterOrList};
-use crate::simulation_control::sim_daniel::MessageScene::Id;
+use wg_2024::packet::NodeType;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
