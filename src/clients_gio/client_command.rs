@@ -38,6 +38,7 @@ pub enum ClientEvent {
     SendContactsToSC(NodeId, NodeId), //first is src second is dst
     MissingContacts(NodeId, NodeId), //first is src second is dst
     SendDestinations(NodeId, NodeId),
+    SendChatText(NodeId, NodeId, String) //src-dst-chat text
 
 
 }

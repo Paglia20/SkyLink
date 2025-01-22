@@ -137,6 +137,14 @@ impl SimulationControl {
                     message: format!("{src} now have {id} as server destination")
                 };
                 self.log.push_back(new_log);
+            },
+            ClientEvent::SendChatText(src, dst, str) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} sent txt [{str}] to {dst}")
+                };
+                self.log.push_back(new_log);
             }
         }
     }

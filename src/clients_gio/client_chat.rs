@@ -1,9 +1,9 @@
-use crate::clients_gio::client_command::ClientEvent::{SendContactsToSC, SendDestinations};
+use crate::clients_gio::client_command::ClientEvent::{SendChatText, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
 use crate::clients_gio::client_type::ClientType::*;
-use crate::clients_gio::client_struct::Client;
+use crate::clients_gio::client_struct::ClientStruct;
 use crate::message::EdgeNackType::*;
 use crate::message::TextRequest::*;
 use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
@@ -23,7 +23,7 @@ use crate::message::ChatRequest::{ClientList, Register, SendMessage};
 use crate::message::ContentType::*;
 
 pub struct ChatClient {
-    comm: Client, //common client duh
+    comm: ClientStruct, //common client duh
     //chat client specks
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
@@ -260,7 +260,8 @@ impl NetworkEdge for ChatClient {
                         }
                     }
                     ChatResponse::MessageFrom { from, message } => {
-                        self.all_messages.entry(from).or_insert(Vec::new()).push((from, message));
+                        self.send_event(SendChatText(self.get_src_id(), from, message.clone()));
+                        self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
                     ChatResponse::MessageSent => {
                         // not sure, is just an ack? I don't think we need this (also because if they
@@ -396,7 +397,7 @@ impl ClientTrait for ChatClient {
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         ChatClient {
-            comm: Client::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             contact_list: HashMap::new(),
             all_messages: HashMap::new(),
         }
@@ -541,7 +542,8 @@ impl ChatClient {
                 });
 
                 //keep track of the outgoing message in our personal chat
-                self.all_messages.entry(id).or_insert(Vec::new()).push((src, str));
+                self.send_event(SendChatText(self.get_src_id(), id, str.clone()));
+                self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
 
                 let msg = Message::new(src, session, content);
                 self.comm.send_message(msg, server_id);

@@ -120,7 +120,6 @@ pub struct MyApp {
 impl MyApp {
     pub(crate) fn new(sim_contr: SimulationControl) -> Self {
         let network_graph = sim_contr.network_graph.clone();
-        println!("i work ghere2");
 
         let mut vec: Vec<MyNodes> = Vec::new();
         let mut checked = Vec::new();
@@ -283,6 +282,9 @@ impl MyApp {
                     ClientEvent::SendDestinations(src, dst) => {
                         self.sim_contr.storage.add_destination(src, dst);
                     }
+                    ClientEvent::SendChatText(src, dst, str) => {
+                        self.sim_contr.storage.add_chat_text(src, dst, str);
+                    }
                     _ => {/* degli altri niente */}
                 }
             }
@@ -326,6 +328,15 @@ impl MyApp {
                                 "ciao".to_string(),
                             ));
                         }
+                        if ui.button("test chat with 0 and 12!").clicked() {
+                            self.sim_contr.storage.add_chat_text(0, 12, "diomerda".to_string());
+                            self.sim_contr.storage.add_chat_text(12, 0, "a te!".to_string());
+                            self.sim_contr.storage.add_chat_text(12, 0, "spero tu stia bene!".to_string());
+                            self.sim_contr.storage.add_chat_text(0, 12, "si sto bene!".to_string());
+
+                        }
+
+
                         if ui.button("Add Drone!").clicked() {
                             self.side_panel_scenes = ManageAdd;
                         }
@@ -657,7 +668,8 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    ui.label("Log:");
+                                                    ui.label(format!("Log of {}:", node.id));
+                                                    ui.separator();
 
                                                     egui::ScrollArea::vertical()
                                                         .auto_shrink([false; 2]) // Prevent shrinking
@@ -681,6 +693,7 @@ impl MyApp {
                                                     }
 
                                                     ui.label(format!("Connected to: {}", connections));
+                                                    ui.separator();
 
                                                     if ui.button("Add Channel").clicked(){
                                                         node.node_window_scenes = AddSender;
@@ -719,7 +732,7 @@ impl MyApp {
                                                         }
                                                         AddSender => {
                                                             ui.horizontal(|ui| {
-                                                                ui.label("Add Channel With Client:");
+                                                                ui.label("Add Channel to:");
                                                                 ui.add(egui::DragValue::new(&mut self.sender_id));
 
                                                             }
@@ -735,7 +748,7 @@ impl MyApp {
                                                         }
                                                         RemoveSender => {
                                                             ui.horizontal(|ui| {
-                                                                ui.label("Remove Channel With Client:");
+                                                                ui.label("Remove Channel to:");
                                                                 ui.add(egui::DragValue::new(&mut self.sender_id));
 
                                                             }
@@ -755,26 +768,35 @@ impl MyApp {
                                                                 Some(contacts) => contacts.clone(),
                                                                 None => HashSet::new()
                                                             };
-                                                            ui.label(format!("MyContacts are: "));
-                                                            for id in node_contacts{
-                                                                if ui.button(id.to_string()).clicked() {
-                                                                    node.content = Some(Chat(node.id, id))
+                                                            if node.content.is_none() {
+                                                                ui.label(format!("MyContacts are: "));
+                                                                ui.separator();
+                                                                for id in node_contacts {
+                                                                    if ui.button(id.to_string()).clicked() {
+                                                                        node.content = Some(Chat(node.id, id))
+                                                                    }
                                                                 }
                                                             }
-                                                            if let Some(Chat(src, dst)) = node.content.clone(){
-                                                                //print chat todo
-
-
-
-                                                                //send message
-                                                                ui.label("Enter a message:");
-                                                                let response = ui.add(egui::TextEdit::singleline(&mut self.input_text));
-                                                                if response.lost_focus() {
-                                                                    // Handle Enter key press
-                                                                   self.sim_contr.msg_another_client(src, dst, self.input_text.clone());
-                                                                    self.input_text = "".to_string(); //reset input text
+                                                            else {
+                                                                if let Some(Chat(src, dst)) = node.content.clone(){
+                                                                    //print chat
+                                                                    ui.label(format!("Chat with {dst}"));
+                                                                    ui.separator();
+                                                                    if let Some(chat) = self.sim_contr.storage.retrieve_chat(src, dst){
+                                                                        for (id, str) in chat {
+                                                                            ui.label(format!("{id} - {str}"));
+                                                                        }
+                                                                    }
+                                                                    //send message
+                                                                    ui.separator();
+                                                                    ui.label("Enter a message:");
+                                                                    let response = ui.add(egui::TextEdit::singleline(&mut self.input_text));
+                                                                    if response.lost_focus() {
+                                                                        // Handle Enter key press
+                                                                        self.sim_contr.msg_another_client(src, dst, self.input_text.clone());
+                                                                        self.input_text = "".to_string(); //reset input text
+                                                                    }
                                                                 }
-
                                                             }
 
                                                             if ui.button("Chiudi").clicked() {
@@ -788,8 +810,9 @@ impl MyApp {
                                                                 Some(dsts) => dsts.clone(),
                                                                 None => HashSet::new()
                                                             };
-                                                            ui.label(format!("My Servers are: "));
                                                             if node.content.is_none() {
+                                                                ui.label(format!("My Servers are: "));
+                                                                ui.separator();
                                                                 for id in node_dst {
                                                                     if ui.button(id.to_string()).clicked() {
                                                                         node.content = Some(RegisterOrList(node.id, id))
@@ -797,6 +820,9 @@ impl MyApp {
                                                                 }
                                                             } else {
                                                                 if let Some(RegisterOrList(src, dst)) = node.content {
+                                                                    ui.label(format!("Contact Server {dst}: "));
+                                                                    ui.separator();
+
                                                                     if ui.button("Register").clicked() {
                                                                         self.sim_contr.register_client_to_server(src, dst);
                                                                         node.content = None;

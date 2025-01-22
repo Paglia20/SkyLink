@@ -11,12 +11,12 @@ use wg_2024::packet::{Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
 use crate::clients_gio::client_trait::ClientTrait;
-use crate::clients_gio::client_struct::Client;
+use crate::clients_gio::client_struct::ClientStruct;
 use crate::DEBUG_MODE;
 use crate::routing::{Nodes, RouteList};
 
 pub struct WebBrowser{
-    comm: Client, //common client duh
+    comm: ClientStruct, //common client duh
 
     //web browser specks
     arrived_content: HashMap<NodeId, Vec<Vec<u8>>>,
@@ -97,7 +97,7 @@ impl ClientTrait for WebBrowser {
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         WebBrowser {
-            comm: Client::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             arrived_content: Default::default(),
             catalogue: Default::default(),
         }

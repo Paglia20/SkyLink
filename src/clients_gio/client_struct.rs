@@ -16,7 +16,7 @@ use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
 //attention, also all function that call handle packet and handle message are unreachable obv
 
 
-pub struct Client{
+pub struct ClientStruct {
     pub (crate) node_id: NodeId,
     pub (crate) command_recv: Receiver<ClientCommand>,
     pub (crate) event_send: Sender<ClientEvent>,
@@ -31,7 +31,7 @@ pub struct Client{
     pub (crate) unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
-impl NetworkEdge for Client {
+impl NetworkEdge for ClientStruct {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         match message.clone().content{
             ContentType::TypeExchange(_exc) =>{
@@ -231,7 +231,7 @@ impl NetworkEdge for Client {
     }
 }
 
-impl NetworkEdgeErrors for Client {
+impl NetworkEdgeErrors for ClientStruct {
     fn check_type(&mut self, id: NodeId) {
         let req = TypeExchange::TypeRequest { from: self.node_id };
         let exc = ContentType::TypeExchange(req);
@@ -302,7 +302,7 @@ impl NetworkEdgeErrors for Client {
     }
 }
 
-impl ClientTrait for Client {
+impl ClientTrait for ClientStruct {
     fn new(node_id: NodeId, command_recv: Receiver<ClientCommand>, event_send: Sender<ClientEvent>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
         Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), paths: HashMap::default(), nodes: Nodes::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()) }
     }
@@ -331,7 +331,7 @@ impl ClientTrait for Client {
    }
 }
 
-impl Client{
+impl ClientStruct {
     //sta fn la metterei in networkedge
    pub (crate) fn get_optimal_dest (&mut self, v: &Vec<NodeId>) -> Option<NodeId> {
         let mut out: Option<(Route, NodeId)> = None;
