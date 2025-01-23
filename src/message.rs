@@ -1,3 +1,4 @@
+use egui::ahash::HashMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::NodeId;
@@ -97,13 +98,13 @@ pub enum ChatRequest {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextResponse {
-    TextList(Vec<String>),
-    Text(String),
+    TextList(HashMap<u64, (String, NodeId)>),
+    Text(String), // do we have to change this?
     NotFound,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
-    MediaList(Vec<(NodeId, String)>),
+    MediaList(Vec<u64>),
     Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway I don't get the type inside MediaList
     // Leo: I've still no idea on how to use the medias, so we'll change these if needed.
 }
