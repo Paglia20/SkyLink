@@ -77,16 +77,6 @@ impl Default for TypeExchange {
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TextRequest {
-    TextList,
-    Text(u64),
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MediaRequest {
-    MediaList,
-    Media(u64),
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatRequest {
     ClientList,
     Register(NodeId),
@@ -96,18 +86,6 @@ pub enum ChatRequest {
         message: String,
     },
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TextResponse {
-    TextList(HashMap<u64, (String, NodeId)>),
-    Text(String), // do we have to change this?
-    NotFound,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MediaResponse {
-    MediaList(Vec<u64>),
-    Media(Vec<u8>), // should we use some other type? gio: maybe add not found? anyway I don't get the type inside MediaList
-    // Leo: I've still no idea on how to use the medias, so we'll change these if needed.
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
@@ -115,6 +93,54 @@ pub enum ChatResponse {
     MessageFrom { from: NodeId, message: String },
     MessageSent,
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TextRequest {
+    TextList, // solo ai text server
+    TextFile(u64), // solo ai text server
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MediaRequest {
+    MediaList, // solo dai text server ai media server
+    Media(u64), // solo da webclient ai media server !!
+}
+
+// solo dai text server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TextResponse {
+    // questa hashmap contiene sia id del text che dei media, se è un text NodeId = src_message,
+    // se è un media sarà il node_id di un media server
+    TextLists(HashMap<u64, (String, Vec<u64>)>),
+    MediaReferences(HashMap<u64, (String, NodeId)>), //la stringa indica il nome
+    NotFound,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MediaResponse {
+    MediaList(Vec<(u64, String)>), // solo tra server viene usata !!
+    Media(((u64, String), Vec<u8>)),
+}
+
+/*
+
+Ricapitolando:
+
+web client              text server                     media server
+                            ---------------medialist? --->
+                            <---------------medialist! ---
+                         (process)
+
+  ----------textlist? --->
+  <--------TextLists! -----
+  -------textfile(u64) --->
+  <--------MediaReferences! ---
+
+  ----------------------------------------media(u64)? --->
+  <----------------------------------------media(..)! ---
+
+
+ */
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EdgeNackType{
