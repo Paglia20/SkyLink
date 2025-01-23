@@ -15,7 +15,7 @@ pub enum ClientCommand {
     SendMSG(NodeId, String), //contact id, not dst (that will be a server), nb: it's different from sendmessage
 
     //special command for webclient
-    GetContent(String) //get a Content from any server with that given id (the string)
+    GetContent(u64) //get a Content from any server with that given id (the string)
 }
 
 //add a send packet for testing??
@@ -34,14 +34,16 @@ pub enum ClientEvent {
     LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
+    SendDestinations(NodeId, NodeId),
 
     //chat client only
     SendContactsToSC(NodeId, NodeId), //first is src second is dst
     MissingContacts(NodeId, NodeId), //first is src second is dst
-    SendDestinations(NodeId, NodeId),
-    SendChatText(NodeId, NodeId, String) //src-dst-chat text
+    SendChatText(NodeId, NodeId, String), //src-dst-chat text
 
     //Web client only
+    SendMedia(NodeId, Vec<u8>),
+    SendText(NodeId, )
 
 
 }

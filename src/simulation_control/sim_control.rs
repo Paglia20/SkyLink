@@ -145,6 +145,13 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             }
+            ClientEvent::SendMedia(_, _) => {
+                unimplemented!()
+            }
+            ClientEvent::SendText(_) => {
+                unimplemented!()
+
+            }
         }
     }
     pub fn add_server_event_to_log(&mut self, e: ServerEvent){
