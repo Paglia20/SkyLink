@@ -109,10 +109,11 @@ pub enum MediaRequest {
 // solo dai text server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextResponse {
-    // questa hashmap contiene sia id del text che dei media, se è un text NodeId = src_message,
-    // se è un media sarà il node_id di un media server
-    TextLists(HashMap<u64, (String, Vec<u64>)>),
-    MediaReferences(HashMap<u64, (String, NodeId)>), //la stringa indica il nome
+    //la prima stringa indica il nome del textfile,
+    //la seconda è il nome di ogni media associato all'id
+    TextLists(HashMap<u64, (String, Vec<(u64, String)>)>),
+
+    MediaReferences(HashMap<u64, NodeId>), //chi ha quel media
     NotFound,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

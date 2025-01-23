@@ -18,14 +18,15 @@ use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment}
 use crate::clients_gio::client_command::ClientEvent::{SendDestinations};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
-use crate::server::server_type::ServerType;
+use crate::server::server_type::{ContentServerType, ServerType};
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
 
-    //web browser specks
+    //web browser specks (to be changed)
     arrived_content: HashMap<NodeId, Vec<(String, Vec<u8>)>>,
     catalogue: HashMap<NodeId, Vec<u64>>,
+
     /*
     this is necessary because path will only distinguish if it's a good server for us, not the type,
     hence when we get the typexchange we also create the catalogue to remember if that server is a text or media
@@ -39,7 +40,7 @@ pub struct WebBrowser{
 
 
 }
-/*
+
 impl NetworkEdge for WebBrowser {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         self.comm.send_message(message, destination)
@@ -260,31 +261,21 @@ impl NetworkEdge for WebBrowser {
             ContentType::MediaResponse(media_response) => {
                 match media_response{
                     MediaResponse::MediaList(list) => {
-                        let entry = self.catalogue.entry(src).or_insert((2, Vec::new()));
-                        entry.1 = list;
+                        unimplemented!()
                     }
                     MediaResponse::Media(media) => {
-                        let entry = self.arrived_content.entry(src).or_insert(Vec::new());
-                        entry.push(("media".to_string(), media));
+                        unimplemented!()
                     }
                 }
 
 
             },
             ContentType::TextResponse(text_response) => {
+                unimplemented!();
                 match text_response{
-                    TextResponse::TextList(map) => {
-                        for (cont_id, (str, node_id)) in map {
-
-                        }
-                    }
-                    TextResponse::Text(txt) => {
-                        let entry = self.arrived_content.entry(src).or_insert(Vec::new());
-                        entry.push(txt.into_bytes());
-                    }
-                    TextResponse::NotFound => {
-                        //da fuck i do
-                    }
+                    TextResponse::TextLists(_) => {}
+                    TextResponse::MediaReferences(_) => {}
+                    TextResponse::NotFound => {}
                 }
             }
 
@@ -307,23 +298,26 @@ impl NetworkEdge for WebBrowser {
                     }
                     TypeExchange::TypeResponse { from, edge_type } => {
                         if let EdgeType::Server(server_type) = edge_type{
-                            match server_type{
-                                ServerType::Content(ty) => {
-                                    self.comm.paths.get_mut(&from).unwrap().0 = 1;
-                                    self.catalogue.insert(from, (1, Vec::new()));
-                                    self.send_event(SendDestinations(self.comm.node_id, from));
-                                },
-                                _ => {
-                                    self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                            if let ServerType::Content(ty) = server_type{
+                                self.comm.paths.get_mut(&from).unwrap().0 = 1;
+                                unimplemented!();
+                                match ty {
+                                    ContentServerType::Text => {
+
+                                    }
+                                    ContentServerType::Media => {
+
+                                    }
                                 }
                             }
+                            else {self.comm.paths.get_mut(&from).unwrap().0 = 2; }
                         } else {
                             //if it's a client
                             self.comm.paths.get_mut(&from).unwrap().0 = 2;
 
                             if ALL_FLOOD_MODE {
-                                self.send_event(SendDestinations(self.comm.node_id, from));}
-
+                                self.send_event(SendDestinations(self.comm.node_id, from));
+                            }
                         }
                     }
                 }
@@ -526,59 +520,34 @@ impl WebBrowser{
     fn get_list(&mut self, id: NodeId) {
         let src = self.comm.get_src_id();
         let session = self.comm.get_session_id();
+        let content = ContentType::TextRequest(TextList);
+        let msg = Message::new(src, session, content);
+        self.comm.send_message(msg, id);
 
-        if let Some((state, _catalogue)) = self.catalogue.get(&id) {
-            let content = match *state {
-                1 => ContentType::TextRequest(TextList),
-                2 => ContentType::MediaRequest(MediaList),
-                _ => unreachable!("Invalid state in catalogue."),
-            };
-            let msg = Message::new(src, session, content);
-            self.comm.send_message(msg, id);
-
-            if DEBUG_MODE {
-                println!("Sent content list request from {src} to server {id}");
-            }
-        } else {
-            // Handle the case where the catalogue entry is not found in flood
-            if DEBUG_MODE {
-                println!("Catalogue entry for {id} not found.");
-            }
-            // Add event?
+        if DEBUG_MODE {
+            println!("Sent content list request from {src} to server {id}");
         }
     }
+
     fn send_content_req(&mut self, cont_id: u64) {
-        let src = self.comm.get_src_id();
-        let session = self.comm.get_session_id();
-
-        let dests = self.where_is_content(&cont_id);
-        if !dests.is_empty(){
-            if let Some(dst) = self.comm.get_optimal_dest(&dests) {
-                let content = match (cont_id < 1000){
-                    true => ContentType::TextRequest(Text(cont_id)),
-                    false => ContentType::MediaRequest(Media(cont_id)),
-                };
-                let msg = Message::new(src, session, content);
-                self.comm.send_message(msg, dst);
-            }
-        } else {
-            //impossible to retrieve a content since no server told us it has it...
-            //client event incoming
-        }
+        unimplemented!();
+        // let src = self.comm.get_src_id();
+        // let session = self.comm.get_session_id();
+        //
+        // let dests = self.where_is_content(&cont_id);
+        // if !dests.is_empty(){
+        //     if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+        //         let content = match (cont_id < 1000){
+        //             true => ContentType::TextRequest(Text(cont_id)),
+        //             false => ContentType::MediaRequest(Media(cont_id)),
+        //         };
+        //         let msg = Message::new(src, session, content);
+        //         self.comm.send_message(msg, dst);
+        //     }
+        // } else {
+        //     //impossible to retrieve a content since no server told us it has it...
+        //     //client event incoming
+        // }
 
     }
-
-    fn where_is_content(&mut self, cont_id: &u64) -> Vec<NodeId>{
-        let mut out = Vec::new();
-        for (node_id, (_ty, ids)) in self.catalogue{
-            if ids.contains(cont_id){
-                out.push(node_id);
-            }
-
-        }
-        out
-    }
-
-
 }
-*/
