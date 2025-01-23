@@ -2,41 +2,357 @@ use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_struct::ClientStruct;
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::MediaRequest::MediaList;
-use crate::message::TextRequest::TextList;
-use crate::message::{ContentType, Message};
-use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
-use crate::DEBUG_MODE;
+use crate::message::MediaRequest::{Media, MediaList};
+use crate::message::TextRequest::*;
+use crate::message::{ChatResponse, ContentType, MediaResponse, Message, TypeExchange, TextResponse};
+use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
+use crate::{ALL_FLOOD_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::NackType::ErrorInRouting;
+use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
+use crate::clients_gio::client_command::ClientEvent::{SendDestinations};
+use crate::message::EdgeNackType::UnexpectedMessage;
+use crate::routing::{Route, RouteList};
+use crate::server::server_type::ServerType;
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
 
     //web browser specks
-    arrived_content: HashMap<NodeId, Vec<Vec<u8>>>,
-    catalogue: HashMap<NodeId, (u8, Vec<String>)>, //the u8 represent if it's a text server(1) or a media server(2)
+    arrived_content: HashMap<NodeId, Vec<(String, Vec<u8>)>>,
+    catalogue: HashMap<NodeId, Vec<u64>>,
     /*
     this is necessary because path will only distinguish if it's a good server for us, not the type,
     hence when we get the typexchange we also create the catalogue to remember if that server is a text or media
-    */
-}
 
+
+    ATTENTION:
+    the reason we have duplicated code for handle_packet and run is because both would be implemented in the common structure,
+    but both call for the specific handle_message and handle_command, hence cannot be called inside the common struct.
+
+    */
+
+
+}
+/*
 impl NetworkEdge for WebBrowser {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         self.comm.send_message(message, destination)
     }
 
-    fn handle_packet(&mut self, _packet: Packet) {
-        unimplemented!()
+    fn handle_packet(&mut self, mut packet: Packet) {
+        if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
+            flood_request
+                .path_trace
+                .push((self.comm.node_id, NodeType::Client));
+
+            if self.comm.flood_ids.insert((
+                flood_request.flood_id.clone(),
+                flood_request.initiator_id.clone(),
+            )) {
+                if self.comm.packet_send.len() == 1 {
+                    self.send_flood_response(flood_request);
+                } else {
+                    let mut prev = flood_request.initiator_id.clone();
+                    if flood_request.path_trace.clone().len() > 1 {
+                        prev = flood_request
+                            .path_trace
+                            .get(flood_request.path_trace.len() - 2)
+                            .unwrap()
+                            .0;
+                    }
+                    //I update the path_trace in the packet.
+                    packet.pack_type = FloodRequest(flood_request);
+                    for (key, _) in self.comm.packet_send.iter() {
+                        //println!("Previous: {}", prev);
+                        //println!("Key: {}", key);
+                        if *key != prev {
+                            //I send the flooding to everyone except the node I received it from.
+                            if let Ok(_) =
+                                self.comm.packet_send.get(key).unwrap().send(packet.clone())
+                            {
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
+                                //If the message was sent, I also notify the sim controller.
+                            } //There's no else, since I don't care of nodes which can't be reached.
+                        }
+                    }
+                }
+            } else {
+                self.send_flood_response(flood_request);
+            }
+        } else {
+            if packet.routing_header.destination().unwrap() != self.comm.node_id {
+                // If it's not his packet, but he has to act as a drone (that never misses)
+                packet.routing_header.hop_index += 1;
+                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
+                    Some(id) => *id,
+                    None => {
+                        //teoricamente se è none è perchè è lui stesso la destinazione
+                        unreachable!()
+                    },
+                };
+
+                match self.comm.packet_send.get(&next_id) {
+                    None => {
+                        self.send_event(ClientEvent::MissingRoute(next_id))
+                    }
+                    Some(sender) => {
+                        match sender.try_send(packet.clone()) {
+                            Err(_) => {
+                                // !!You need to send back the same errors a drone would
+                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                                self.send_event(ClientEvent::PacketSendingError(packet));
+                            }
+                            Ok(_) => {
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
+                                // If the message was sent, I also notify the sim controller.
+                            }
+                        }
+                    }
+                }
+            } else {
+                // We can take for granted he is the destination
+                match packet.pack_type.clone() {
+                    MsgFragment(fragment) => {
+                        let tot_num_frag = fragment.total_n_fragments as usize;
+                        let session_id = packet.session_id;
+                        let initiator_id = packet.routing_header.hops[0];
+                        let destination = self.comm.node_id; //he is the destination
+                        let frag_index = fragment.fragment_index;
+                        //add new frag
+                        if !self.comm.fragments.contains_key(&(packet.session_id, initiator_id, destination)) {
+                            self.comm.fragments.insert((session_id, initiator_id, destination), vec![fragment]);
+                        } else {
+                            self.comm.fragments.get_mut(&(session_id, initiator_id, destination)).unwrap().push(fragment);
+                        }
+
+                        //for each arrived frag, send back an ack
+                        self.send_ack(packet.clone(), frag_index);
+
+                        //notify sc i got a packet
+                        self.send_event(ClientEvent::PacketReceived(packet.clone()));
+
+
+
+
+                        // If all the frag have arrived recreate message
+                        let frags_clone = self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap();
+                        if frags_clone.len() == tot_num_frag {
+                            let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                                Ok(mess) => { mess }
+                                Err(e) => {
+                                    println!("{e} with {}", self.comm.node_id);
+
+                                    unimplemented!() //
+                                }
+                            };
+                            //handle message
+                            self.handle_message(message);
+
+                            // empty the hashmap
+                            self.comm.fragments.remove(&(packet.session_id, initiator_id, destination));
+                        }
+                    }
+                    Ack(ack) => {
+                        self.send_event(ClientEvent::AckReceived(packet.clone()));
+
+                        //the ack will have the source that was the destination of the initial packet
+                        match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
+                            None => {}
+                            Some(vec) => {
+                                vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                                //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
+                                if vec.is_empty() {
+                                    self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
+                                }
+                            }
+                        }
+
+                        // I apply the positive feed on all nodes in the path
+                        let nodes = packet.routing_header.hops;
+                        self.comm.nodes.positive_feed(nodes);
+                    }
+
+                    PacketType::Nack(nack) => {
+                        self.send_event(ClientEvent::NackReceived(packet.clone()));
+                        match nack.nack_type.clone() {
+                            NackType::UnexpectedRecipient(wrong_node) => {
+                                // I remove all the routes with that destination, since it's probably faulty
+                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
+                                    route.remove_faulty_node(wrong_node);
+                                }
+                                self.comm.nodes.remove_faulty_node(wrong_node);
+                                self.send_fragment_after_nack(packet, nack);
+                            },
+                            ErrorInRouting(wrong_node) => {
+                                // I again remove the routes containing the (probably) crushed drone
+                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
+                                    route.remove_faulty_node(wrong_node);
+                                }
+                                self.comm.nodes.remove_faulty_node(wrong_node);
+                                self.send_fragment_after_nack(packet, nack);
+                            },
+                            NackType::DestinationIsDrone => {
+                                let wrong_node = packet.routing_header.hops.last().unwrap();
+                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
+                                    route.remove_faulty_node(*wrong_node);
+                                }
+                                self.comm.nodes.remove_faulty_node(*wrong_node);
+                                // Since the destination was a drone, the message was faulty,
+                                // so I remove the destination and consider the message as lost.
+                                self.comm.paths.remove(wrong_node);
+                            },
+                            NackType::Dropped => {
+                                // I just send it again
+                                self.send_fragment_after_nack(packet.clone(), nack);
+
+                                // Who dropped will be source of the nack
+                                let dropper = packet.routing_header.source().unwrap();
+                                self.comm.nodes.negative_feed(dropper);
+                            }
+                        }
+                    }
+                    FloodRequest(_) => {
+                        unreachable!()
+                    }
+                    FloodResponse(flood_resp) => {
+                        // As of rn it "saves" all possible servers and client... we want something else I think...
+                        let mut current_path = Vec::new();
+                        for (node_id, node_type) in flood_resp.path_trace {
+
+                            current_path.push((node_id, node_type));
+
+                            if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
+                                if !self.comm.paths.contains_key(&node_id) {
+                                    //if it's first time this server gets seen
+                                    self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
+                                    println!("{} inserted {:?}",self.comm.node_id, node_id);
+                                }
+                                // Clone the current path for the server and insert it into the route list
+                                match self.comm.paths.get_mut(&node_id) {
+                                    None => {
+                                        unreachable!()
+                                        //i hope it's unreachable
+                                    }
+                                    Some((_state,route_list)) => {
+                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
+                                        route_list.add_route(Route::new(current_path.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    fn handle_message(&mut self,_message: Message ) {
-        unimplemented!()
+    fn handle_message(&mut self,message: Message )  {
+        let src = message.source_id;
+
+        match message.content {
+            ContentType::MediaResponse(media_response) => {
+                match media_response{
+                    MediaResponse::MediaList(list) => {
+                        let entry = self.catalogue.entry(src).or_insert((2, Vec::new()));
+                        entry.1 = list;
+                    }
+                    MediaResponse::Media(media) => {
+                        let entry = self.arrived_content.entry(src).or_insert(Vec::new());
+                        entry.push(("media".to_string(), media));
+                    }
+                }
+
+
+            },
+            ContentType::TextResponse(text_response) => {
+                match text_response{
+                    TextResponse::TextList(map) => {
+                        for (cont_id, (str, node_id)) in map {
+
+                        }
+                    }
+                    TextResponse::Text(txt) => {
+                        let entry = self.arrived_content.entry(src).or_insert(Vec::new());
+                        entry.push(txt.into_bytes());
+                    }
+                    TextResponse::NotFound => {
+                        //da fuck i do
+                    }
+                }
+            }
+
+            ContentType::TypeExchange(exchange) => {
+                match exchange {
+                    TypeExchange::TypeRequest { from } => {
+                        let type_resp = TypeExchange::TypeResponse {
+                            edge_type: EdgeType::Client(ClientType::WebBrowser),
+                            from: self.comm.node_id,
+                        };
+                        let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
+
+                        if !self.comm.paths.contains_key(&from) {
+                            println!("i don't have a path with {} to {from}", self.comm.node_id);
+                            self.flood();
+                        }
+
+                        self.send_message(message, from);
+
+                    }
+                    TypeExchange::TypeResponse { from, edge_type } => {
+                        if let EdgeType::Server(server_type) = edge_type{
+                            match server_type{
+                                ServerType::Content(ty) => {
+                                    self.comm.paths.get_mut(&from).unwrap().0 = 1;
+                                    self.catalogue.insert(from, (1, Vec::new()));
+                                    self.send_event(SendDestinations(self.comm.node_id, from));
+                                },
+                                _ => {
+                                    self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                                }
+                            }
+                        } else {
+                            //if it's a client
+                            self.comm.paths.get_mut(&from).unwrap().0 = 2;
+
+                            if ALL_FLOOD_MODE {
+                                self.send_event(SendDestinations(self.comm.node_id, from));}
+
+                        }
+                    }
+                }
+            }
+            ContentType::EdgeNack(nack) => {
+                match nack {
+                    UnexpectedMessage => {
+                        //vuol dire che ha mandato un message al dst con state sbagliato.
+                        if let Some((state, _route)) = self.comm.paths.get_mut(&message.source_id){
+                            *state = 2;
+                        }
+
+                        //e il messaggio viene scartato credo
+
+                        if DEBUG_MODE{
+                            println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.comm.node_id, message.source_id)
+                        }
+
+                    }
+                }
+
+            },
+            _ => {
+                // Gio: no point in getting other types of req
+                let new_nack = self.create_nack(UnexpectedMessage);
+                self.send_nack_message(message.source_id, new_nack);
+            }
+        }
+
     }
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
@@ -186,9 +502,8 @@ impl ClientTrait for WebBrowser {
 
             //commands for WebClient
             ClientCommand::GetContent(id) => {
-                self.get_content(id);
+                self.send_content_req(id);
             }
-
 
             //ignore other commands cause are chat clients commands
             _ =>{
@@ -232,11 +547,38 @@ impl WebBrowser{
             // Add event?
         }
     }
-    fn get_content(&mut self, _cont_id: String) {
-        //todo
+    fn send_content_req(&mut self, cont_id: u64) {
+        let src = self.comm.get_src_id();
+        let session = self.comm.get_session_id();
 
-        //come distinguiamo se stiamo cercando un client o un server dall'id diobest
+        let dests = self.where_is_content(&cont_id);
+        if !dests.is_empty(){
+            if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+                let content = match (cont_id < 1000){
+                    true => ContentType::TextRequest(Text(cont_id)),
+                    false => ContentType::MediaRequest(Media(cont_id)),
+                };
+                let msg = Message::new(src, session, content);
+                self.comm.send_message(msg, dst);
+            }
+        } else {
+            //impossible to retrieve a content since no server told us it has it...
+            //client event incoming
+        }
+
+    }
+
+    fn where_is_content(&mut self, cont_id: &u64) -> Vec<NodeId>{
+        let mut out = Vec::new();
+        for (node_id, (_ty, ids)) in self.catalogue{
+            if ids.contains(cont_id){
+                out.push(node_id);
+            }
+
+        }
+        out
     }
 
 
 }
+*/
