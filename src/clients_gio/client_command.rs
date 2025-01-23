@@ -42,20 +42,10 @@ pub enum ClientEvent {
     SendChatText(NodeId, NodeId, String), //src-dst-chat text
 
     //Web client only
+    // SendTextList() ??, i will sleep on it
     SendMedia(NodeId, Vec<u8>),
-    SendText(NodeId, )
-
+    SendText(NodeId)
 
 }
 
-
-
-/*
-idee per dire al sc robe tipo chats ecc...
-
-1) clientevent messagesent, messagereceived, content received,
-
-
-
-*/
 
