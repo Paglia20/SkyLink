@@ -705,20 +705,24 @@ impl MyApp {
 
                                                     if ui.button("Flood").clicked(){
                                                         self.sim_contr.flood_with(node.id);
+                                                        node.content = None;
                                                         node.node_window_scenes = ShowDestinations;
                                                     }
 
                                                     if ui.button("Show Chats").clicked(){
                                                         node.node_window_scenes = ShowContents;
+                                                        node.content = None;
                                                         self.input_text = "".to_string(); //reset input text
 
                                                     }
                                                     if ui.button("Show Servers Detected").clicked(){
+                                                        node.content = None;
                                                         node.node_window_scenes = ShowDestinations;
                                                     }
 
 
                                                     if ui.button("Chiudi").clicked() {
+                                                        node.content = None;
                                                         node.selected = false; // Close the window
                                                     }
                                                 });
@@ -838,6 +842,7 @@ impl MyApp {
                                                             }
 
                                                             if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
                                                                 node.node_window_scenes = Start; // Close the window
                                                             }
                                                         }
