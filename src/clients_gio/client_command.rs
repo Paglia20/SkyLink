@@ -9,12 +9,14 @@ pub enum ClientCommand {
     AddSender(NodeId, Sender<Packet>),
     Flood,
     RetrieveList(NodeId), //both for a chat list or a text/media list
+    //for a webclient is a retrieve TextList
 
     //special commands for chat client
     Register(NodeId), //dst id
     SendMSG(NodeId, String), //contact id, not dst (that will be a server), nb: it's different from sendmessage
 
     //special command for webclient
+    GetTextFile(u64), //get a TextFile full of media references, hence the response will be a mediareferences(..)
     GetContent(u64) //get a Content from any server with that given id (the string)
 }
 

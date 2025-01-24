@@ -15,6 +15,7 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::NodeType;
+use crate::server::server_type::ServerType;
 
 #[derive(Debug, Clone)]
 pub struct MyNodes {
@@ -115,6 +116,7 @@ pub struct MyApp {
     sender_id: NodeId,
     input_text: String,
 }
+
 
 
 impl MyApp {
@@ -817,10 +819,10 @@ impl MyApp {
                                                             if node.content.is_none() {
                                                                 ui.label(format!("My Servers are: "));
                                                                 ui.separator();
-                                                                for id in node_dst {
-                                                                    if ui.button(id.to_string()).clicked() {
-                                                                        node.content = Some(RegisterOrList(node.id, id))
-                                                                    }
+                                                                for (id) in node_dst {
+                                                                   if ui.button(id.to_string()).clicked() {
+                                                                       node.content = Some(RegisterOrList(node.id, id))
+                                                                   }
                                                                 }
                                                             } else {
                                                                 if let Some(RegisterOrList(src, dst)) = node.content {

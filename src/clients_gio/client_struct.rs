@@ -229,6 +229,15 @@ impl NetworkEdge for ClientStruct {
     fn get_src_id(&self) -> NodeId {
         self.node_id
     }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        if self.packet_send.contains_key(&id) {
+            if let Some(to_be_dropped) = self.packet_send.remove(&id) {
+                drop(to_be_dropped);
+                //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
+            }
+        }
+    }
 }
 
 impl NetworkEdgeErrors for ClientStruct {

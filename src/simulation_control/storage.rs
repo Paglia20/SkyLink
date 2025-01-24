@@ -4,12 +4,13 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::Packet;
 use wg_2024::packet::PacketType::*;
-
+use crate::server::server_type::ContentServerType::{Media, Text};
+use crate::server::server_type::ServerType;
 
 pub struct SimulationStorage {
     pub dropped_packets: Vec<(NodeId, Packet)>, // to display dropped packets
     pub contacts: HashMap<NodeId, HashSet<NodeId>>,  //if you want them sort change this in a BtreeSet
-    pub destinations: HashMap<NodeId, HashSet<NodeId>>,
+    pub destinations: HashMap<NodeId, HashSet<(NodeId)>>,
     pub chats: HashMap<NodeId, HashMap<NodeId, Vec<(NodeId, String)>>>, // 1st is node, second is the contact, third is chat (each string has the associated sender)
 
     //chats
@@ -40,6 +41,7 @@ impl SimulationStorage{
     }
 
     pub fn add_destination(&mut self, src: NodeId, dst: NodeId){
+
         match self.destinations.get_mut(&src){
             Some(destinations) => {
                 destinations.insert(dst);

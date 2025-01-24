@@ -526,6 +526,12 @@ impl NetworkEdge for ChatServer {
     fn get_src_id(&self) -> NodeId {
         self.server_struct.node_id
     }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        unimplemented!();
+        //gio: i added it, cause less duplicated arg, if it's a problem lmk
+        //there should be the call to the function inside of server_struct in my idea...
+    }
 }
 
 impl NetworkEdgeErrors for ChatServer {

@@ -17,6 +17,7 @@ use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::{NodeType, Packet, PacketType};
+use crate::server::server_type::ServerType::Chat;
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,

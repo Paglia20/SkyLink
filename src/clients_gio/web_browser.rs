@@ -2,9 +2,9 @@ use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_struct::ClientStruct;
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::MediaRequest::{Media, MediaList};
+use crate::message::MediaRequest::{Media};
 use crate::message::TextRequest::*;
-use crate::message::{ChatResponse, ContentType, MediaResponse, Message, TypeExchange, TextResponse};
+use crate::message::{ContentType, MediaResponse, Message, TypeExchange, TextResponse};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::{ALL_FLOOD_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
@@ -23,13 +23,20 @@ use crate::server::server_type::{ContentServerType, ServerType};
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
 
-    //web browser specks (to be changed)
-    arrived_content: HashMap<NodeId, Vec<(String, Vec<u8>)>>,
-    catalogue: HashMap<NodeId, Vec<u64>>,
+    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String, Vec<(u64, String)>)>,
+    arrived_content: HashMap<u64, (String, Vec<u8>)>,
+    catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
 
     /*
-    this is necessary because path will only distinguish if it's a good server for us, not the type,
-    hence when we get the typexchange we also create the catalogue to remember if that server is a text or media
+    arrived_text_lists: when a webclient receive a TextLists(HashMap<u64, (String, Vec<(u64, String)>)>), has to store it,
+    with the nodes ids.
+    wouldn't be 100% necessary, but if a text server send him 1000 files, resolving each would be a pain in the ass.
+    hence let's store it, create a command more and handle case by case each TextFile.
+
+    arrived_content: media we retrieved
+
+    catalogue: filled with information got from MediaReference(...), is the fkn catalogue of ikea.
+    NotFound
 
 
     ATTENTION:
@@ -260,22 +267,38 @@ impl NetworkEdge for WebBrowser {
         match message.content {
             ContentType::MediaResponse(media_response) => {
                 match media_response{
-                    MediaResponse::MediaList(list) => {
-                        unimplemented!()
+                    MediaResponse::MediaList(_list) => {
+                        let new_nack = self.create_nack(UnexpectedMessage);
+                        self.send_nack_message(message.source_id, new_nack);
                     }
-                    MediaResponse::Media(media) => {
-                        unimplemented!()
+                    MediaResponse::Media(((id, name), media)) => {
+                        self.arrived_content.insert(id, (name, media));
                     }
                 }
 
 
             },
             ContentType::TextResponse(text_response) => {
-                unimplemented!();
                 match text_response{
-                    TextResponse::TextLists(_) => {}
-                    TextResponse::MediaReferences(_) => {}
-                    TextResponse::NotFound => {}
+                    TextResponse::TextLists(map) => {
+                        for (text_file_id, (name, references)) in map {
+                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name, references));
+                            entry.0.push(src);
+                        }
+                    }
+                    TextResponse::MediaReferences(media_refs) => {
+                        for (media_id, media_server_id) in media_refs{
+                            let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
+                            entry.push(media_server_id);
+                        }
+                    }
+                    TextResponse::NotFound(media_id) => {
+                        //update catalougue
+                        self.catalogue.entry(media_id).and_modify(|v|
+                            v.retain(|node_id| *node_id != src));
+
+                        //send client event
+                    }
                 }
             }
 
@@ -300,17 +323,17 @@ impl NetworkEdge for WebBrowser {
                         if let EdgeType::Server(server_type) = edge_type{
                             if let ServerType::Content(ty) = server_type{
                                 self.comm.paths.get_mut(&from).unwrap().0 = 1;
-                                unimplemented!();
-                                match ty {
-                                    ContentServerType::Text => {
 
-                                    }
-                                    ContentServerType::Media => {
-
-                                    }
+                                if ty == ContentServerType::Text{
+                                    //only if it's a text server I will notify the sc that is a dst.
+                                    //this because the sc has to chose for a webclient only the text servers to witch i want to ask the lists.
+                                    //he will manage the media itself with catalog!!
+                                    self.send_event(SendDestinations(self.comm.node_id, from));
                                 }
                             }
-                            else {self.comm.paths.get_mut(&from).unwrap().0 = 2; }
+                            else {
+                                self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                            }
                         } else {
                             //if it's a client
                             self.comm.paths.get_mut(&from).unwrap().0 = 2;
@@ -380,6 +403,10 @@ impl NetworkEdge for WebBrowser {
     fn get_src_id(&self) -> NodeId {
         self.comm.get_src_id()
     }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.comm.remove_sender(id);
+    }
 }
 
 impl NetworkEdgeErrors for WebBrowser {
@@ -410,6 +437,7 @@ impl ClientTrait for WebBrowser {
     ) -> Self {
         WebBrowser {
             comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            arrived_text_lists: Default::default(),
             arrived_content: Default::default(),
             catalogue: Default::default(),
         }
@@ -476,12 +504,7 @@ impl ClientTrait for WebBrowser {
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::RemoveSender(node_id) => {
-                if self.comm.packet_send.contains_key(&node_id) {
-                    if let Some(to_be_dropped) = self.comm.packet_send.remove(&node_id) {
-                        drop(to_be_dropped);
-                        //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
-                    }
-                }
+                self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
                 self.comm.packet_send.insert(node_id, sender);
@@ -493,11 +516,15 @@ impl ClientTrait for WebBrowser {
             ClientCommand::RetrieveList(id) => {
                 self.get_list(id);
             }
+            ClientCommand::GetTextFile(id) => {
+                self.get_text_file(id);
+            }
 
             //commands for WebClient
             ClientCommand::GetContent(id) => {
-                self.send_content_req(id);
+                self.get_media(id);
             }
+
 
             //ignore other commands cause are chat clients commands
             _ =>{
@@ -525,29 +552,53 @@ impl WebBrowser{
         self.comm.send_message(msg, id);
 
         if DEBUG_MODE {
-            println!("Sent content list request from {src} to server {id}");
+            println!("Sent text list request from {src} to server {id}");
         }
     }
 
-    fn send_content_req(&mut self, cont_id: u64) {
-        unimplemented!();
-        // let src = self.comm.get_src_id();
-        // let session = self.comm.get_session_id();
-        //
-        // let dests = self.where_is_content(&cont_id);
-        // if !dests.is_empty(){
-        //     if let Some(dst) = self.comm.get_optimal_dest(&dests) {
-        //         let content = match (cont_id < 1000){
-        //             true => ContentType::TextRequest(Text(cont_id)),
-        //             false => ContentType::MediaRequest(Media(cont_id)),
-        //         };
-        //         let msg = Message::new(src, session, content);
-        //         self.comm.send_message(msg, dst);
-        //     }
-        // } else {
-        //     //impossible to retrieve a content since no server told us it has it...
-        //     //client event incoming
-        // }
+    fn get_text_file(&mut self, text_file_id: u64) {
+        let src = self.comm.get_src_id();
+        let session = self.comm.get_session_id();
 
+        if let Some(map) = self.arrived_text_lists.get(&text_file_id) {
+            let dests = map.0.clone();
+            if !dests.is_empty() {
+                if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+                    let content = ContentType::TextRequest(TextFile(text_file_id));
+                    let msg = Message::new(src, session, content);
+                    self.comm.send_message(msg, dst);
+                    if DEBUG_MODE {
+                        println!("Sent text file request from {src} to server {dst}");
+                    }
+                }
+            }
+        } else {
+            //impossible to retrieve a text file since no text server told us it has it...
+            //client event incoming
+        }
+    }
+
+
+    fn get_media(&mut self, cont_id: u64) {
+        let src = self.comm.get_src_id();
+        let session = self.comm.get_session_id();
+
+        if let Some(dests) = self.catalogue.get(&cont_id) {
+            if !dests.is_empty() {
+                if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+                    let content = ContentType::MediaRequest(Media(cont_id));
+                    let msg = Message::new(src, session, content);
+                    self.comm.send_message(msg, dst);
+                    if DEBUG_MODE {
+                        println!("Sent media request from {src} to server {dst}");
+                    }
+                }
+            }
+        } else {
+            //impossible to retrieve a media since no text server told us a certain media server has it...
+            //client event incoming
+        }
     }
 }
+
+

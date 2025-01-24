@@ -368,6 +368,10 @@ impl NetworkEdge for ChatClient {
     fn get_src_id(&self) -> NodeId {
         self.comm.get_src_id()
     }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.comm.remove_sender(id);
+    }
 }
 
 impl NetworkEdgeErrors for ChatClient {
@@ -465,12 +469,7 @@ impl ClientTrait for ChatClient {
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::RemoveSender(node_id) => {
-                if self.comm.packet_send.contains_key(&node_id) {
-                    if let Some(to_be_dropped) = self.comm.packet_send.remove(&node_id) {
-                        drop(to_be_dropped);
-                        //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
-                    }
-                }
+                self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
                 self.comm.packet_send.insert(node_id, sender);
