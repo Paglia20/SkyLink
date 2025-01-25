@@ -44,10 +44,9 @@ pub enum ClientEvent {
     SendChatText(NodeId, NodeId, String), //src-dst-chat text
 
     //Web client only
-    // SendTextList() ??, i will sleep on it
-    SendMedia(NodeId, Vec<u8>),
-    SendText(NodeId)
-
+    SendTextList(NodeId, u64, String),
+    SendCatalogue(NodeId, u64, String),
+    SendMedia(NodeId, u64, String, Vec<u8>),
 }
 
 

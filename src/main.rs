@@ -14,6 +14,9 @@ mod skylink_drone;
 mod test;
 mod event_wrapper;
 
+//for testing
+pub const ALL_CHAT: bool = false;
+pub const ALL_CONTENT: bool = true;
 pub const DEBUG_MODE : bool = false;
 pub const ALL_FLOOD_MODE : bool = true; //provvisoria finchè non ci sono i server
 

@@ -2,12 +2,13 @@ use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, RegisterOrList};
-use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowContents, ShowDestinations, Start};
+use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, TextList, RegisterOrList, Text, Media};
+use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowAuxiliaryLists, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
+use image::ImageDecoder;
 use eframe::egui;
-use egui::{FontId, RichText, Vec2};
+use egui::{Context, FontId, RichText, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
@@ -15,9 +16,10 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::NodeType;
+use crate::{ALL_CHAT, ALL_CONTENT};
 use crate::server::server_type::ServerType;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MyNodes {
     id: NodeId,
     connections: HashSet<NodeId>,
@@ -27,12 +29,14 @@ pub struct MyNodes {
     content: Option<ContentIdentifier>
 }
 
-#[derive(Debug, Clone, PartialEq)]
+
+#[derive(Clone, PartialEq)]
 pub enum ContentIdentifier{
-    Chat(NodeId, NodeId), //first src, second destination
-    RegisterOrList(NodeId, NodeId)
-    // Text(NodeId, String),
-    // Media(NodeId, String),
+    Chat(NodeId), //Node id of destination
+    RegisterOrList(NodeId),
+    TextList(NodeId),
+    Text(u64), // id - name
+    Media(egui::TextureHandle), // id - name - content
 }
 
 impl Eq for MyNodes {}
@@ -56,10 +60,10 @@ impl Ord for MyNodes {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum NodeNature{ //more complex NodeType, may keep fields
+pub enum NodeNature{ //just more complex NodeType
     Drone,
     ChatClient,
-    WebClient,
+    WebBrowser,
     ChatServer,
     TextServer,
     MediaServer,
@@ -69,7 +73,7 @@ impl NodeNature{
         match self{
             NodeNature::Drone => {Drone}
             NodeNature::ChatClient => {Client}
-            NodeNature::WebClient => {Client}
+            NodeNature::WebBrowser => {Client}
             NodeNature::ChatServer => {Server}
             NodeNature::TextServer => {Server}
             NodeNature::MediaServer => {Server}
@@ -84,14 +88,6 @@ pub enum Scene {
     ManageDrop,
 }
 
-pub enum MessageScene{
-    Id,
-    Content,
-    AddInput,
-    Send,
-    Error,
-}
-
 #[derive(Clone, Debug)]
 pub enum NodeWindowScene {
     //common between types
@@ -104,14 +100,15 @@ pub enum NodeWindowScene {
     SetPDR,
 
     //client scenes
+    ShowAuxiliaryLists, //for a chat client will be the clients to which he is registered, for a webbrowser the text file he can resolve!
     ShowContents, //for a chat client will be chats, for webclient will be medias
-    ShowDestinations,   // for a chat client are chat server available, for a web..
+    ShowDestinations,   // for a chat client are chat server available(to register ecc..), for a web clint are text server available
 }
 pub struct MyApp {
     sim_contr: SimulationControl,
     nodes: Vec<MyNodes>,
     side_panel_scenes: Scene,
-    checked: Vec<bool>,
+    selected_drones: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
     input_text: String,
@@ -143,7 +140,7 @@ impl MyApp {
         let mut app = Self {
             nodes: vec,
             side_panel_scenes: InitialScene,
-            checked,
+            selected_drones: checked,
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
@@ -179,15 +176,15 @@ impl MyApp {
     }
 
     fn reset_check(&mut self) {
-        self.checked.clear();
+        self.selected_drones.clear();
         for _ in 0..self.nodes.len() + 1 {
-            self.checked.push(false);
+            self.selected_drones.push(false);
         }
     }
 
     fn get_checked (&self) -> Vec<NodeId>{
         self
-            .checked
+            .selected_drones
             .iter()
             .enumerate()
             .filter_map(|(i, &is_checked)| {
@@ -287,6 +284,15 @@ impl MyApp {
                     ClientEvent::SendChatText(src, dst, str) => {
                         self.sim_contr.storage.add_chat_text(src, dst, str);
                     }
+                    ClientEvent::SendTextList(src, text_id, name) => {
+                        self.sim_contr.storage.add_text_list(src, text_id, name);
+                    }
+                    ClientEvent::SendCatalogue(src, media_id, media_name) => {
+                        self.sim_contr.storage.add_to_catalogue(src, media_id, media_name);
+                    }
+                    ClientEvent::SendMedia(src, media_id, str, media) => {
+                        self.sim_contr.storage.add_to_medias(src, media_id, str, media);
+                    }
                     _ => {/* degli altri niente */}
                 }
             }
@@ -330,13 +336,29 @@ impl MyApp {
                                 "ciao".to_string(),
                             ));
                         }
-                        if ui.button("test chat with 0 and 12!").clicked() {
-                            self.sim_contr.storage.add_chat_text(0, 12, "diomerda".to_string());
-                            self.sim_contr.storage.add_chat_text(12, 0, "a te!".to_string());
-                            self.sim_contr.storage.add_chat_text(12, 0, "spero tu stia bene!".to_string());
-                            self.sim_contr.storage.add_chat_text(0, 12, "si sto bene!".to_string());
+                        if ALL_CHAT {
+                            if ui.button("test chat with 0 and 12!").clicked() {
+                                /* questo andrà cambiato appena leo avrà fatto il server,
+                                 è solo per vedere se ci piace il font delle chat */
 
+                                self.sim_contr.storage.add_chat_text(0, 12, "diomerda".to_string());
+                                self.sim_contr.storage.add_chat_text(12, 0, "a te!".to_string());
+                                self.sim_contr.storage.add_chat_text(12, 0, "spero tu stia bene!".to_string());
+                                self.sim_contr.storage.add_chat_text(0, 12, "si sto bene!".to_string());
+                            }
                         }
+
+                        if ALL_CONTENT {
+                            if ui.button("test media with 0").clicked() {
+                                /* questo andrà cambiato appena leo avrà fatto il server,
+                                 è solo per vedere se ci piace il font delle media */
+                                let v = include_bytes!("../test/esempio.png").to_vec();
+
+                                self.sim_contr.storage.add_to_medias(0, 20020, "esempio.png".to_string(), v);
+                            }
+                        }
+
+
 
 
                         if ui.button("Add Drone!").clicked() {
@@ -391,7 +413,7 @@ impl MyApp {
                         ui.label("select drones to connect the new drone with:");
                         self.nodes.sort();
                         for (i, item) in self.nodes.iter().enumerate() {
-                            ui.checkbox(&mut self.checked[i], item.id.to_string());
+                            ui.checkbox(&mut self.selected_drones[i], item.id.to_string());
                         }
                         ui.separator();
                         ui.label("input pdr:");
@@ -412,7 +434,7 @@ impl MyApp {
                         ui.separator();
                         for (i, item) in self.nodes.iter().enumerate() {
                             if item.node_type.simple_type() == Drone {
-                                ui.checkbox(&mut self.checked[i], item.id.to_string());
+                                ui.checkbox(&mut self.selected_drones[i], item.id.to_string());
                             }
                         }
 
@@ -527,7 +549,6 @@ impl MyApp {
             });
         });
     }
-
 
     pub fn render_nodes_windows(&mut self, ctx: &egui::Context) {
         for node in self.nodes.iter_mut() {
@@ -717,6 +738,10 @@ impl MyApp {
                                                         self.input_text = "".to_string(); //reset input text
 
                                                     }
+                                                    if ui.button("Show Server to witch you are Registered ").clicked(){
+                                                        node.node_window_scenes = ShowAuxiliaryLists;
+                                                    }
+
                                                     if ui.button("Show Servers Detected").clicked(){
                                                         node.content = None;
                                                         node.node_window_scenes = ShowDestinations;
@@ -779,16 +804,16 @@ impl MyApp {
                                                                 ui.separator();
                                                                 for id in node_contacts {
                                                                     if ui.button(id.to_string()).clicked() {
-                                                                        node.content = Some(Chat(node.id, id))
+                                                                        node.content = Some(Chat(id))
                                                                     }
                                                                 }
                                                             }
                                                             else {
-                                                                if let Some(Chat(src, dst)) = node.content.clone(){
+                                                                if let Some(Chat(dst)) = node.content.clone(){
                                                                     //print chat
                                                                     ui.label(format!("Chat with {dst}"));
                                                                     ui.separator();
-                                                                    if let Some(chat) = self.sim_contr.storage.retrieve_chat(src, dst){
+                                                                    if let Some(chat) = self.sim_contr.storage.retrieve_chat(node.id, dst){
                                                                         for (id, str) in chat {
                                                                             ui.label(format!("{id} - {str}"));
                                                                         }
@@ -799,7 +824,7 @@ impl MyApp {
                                                                     let response = ui.add(egui::TextEdit::singleline(&mut self.input_text));
                                                                     if response.lost_focus() {
                                                                         // Handle Enter key press
-                                                                        self.sim_contr.msg_another_client(src, dst, self.input_text.clone());
+                                                                        self.sim_contr.msg_another_client(node.id, dst, self.input_text.clone());
                                                                         self.input_text = "".to_string(); //reset input text
                                                                     }
                                                                 }
@@ -821,21 +846,21 @@ impl MyApp {
                                                                 ui.separator();
                                                                 for (id) in node_dst {
                                                                    if ui.button(id.to_string()).clicked() {
-                                                                       node.content = Some(RegisterOrList(node.id, id))
+                                                                       node.content = Some(RegisterOrList(id))
                                                                    }
                                                                 }
                                                             } else {
-                                                                if let Some(RegisterOrList(src, dst)) = node.content {
+                                                                if let Some(RegisterOrList(dst)) = node.content {
                                                                     ui.label(format!("Contact Server {dst}: "));
                                                                     ui.separator();
 
                                                                     if ui.button("Register").clicked() {
-                                                                        self.sim_contr.register_client_to_server(src, dst);
+                                                                        self.sim_contr.register_client_to_server(node.id, dst);
                                                                         node.content = None;
-                                                                        node.node_window_scenes = Start; // Close the window
+                                                                        node.node_window_scenes = ShowAuxiliaryLists; // Close the window
                                                                     }
                                                                     if ui.button("Get List").clicked() {
-                                                                        self.sim_contr.retrive_list_from_server(src, dst);
+                                                                        self.sim_contr.retrive_list_from_server(node.id, dst);
                                                                         node.content = None;
                                                                         node.node_window_scenes = Start; // Close the window
 
@@ -848,6 +873,263 @@ impl MyApp {
                                                                 node.node_window_scenes = Start; // Close the window
                                                             }
                                                         }
+
+                                                        ShowAuxiliaryLists => {
+                                                            //to witch is registered todo!()
+
+                                                        }
+
+                                                        _ => {
+                                                            //drone scenes should be
+                                                            unreachable!()
+                                                        }
+                                                    }
+                                                });
+                                        });
+                                });
+                            });
+                    }
+                    NodeNature::WebBrowser => {
+                        egui::Window::new(format!("Web Browser {}", node.id))
+                            .resizable(true) // Allow resizing
+                            .collapsible(true)
+                            .min_width(500.0)
+                            .default_size((500.0, 400.0)) // Set default size
+                            .default_pos((100.0, 100.0)) // Set default position
+                            .show(ctx, |ui| {
+                                ui.push_id(format!("client_window_{}", node.id), |ui| {
+                                    egui::Frame::default()
+                                        .fill(egui::Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
+                                        .show(ui, |ui| {
+                                            // Split panels with proper layout
+                                            egui::SidePanel::left(format!("side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    ui.label(format!("Log of {}:", node.id));
+                                                    ui.separator();
+
+                                                    egui::ScrollArea::vertical()
+                                                        .auto_shrink([false; 2]) // Prevent shrinking
+                                                        .show(ui, |ui| {
+                                                            for s in &self.sim_contr.log {
+                                                                if s.get_id() == node.id {
+                                                                    ui.label(format!("{}", s));
+                                                                }
+                                                            }
+                                                        });
+                                                });
+
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.separator();
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Flood").clicked(){
+                                                        self.sim_contr.flood_with(node.id);
+                                                        node.content = None;
+                                                        node.node_window_scenes = ShowDestinations;
+                                                    }
+                                                    if ui.button("Resolve a TextList").clicked(){
+                                                        node.content = None;
+                                                        node.node_window_scenes = ShowAuxiliaryLists;
+                                                    }
+
+                                                    if ui.button("Show Possessed Medias").clicked(){
+                                                        node.node_window_scenes = ShowContents;
+                                                        node.content = None;
+                                                    }
+
+                                                    if ui.button("Show Text Servers Detected").clicked(){
+                                                        node.content = None;
+                                                        node.node_window_scenes = ShowDestinations;
+                                                    }
+
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.content = None;
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
+                                            egui::CentralPanel::default()
+                                                .show_inside(ui, |ui| {
+                                                    match node.node_window_scenes{
+                                                        Start => {
+                                                            ui.label("This is the central panel content.");
+                                                            ui.label("flood results and medias will be here.");
+                                                        }
+                                                        AddSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Add Channel to:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+                                                                self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        RemoveSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Remove Channel to:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+
+                                                                self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        },
+                                                        ShowContents => {
+                                                            let node_medias = match self.sim_contr.storage.medias.get(&node.id) {
+                                                                Some(contacts) => contacts.clone(),
+                                                                None => vec![],
+                                                            };
+
+                                                            if node.content.is_none() {
+                                                                ui.label("MyMedias are: ".to_string());
+                                                                ui.label("Click the one you want to show ".to_string());
+                                                                ui.separator();
+
+                                                                for media in node_medias {
+                                                                    if ui.button(format!("{} - {}", media.0.clone(), media.1.clone())).clicked() {
+                                                                        // Carica l'immagine quando viene cliccato
+                                                                        if let Some(texture) = load_image(ctx, media.2.clone()) {
+                                                                            node.content = Some(Media(texture));
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                if let Some(Media(texture)) = node.content.clone() {
+                                                                    // Ottieni lo spazio disponibile nella finestra
+                                                                    let available_size = ui.available_size();
+
+                                                                    // Disegna l'immagine scalata per riempire la finestra
+                                                                    let size = texture.size_vec2();
+                                                                    let aspect_ratio = size.x / size.y;
+                                                                    let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                                                        // Limita per altezza
+                                                                        egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                                                    } else {
+                                                                        // Limita per larghezza
+                                                                        egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                                                    };
+
+                                                                    // Disegna l'immagine scalata
+                                                                    ui.image((texture.id(), new_size));
+
+                                                                    if ui.button("Chiudi Immagine").clicked() {
+                                                                        node.content = None;
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start; // Chiudi la finestra
+                                                            }
+                                                        },
+
+                                                        ShowDestinations => {
+                                                            let node_dst = match self.sim_contr.storage.destinations.get(&node.id){
+                                                                Some(dsts) => dsts.clone(),
+                                                                None => HashSet::new()
+                                                            };
+                                                            if node.content.is_none() {
+                                                                ui.label("My Text Servers are: ".to_string());
+                                                                ui.label("Choose one from witch you want the text lists ".to_string());
+                                                                ui.separator();
+                                                                for (id) in node_dst {
+                                                                    if ui.button(id.to_string()).clicked() {
+                                                                        node.content = Some(TextList(id))
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                if let Some(TextList(dst)) = node.content {
+                                                                    //send retrieve list fn
+                                                                    //...
+
+                                                                    node.content = None;
+                                                                    node.node_window_scenes = Start; // Close the window
+                                                                }
+                                                            }
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        },
+
+                                                        ShowAuxiliaryLists => {
+                                                            let node_text_lists = match self.sim_contr.storage.text_lists.get(&node.id){
+                                                                Some(texts) => texts.clone(),
+                                                                None => vec![],
+                                                            };
+                                                            if node.content.is_none() {
+                                                                ui.label(format!("My Text TextLists are: "));
+                                                                ui.label(format!("Choose witch you want to resolve to update your catalogue"));
+                                                                ui.separator();
+                                                                for (id) in node_text_lists {
+                                                                    if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
+                                                                        node.content = Some(Text(id.0))
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                if let Some(Text(id)) = node.content {
+                                                                    //send get textfile...
+
+
+                                                                    if let Some(media_available) = self.sim_contr.storage.catalogues.get(&node.id){
+                                                                        ui.label(format!("All Medias you can Get: "));
+
+                                                                        for id in media_available {
+                                                                            if ui.button(id.to_string()).clicked() {
+                                                                                //send get media
+                                                                                node.content = None;
+                                                                                node.node_window_scenes = Start; // Close the window
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        ui.label(format!("Updating catalogue, might take a second... "));
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                        },
+
                                                         _ => {
                                                             //drone scenes should be
                                                             unreachable!()
@@ -890,46 +1172,24 @@ impl MyApp {
                                                         });
                                                 });
 
-                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
-                                                .resizable(true)
-                                                .default_width(200.0) // Limit side panel width
-                                                .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-                                                    for connection in node.connections.clone() {
-                                                        connections.push_str(connection.to_string().as_str());
-                                                        connections.push_str(", ");
-                                                    }
-
-                                                    ui.label(format!("Connected to: {}", connections));
-
-                                                    if ui.button("Add Channel").clicked(){
-                                                        node.node_window_scenes = AddSender;
-                                                    }
-
-                                                    if ui.button("Remove Channel").clicked(){
-                                                        node.node_window_scenes = RemoveSender
-                                                    }
-
-                                                    if ui.button("Chiudi").clicked() {
-                                                        node.selected = false; // Close the window
-                                                    }
-                                                });
 
                                             egui::CentralPanel::default()
                                                 .show_inside(ui, |ui| {
-                                                    ui.label("This is the central panel content.");
-                                                    ui.label("flood results and chat shits will be here.");
-
-
                                                     match node.node_window_scenes{
-                                                        Start => {}
-                                                        AddSender => {}
-                                                        RemoveSender => {}
-                                                        ShowContents => {
-                                                            //questo fammici pensare, se hai idee scrivi pure.
-                                                            //l'idea sarebbe se sono in questo stato displayio i nodi che il client/server può raggiungere con un mex
+                                                        Start => {
+                                                            ui.label("This is the central panel content.");
+                                                            ui.label("Server infos will be here ");
                                                         }
-                                                        ShowDestinations => {}
+                                                        AddSender => {
+                                                            todo!()
+                                                        },
+                                                        RemoveSender => {todo!()}
+                                                        ShowContents => {
+
+                                                        }
+                                                        ShowDestinations => {
+                                                            //idk
+                                                        }
                                                         _ => {}
                                                     }
                                                 });
@@ -937,7 +1197,6 @@ impl MyApp {
                                 });
                             });
                     }
-                    NodeNature::WebClient => {}
                     NodeNature::TextServer => {}
                     NodeNature::MediaServer => {}
                 }
@@ -1001,6 +1260,28 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
     )
+}
+
+
+fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<egui::TextureHandle> {
+    // Decodifica l'immagine usando il crate `image`
+    let decoded_image = image::load_from_memory(&image_data).ok()?;
+    let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
+    let (width, height) = rgba_image.dimensions();
+
+    // Crea una texture da RGBA bytes
+    let pixels: Vec<egui::Color32> = rgba_image
+        .pixels()
+        .map(|p| egui::Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
+        .collect();
+
+    let texture = egui::ColorImage {
+        size: [width as usize, height as usize],
+        pixels,
+    };
+
+    // Carica la texture nel contesto di egui
+    Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
 
 /*

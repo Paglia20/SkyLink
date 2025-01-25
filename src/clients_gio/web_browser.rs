@@ -15,17 +15,17 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
-use crate::clients_gio::client_command::ClientEvent::{SendDestinations};
+use crate::clients_gio::client_command::ClientEvent::{SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
-
+                                                            //vettore con tutti i media di cui quello contiene un riferimento
     arrived_text_lists: HashMap<u64, (Vec<NodeId>, String, Vec<(u64, String)>)>,
-    arrived_content: HashMap<u64, (String, Vec<u8>)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
+    arrived_content: HashMap<u64, (String, Vec<u8>)>,
 
     /*
     arrived_text_lists: when a webclient receive a TextLists(HashMap<u64, (String, Vec<(u64, String)>)>), has to store it,
@@ -272,7 +272,8 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(((id, name), media)) => {
-                        self.arrived_content.insert(id, (name, media));
+                        self.arrived_content.insert(id, (name.clone(), media.clone()));
+                        self.send_event(SendMedia(self.get_src_id(), id, name, media))
                     }
                 }
 
@@ -282,14 +283,22 @@ impl NetworkEdge for WebBrowser {
                 match text_response{
                     TextResponse::TextLists(map) => {
                         for (text_file_id, (name, references)) in map {
-                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name, references));
+                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone(), references));
                             entry.0.push(src);
+
+                            if entry.0.len() == 1 {
+                                self.send_event(SendTextList(self.get_src_id(), text_file_id, name))
+                            }
                         }
                     }
                     TextResponse::MediaReferences(media_refs) => {
-                        for (media_id, media_server_id) in media_refs{
+                        for (media_id, (name, media_server_id)) in media_refs{
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
                             entry.push(media_server_id);
+
+                            if entry.len() == 1 {
+                                self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
+                            }
                         }
                     }
                     TextResponse::NotFound(media_id) => {
