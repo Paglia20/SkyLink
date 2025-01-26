@@ -16,9 +16,9 @@ mod event_wrapper;
 
 //for testing
 pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = true;
+pub const ALL_CONTENT: bool = false;
 pub const DEBUG_MODE : bool = false;
-pub const ALL_FLOOD_MODE : bool = true; //provvisoria finchè non ci sono i server
+pub const NO_SERVER_MODE: bool = true; //provvisoria finchè non ci sono i server
 
 fn main() {
     // println!("Hello, world!");

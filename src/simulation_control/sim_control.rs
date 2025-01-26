@@ -186,7 +186,7 @@ impl SimulationControl {
     }
 
 
-    pub fn msg_another_client(&mut self, src: NodeId, dst: NodeId, str: String){
+    pub fn msg_another_client(&self, src: NodeId, dst: NodeId, str: String){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::SendMSG(dst, str.clone())).unwrap();
             if DEBUG_MODE{
@@ -194,7 +194,7 @@ impl SimulationControl {
             }
         }
     }
-    pub fn register_client_to_server(&mut self, src: NodeId, dst: NodeId){
+    pub fn register_client_to_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::Register(dst)).unwrap();
             if DEBUG_MODE{
@@ -202,11 +202,28 @@ impl SimulationControl {
             }
         }
     }
-    pub fn retrive_list_from_server(&mut self, src: NodeId, dst: NodeId){
+    pub fn retrive_list_from_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::RetrieveList(dst)).unwrap();
             if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to retrive list from {}", dst);
+            }
+        }
+    }
+
+    pub fn get_text_file(&self, src: NodeId, text_file_id: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(text_file_id)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get text file {}",text_file_id);
+            }
+        }
+    }
+    pub fn get_media(&self, src: NodeId, media: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(media)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get media {}",media);
             }
         }
     }

@@ -6,7 +6,7 @@ use crate::message::MediaRequest::{Media};
 use crate::message::TextRequest::*;
 use crate::message::{ContentType, MediaResponse, Message, TypeExchange, TextResponse};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
-use crate::{ALL_FLOOD_MODE, DEBUG_MODE};
+use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::sleep;
@@ -347,7 +347,7 @@ impl NetworkEdge for WebBrowser {
                             //if it's a client
                             self.comm.paths.get_mut(&from).unwrap().0 = 2;
 
-                            if ALL_FLOOD_MODE {
+                            if NO_SERVER_MODE {
                                 self.send_event(SendDestinations(self.comm.node_id, from));
                             }
                         }

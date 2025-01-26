@@ -2,7 +2,7 @@ use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, TextList, RegisterOrList, Text, Media};
+use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, TextList, RegisterOrList, MediaToResolve, Media};
 use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowAuxiliaryLists, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
@@ -26,7 +26,8 @@ pub struct MyNodes {
     selected: bool,
     node_type: NodeNature,
     node_window_scenes: NodeWindowScene,
-    content: Option<ContentIdentifier>
+    content: Option<ContentIdentifier>,
+    input_text: String,
 }
 
 
@@ -35,7 +36,7 @@ pub enum ContentIdentifier{
     Chat(NodeId), //Node id of destination
     RegisterOrList(NodeId),
     TextList(NodeId),
-    Text(u64), // id - name
+    MediaToResolve, // id
     Media(egui::TextureHandle), // id - name - content
 }
 
@@ -111,7 +112,6 @@ pub struct MyApp {
     selected_drones: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
-    input_text: String,
 }
 
 
@@ -132,6 +132,7 @@ impl MyApp {
                 node_type: neighbors.0,
                 node_window_scenes: Start,
                 content: None,
+                input_text: "".to_string(),
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -144,7 +145,6 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
-            input_text: "".to_string(),
         };
         //app.generate_random_connections();
         app
@@ -155,14 +155,14 @@ impl MyApp {
         let id_to_data: HashMap<_, _> = self
             .nodes
             .iter()
-            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone()))})
+            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone(), x.input_text.clone()))})
             .collect();
 
         // Clear and rebuild nodes
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, (node_type, connections)) in network_graph {
-            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None));
+            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None, "".to_string()));
 
             self.nodes.push(MyNodes {
                 id: node_id,
@@ -171,6 +171,7 @@ impl MyApp {
                 node_type,
                 node_window_scenes: data.1,
                 content: data.2,
+                input_text: data.3,
             });
         }
     }
@@ -336,29 +337,23 @@ impl MyApp {
                                 "ciao".to_string(),
                             ));
                         }
-                        if ALL_CHAT {
-                            if ui.button("test chat with 0 and 12!").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle chat */
+                        if ui.button("test chat with 0 and 11!").clicked() {
+                            /* questo andrà cambiato appena leo avrà fatto il server,
+                             è solo per vedere se ci piace il font delle chat */
 
-                                self.sim_contr.storage.add_chat_text(0, 12, "diomerda".to_string());
-                                self.sim_contr.storage.add_chat_text(12, 0, "a te!".to_string());
-                                self.sim_contr.storage.add_chat_text(12, 0, "spero tu stia bene!".to_string());
-                                self.sim_contr.storage.add_chat_text(0, 12, "si sto bene!".to_string());
-                            }
+                            self.sim_contr.storage.add_chat_text(0, 11, "diomerda".to_string());
+                            self.sim_contr.storage.add_chat_text(11, 0, "a te!".to_string());
+                            self.sim_contr.storage.add_chat_text(11, 0, "spero tu stia bene!".to_string());
+                            self.sim_contr.storage.add_chat_text(0, 11, "si sto bene!".to_string());
                         }
 
-                        if ALL_CONTENT {
-                            if ui.button("test media with 0").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle media */
-                                let v = include_bytes!("../test/esempio.png").to_vec();
+                        if ui.button("test media with 12").clicked() {
+                            /* questo andrà cambiato appena leo avrà fatto il server,
+                             è solo per vedere se ci piace il font delle media */
+                            let v = include_bytes!("../test/esempio.png").to_vec();
 
-                                self.sim_contr.storage.add_to_medias(0, 20020, "esempio.png".to_string(), v);
-                            }
+                            self.sim_contr.storage.add_to_medias(12, 20020, "esempio.png".to_string(), v);
                         }
-
-
 
 
                         if ui.button("Add Drone!").clicked() {
@@ -735,7 +730,7 @@ impl MyApp {
                                                     if ui.button("Show Chats").clicked(){
                                                         node.node_window_scenes = ShowContents;
                                                         node.content = None;
-                                                        self.input_text = "".to_string(); //reset input text
+                                                        node.input_text = "".to_string(); //reset input text
 
                                                     }
                                                     if ui.button("Show Server to witch you are Registered ").clicked(){
@@ -821,11 +816,11 @@ impl MyApp {
                                                                     //send message
                                                                     ui.separator();
                                                                     ui.label("Enter a message:");
-                                                                    let response = ui.add(egui::TextEdit::singleline(&mut self.input_text));
+                                                                    let response = ui.add(egui::TextEdit::singleline(&mut node.input_text));
                                                                     if response.lost_focus() {
                                                                         // Handle Enter key press
-                                                                        self.sim_contr.msg_another_client(node.id, dst, self.input_text.clone());
-                                                                        self.input_text = "".to_string(); //reset input text
+                                                                        self.sim_contr.msg_another_client(node.id, dst, node.input_text.clone());
+                                                                        node.input_text = "".to_string(); //reset input text
                                                                     }
                                                                 }
                                                             }
@@ -1030,21 +1025,18 @@ impl MyApp {
                                                                 }
                                                             } else {
                                                                 if let Some(Media(texture)) = node.content.clone() {
-                                                                    // Ottieni lo spazio disponibile nella finestra
+                                                                    // obtain available space
                                                                     let available_size = ui.available_size();
 
-                                                                    // Disegna l'immagine scalata per riempire la finestra
                                                                     let size = texture.size_vec2();
                                                                     let aspect_ratio = size.x / size.y;
                                                                     let new_size = if available_size.x / available_size.y > aspect_ratio {
-                                                                        // Limita per altezza
                                                                         egui::vec2(available_size.y * aspect_ratio, available_size.y)
                                                                     } else {
-                                                                        // Limita per larghezza
                                                                         egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                                     };
 
-                                                                    // Disegna l'immagine scalata
+                                                                    //immagine scalata
                                                                     ui.image((texture.id(), new_size));
 
                                                                     if ui.button("Chiudi Immagine").clicked() {
@@ -1075,9 +1067,7 @@ impl MyApp {
                                                                 }
                                                             } else {
                                                                 if let Some(TextList(dst)) = node.content {
-                                                                    //send retrieve list fn
-                                                                    //...
-
+                                                                    self.sim_contr.retrive_list_from_server(node.id, dst);
                                                                     node.content = None;
                                                                     node.node_window_scenes = Start; // Close the window
                                                                 }
@@ -1100,20 +1090,18 @@ impl MyApp {
                                                                 ui.separator();
                                                                 for (id) in node_text_lists {
                                                                     if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
-                                                                        node.content = Some(Text(id.0))
+                                                                        self.sim_contr.get_text_file(node.id, id.0);
+                                                                        node.content = Some(MediaToResolve)
                                                                     }
                                                                 }
                                                             } else {
-                                                                if let Some(Text(id)) = node.content {
-                                                                    //send get textfile...
-
-
+                                                                if let Some(MediaToResolve) = node.content {
                                                                     if let Some(media_available) = self.sim_contr.storage.catalogues.get(&node.id){
                                                                         ui.label(format!("All Medias you can Get: "));
 
                                                                         for id in media_available {
                                                                             if ui.button(id.to_string()).clicked() {
-                                                                                //send get media
+                                                                                self.sim_contr.get_media(node.id, id.clone());
                                                                                 node.content = None;
                                                                                 node.node_window_scenes = Start; // Close the window
                                                                             }
