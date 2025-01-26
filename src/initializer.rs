@@ -8,11 +8,15 @@ use wg_2024::config;
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet};
+use crate::{ALL_CHAT, ALL_CONTENT};
 use crate::clients_gio::client_chat::ChatClient;
+use crate::clients_gio::web_browser::WebBrowser;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_daniel::NodeNature;
+use crate::simulation_control::sim_daniel::NodeNature::*;
+
 
 pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
     let config = parse_config(file);
@@ -91,45 +95,47 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
         //implementation of other groups drones in our network.
     }
 
-    for client in config.client.into_iter() {
-        //Adding the sender to this client to the senders of the Sim Contr.
-        let (contr_send, contr_recv) = unbounded();
-        client_command_send.insert(client.id, contr_send);
-
-        //Give the client a copy of the sender of events to the Sim Contr.
-        let node_event_send = client_event_send.clone();
-        network_graph.insert(client.id, (NodeNature::ChatClient, HashSet::from_iter(client.connected_drone_ids.clone())));
-
-        //Take the channels necessary to this client.
-        let client_recv = packet_receivers.remove(&client.id).unwrap();
-        let client_send: HashMap<NodeId, Sender<Packet>> = client
-            .connected_drone_ids
-            .into_iter()
-            .map(|id| (id, packet_senders[&id].clone()))
-            .collect();
-
-        //create the thread of the Client, and add it to a Vec to be pushed afterward
-        handles.push(thread::spawn(move || {
-            let mut client = ChatClient::new(
-                client.id,
-                contr_recv,
-                node_event_send,
-                client_recv,
-                client_send,
-            );
-            client.run();
-        }));
-        //This will probably need to be changed based on the
-        //implementation of other groups drones in our network.
-    }
+    // for client in config.client.into_iter() {
+    //     //Adding the sender to this client to the senders of the Sim Contr.
+    //     let (contr_send, contr_recv) = unbounded();
+    //     client_command_send.insert(client.id, contr_send);
+    //
+    //     //Give the client a copy of the sender of events to the Sim Contr.
+    //     let node_event_send = client_event_send.clone();
+    //     network_graph.insert(client.id, (NodeNature::ChatClient, HashSet::from_iter(client.connected_drone_ids.clone())));
+    //
+    //     //Take the channels necessary to this client.
+    //     let client_recv = packet_receivers.remove(&client.id).unwrap();
+    //     let client_send: HashMap<NodeId, Sender<Packet>> = client
+    //         .connected_drone_ids
+    //         .into_iter()
+    //         .map(|id| (id, packet_senders[&id].clone()))
+    //         .collect();
+    //
+    //     //create the thread of the Client, and add it to a Vec to be pushed afterward
+    //     handles.push(thread::spawn(move || {
+    //         let mut client = ChatClient::new(
+    //             client.id,
+    //             contr_recv,
+    //             node_event_send,
+    //             client_recv,
+    //             client_send,
+    //         );
+    //         client.run();
+    //     }));
+    //     //This will probably need to be changed based on the
+    //     //implementation of other groups drones in our network.
+    // }
 
     // I create the servers in an external function, that'll add them to the 'handles' vector.
-    /*let (chat_servers, media_servers) = create_servers(config.server.clone(),
+    let (chat_servers, media_servers) = create_servers(config.server.clone(),
                                                        &mut handles,
                                                        &mut server_command_send,
                                                        &server_event_send,
                                                        &packet_senders,
-                                                       &mut packet_receivers);
+                                                       &mut packet_receivers,
+                                                       &mut network_graph
+    );
     create_clients(config.client.clone(),
                    &mut handles,
                    &mut client_command_send,
@@ -137,7 +143,9 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
                    &packet_senders,
                    &mut packet_receivers,
                    chat_servers,
-                   media_servers);*/
+                   media_servers,
+                   &mut network_graph,
+    );
 
     let mut sim_contr = SimulationControl::new(
         drone_command_send,
@@ -164,7 +172,8 @@ fn create_servers(servers: Vec<config::Server>,
                   server_command_send: &mut HashMap<NodeId, Sender<ServerCommand>>,
                   server_event_send: &Sender<ServerEvent>,
                   packet_senders: &HashMap<NodeId, Sender<Packet>>,
-                  packet_receivers: &mut HashMap<NodeId, Receiver<Packet>>) -> (bool, bool) {
+                  packet_receivers: &mut HashMap<NodeId, Receiver<Packet>>,
+                  network_graph: &HashMap<NodeId, (NodeNature, HashSet<NodeId>)>) -> (bool, bool) {
 
     let length = servers.len();
     let mut chooser = 0;
@@ -177,6 +186,7 @@ fn create_servers(servers: Vec<config::Server>,
 
         // Give the server a copy of the sender of events to the Sim Contr.
         let node_event_send = server_event_send.clone();
+
 
         // Take the channels necessary to this client.
         let server_recv = packet_receivers.remove(&server.id).unwrap();
@@ -225,7 +235,8 @@ fn create_clients(clients: Vec<config::Client>,
                   packet_senders: &HashMap<NodeId, Sender<Packet>>,
                   packet_receivers: &mut HashMap<NodeId, Receiver<Packet>>,
                   chat_server: bool,
-                  media_server: bool) {
+                  media_server: bool,
+                  network_graph: &mut HashMap<NodeId, (NodeNature, HashSet<NodeId>)>) {
 
     let length = clients.len();
     let mut chooser = true;
@@ -240,6 +251,7 @@ fn create_clients(clients: Vec<config::Client>,
 
             //Give the client a copy of the sender of events to the Sim Contr.
             let node_event_send = client_event_send.clone();
+            network_graph.insert(client.id, (NodeNature::WebBrowser, HashSet::from_iter(client.connected_drone_ids.clone())));
 
             //Take the channels necessary to this client.
             let client_recv = packet_receivers.remove(&client.id).unwrap();
@@ -250,8 +262,21 @@ fn create_clients(clients: Vec<config::Client>,
                 .collect();
 
             //create the thread of the Client, and add it to a Vec to be pushed afterward
+            if ALL_CONTENT {
+                handles.push(thread::spawn(move || {
+                    let mut client = WebBrowser::new(
+                        client.id,
+                        contr_recv,
+                        node_event_send,
+                        client_recv,
+                        client_send,
+                    );
+                    client.run();
+                }));
+            }
 
-            if length >= 2 && chat_server && chooser {
+            else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
+                network_graph.entry(client.id).and_modify(|x|x.0 = NodeNature::ChatClient);
                 handles.push(thread::spawn(move || {
                     let mut client = ChatClient::new(
                         client.id,
@@ -266,6 +291,16 @@ fn create_clients(clients: Vec<config::Client>,
                 chooser = !chooser
             } else {
                 //create media client
+                handles.push(thread::spawn(move || {
+                    let mut client = WebBrowser::new(
+                        client.id,
+                        contr_recv,
+                        node_event_send,
+                        client_recv,
+                        client_send,
+                    );
+                    client.run();
+                }));
 
                 chooser = !chooser
             }

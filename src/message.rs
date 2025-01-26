@@ -113,8 +113,8 @@ pub enum TextResponse {
     //la seconda è il nome di ogni media associato all'id
     TextLists(HashMap<u64, (String, Vec<(u64, String)>)>),
 
-    MediaReferences(HashMap<u64, NodeId>), //chi ha quel media
-    NotFound,
+    MediaReferences(HashMap<u64, (String, NodeId)>), //chi ha quel media
+    NotFound(u64), //i didn't find that id.
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
@@ -125,6 +125,9 @@ pub enum MediaResponse {
 /*
 
 Ricapitolando:
+id media > 1000
+id texfiles < 1000
+
 
 web client              text server                     media server
                             ---------------medialist? --->

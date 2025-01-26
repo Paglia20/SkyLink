@@ -17,6 +17,7 @@ use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::{NodeType, Packet, PacketType};
+use crate::server::server_type::ServerType::Chat;
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -94,11 +95,11 @@ impl SimulationControl {
             ClientEvent::NackReceived(packet) => {
                 self.c_process_nack_received(packet);
             }
-            ClientEvent::MissingDestination(node_id) => {
-                self.c_process_missing_destination(node_id);
+            ClientEvent::MissingDestination(src, node_id) => {
+                self.c_process_missing_destination(src, node_id);
             }
-            ClientEvent::MissingRoute(node_id) => {
-                self.c_process_missing_route(node_id);
+            ClientEvent::MissingRoute(src, node_id) => {
+                self.c_process_missing_route(src, node_id);
             }
             ClientEvent::LostMessage(sess, node_id) => {
                 self.c_process_lost_message(sess, node_id);
@@ -145,13 +146,39 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             }
-            ClientEvent::SendMedia(_, _) => {
-                unimplemented!()
+            ClientEvent::SendMedia(src, media_id, name, _media) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} received media [{media_id} - {name}]")
+                };
+                self.log.push_back(new_log);
             }
-            ClientEvent::SendText(_) => {
-                unimplemented!()
+            ClientEvent::SendCatalogue(src, id, ..) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} updated his catalogue! ({id}) ")
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::SendTextList(src, id, ..) => {
+                let new_log = LogEntry{
+                    cause: Sent,
+                    node_id: src,
+                    message: format!("{src} updated his TexsLists! ({id}) ")
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::Flooding(src) => {
+                let new_log = LogEntry{
+                    cause: Flood,
+                    node_id: src,
+                    message: format!("{src} is flooding!")
+                };
+                self.log.push_back(new_log);
+            }
 
-            }
         }
     }
     pub fn add_server_event_to_log(&mut self, e: ServerEvent){
@@ -182,7 +209,7 @@ impl SimulationControl {
     }
 
 
-    pub fn msg_another_client(&mut self, src: NodeId, dst: NodeId, str: String){
+    pub fn msg_another_client(&self, src: NodeId, dst: NodeId, str: String){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::SendMSG(dst, str.clone())).unwrap();
             if DEBUG_MODE{
@@ -190,7 +217,7 @@ impl SimulationControl {
             }
         }
     }
-    pub fn register_client_to_server(&mut self, src: NodeId, dst: NodeId){
+    pub fn register_client_to_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::Register(dst)).unwrap();
             if DEBUG_MODE{
@@ -198,11 +225,28 @@ impl SimulationControl {
             }
         }
     }
-    pub fn retrive_list_from_server(&mut self, src: NodeId, dst: NodeId){
+    pub fn retrive_list_from_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::RetrieveList(dst)).unwrap();
             if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to retrive list from {}", dst);
+            }
+        }
+    }
+
+    pub fn get_text_file(&self, src: NodeId, text_file_id: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(text_file_id)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get text file {}",text_file_id);
+            }
+        }
+    }
+    pub fn get_media(&self, src: NodeId, media: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(media)).unwrap();
+            if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get media {}",media);
             }
         }
     }
@@ -274,11 +318,21 @@ impl SimulationControl {
 
                 // remove the drone from the neighbour's sends
                 if let mut vec = self.network_graph.keys().cloned().collect::<Vec<_>>() {
-                    for (neighbor_id, neighbor_sender) in &self.drone_command_senders {
-                        if vec.contains(neighbor_id) {
-                            neighbor_sender.send(RemoveSender(id)).unwrap()
+                    self.drone_command_senders.iter().for_each(|(neigh_id, sender)|{
+                        if vec.contains(neigh_id) {
+                            sender.send(RemoveSender(id)).unwrap()
                         }
-                    }
+                    });
+                    self.client_command_senders.iter().for_each(|(neigh_id, sender)|{
+                        if vec.contains(neigh_id) {
+                            sender.send(ClientCommand::RemoveSender(id)).unwrap()
+                        }
+                    });
+                    self.server_command_senders.iter().for_each(|(neigh_id, sender)|{
+                        if vec.contains(neigh_id) {
+                            sender.send(ServerCommand::RemoveSender(id)).unwrap()
+                        }
+                    });
                 }
 
                 if let Some(to_be_dropped) = self.drone_command_senders.remove(&id) {
@@ -289,8 +343,10 @@ impl SimulationControl {
                     id,
                     "Node crashed".to_string(),
                 ));
+                self.network_graph.iter_mut().for_each(|(_, (_, connections))| {
+                    connections.retain(|&rem| rem != id);
+                });                self.network_graph.remove(&id);
 
-                self.network_graph.remove(&id);
             }
         } else {
             println!("drone {} not found in the network.", id);
@@ -335,7 +391,7 @@ impl SimulationControl {
                 return;
             }
             Some(n_type) => {
-                self.match_node_type_inverse_for_remove_senders(n_type, id_to_remove, id);
+                self.match_node_type_for_remove_senders(n_type, id_to_remove, id);
             }
         }
     }
@@ -417,7 +473,7 @@ impl SimulationControl {
                 return;
             }
             Some(n_type) => {
-                self.match_node_type_for_add_sender_inverse(n_type, id_to_add, id);
+                self.match_node_type_for_add_sender(n_type, id_to_add, id);
             }
         }
     }
@@ -601,21 +657,21 @@ impl SimulationControl {
             }
         }
     }
-    fn c_process_missing_destination(& mut self, node_id: NodeId){
+    fn c_process_missing_destination(& mut self, node_id: NodeId, node_id0: NodeId){
         let new_log = LogEntry{
             cause: MissingDestination,
             node_id,
             message: format!("Couldn't reach {} with a packet (missing destination) ",
-                             node_id),
+                             node_id0),
         };
         self.log.push_back(new_log);
     }
-    fn c_process_missing_route(& mut self, node_id: NodeId){
+    fn c_process_missing_route(& mut self, node_id: NodeId, node_id0: NodeId){
         let new_log = LogEntry{
             cause: MissingDestination,
             node_id,
             message: format!("Couldn't reach {} with a packet (missing route)",
-                             node_id),
+                             node_id0),
         };
         self.log.push_back(new_log);
     }
@@ -671,7 +727,7 @@ impl SimulationControl {
                 message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::FloodRequest(rq) => {
-                message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
             }
             PacketType::FloodResponse(rr) => {
                 message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
@@ -858,123 +914,47 @@ impl SimulationControl {
         match n_type {
             Client => {
                 if let Some(sender) = self.client_command_senders.get(&id) {
-                    if let Err(_e) = sender.send(ClientCommand::RemoveSender(id_to_remove)) {
+                    if let Err(_e) = sender.try_send(ClientCommand::RemoveSender(id_to_remove)) {
                         println!(
                             "error in removing node {} from client {} senders",
                             id_to_remove, id
                         );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                            ids.retain(|id| {id != &id_to_remove});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id_to_remove,
-                            format!("node {} removed from senders", id),
-                        ));
+                        return
                     }
                 }
             }
             Drone => {
                 if let Some(sender) = self.drone_command_senders.get(&id) {
-                    if let Err(_e) = sender.send(RemoveSender(id_to_remove)) {
+                    if let Err(_e) = sender.try_send(RemoveSender(id_to_remove)) {
                         println!(
                             "error in removing drone {} from drone {} senders",
                             id_to_remove, id
                         );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                            ids.retain(|id| {id != &id_to_remove});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id_to_remove,
-                            format!("drone {} removed from senders", id),
-                        ));
+                        return
                     }
                 }
             }
             Server => {
                 if let Some(sender) = self.server_command_senders.get(&id) {
-                    if let Err(_e) = sender.send(ServerCommand::RemoveSender(id_to_remove)) {
+                    if let Err(_e) = sender.try_send(ServerCommand::RemoveSender(id_to_remove)) {
                         println!(
                             "error in removing node {} from server {} senders",
                             id_to_remove, id
                         );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                            ids.retain(|id| {id != &id_to_remove});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id_to_remove,
-                            format!("node {} removed from senders", id),
-                        ));
+                        return;
                     }
                 }
             }
         }
-    }
-    fn match_node_type_inverse_for_remove_senders(&mut self, n_type: NodeType, id_to_remove:NodeId, id: NodeId){
-        match n_type {
-            Client => {
-                if let Some(sender) = self.client_command_senders.get(&id_to_remove) {
-                    if let Err(_e) = sender.send(ClientCommand::RemoveSender(id)) {
-                        println!(
-                            "error in removing node {} from client {} senders",
-                            id, id_to_remove
-                        );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
-                            ids.retain(|x| {x != &id});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id,
-                            format!("node {} removed from senders", id_to_remove),
-                        ));
-                    }
-                }
-            }
-            Drone => {
-                if let Some(sender) = self.drone_command_senders.get(&id_to_remove) {
-                    if let Err(_e) = sender.send(RemoveSender(id)) {
-                        println!(
-                            "error in removing drone {} from drone {} senders",
-                            id, id_to_remove
-                        );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
-                            ids.retain(|x| {x != &id});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id,
-                            format!("drone {} removed from senders", id_to_remove),
-                        ));
-                    }
-                }
-            }
-            Server => {
-                if let Some(sender) = self.server_command_senders.get(&id_to_remove) {
-                    if let Err(_e) = sender.send(ServerCommand::RemoveSender(id)) {
-                        println!(
-                            "error in removing node {} from server {} senders",
-                            id, id_to_remove
-                        );
-                    } else {
-                        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_remove) {
-                            ids.retain(|x| {x != &id});
-                        }
-                        self.log.push_back(LogEntry::new(
-                            Cause::Managing,
-                            id,
-                            format!("node {} removed from senders", id_to_remove),
-                        ));
-                    }
-                }
-            }
+
+        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+            ids.retain(|id| {id != &id_to_remove});
         }
+        self.log.push_back(LogEntry::new(
+            Cause::Managing,
+            id_to_remove,
+            format!("node {} removed from senders", id),
+        ));
     }
 
     //functions for add_sender
@@ -983,168 +963,50 @@ impl SimulationControl {
             Client => {
                 if let Some(sender) = self.client_command_senders.get(&id) {
                     if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.send(ClientCommand::AddSender(id_to_add, senderpacket.clone())) {
+                        if let Err(_e) = sender.try_send(ClientCommand::AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to client {} senders", id_to_add, id);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                ids.insert(id_to_add);
-                            }
-
-                            println!("drone {} added to client {} senders", id_to_add, id);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id,
-                                format!("drone {} added to senders", id_to_add),
-                            ));
+                            return;
                         }
                     }
-                }
-                else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id,
-                        format!("error adding node {} to senders (client command channel not found)", id_to_add),
-                    ));
+                }else if DEBUG_MODE{
+                    println!("error adding drone {} to server {} senders", id_to_add, id);
                 }
             }
             Drone => {
                 if let Some(sender) = self.drone_command_senders.get(&id) {
                     if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.send(AddSender(id_to_add, senderpacket.clone())) {
+                        if let Err(_e) = sender.try_send(AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to drone {} senders", id_to_add, id);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                ids.insert(id_to_add);
-                            }
-
-                            println!("drone {} added to drone {} senders", id_to_add, id);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id,
-                                format!(" -- drone {} added to senders", id_to_add),
-                            ));
+                            return;
                         }
                     }
-                } else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id,
-                        format!("error adding node {} to senders (drone command channel not found)", id_to_add),
-                    ));
+                } else if DEBUG_MODE{
+                    println!("error adding drone {} to server {} senders", id_to_add, id);
                 }
             }
             Server => {
                 if let Some(sender) = self.server_command_senders.get(&id) {
                     if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.send(ServerCommand::AddSender(id_to_add, senderpacket.clone())) {
+                        if let Err(_e) = sender.try_send(ServerCommand::AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to server {} senders", id_to_add, id);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
-                                ids.insert(id_to_add);
-                            }
-
-                            println!("drone {} added to server {} senders", id_to_add, id);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id,
-                                format!("drone {} added to senders", id_to_add),
-                            ));
+                            return;
                         }
                     }
-                } else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id,
-                        format!("error adding node {} to senders (server command channel not found)", id_to_add),
-                    ));
+                } else if DEBUG_MODE{
+                    println!("error adding drone {} to server {} senders", id_to_add, id);
                 }
             }
         }
-    }
-    fn match_node_type_for_add_sender_inverse(&mut self, n_type: NodeType, id_to_add: NodeId, id:NodeId){
-        match n_type {
-            Client => {
-                if let Some(sender) = self.client_command_senders.get(&id_to_add) {
-                    if let Some(senderpacket) = self.all_sender_packets.get(&id) {
-                        if let Err(_e) = sender.send(ClientCommand::AddSender(id, senderpacket.clone())) {
-                            println!("error adding drone {} to client {} senders", id, id_to_add);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                ids.insert(id);
-                            }
-
-                            println!("drone {} added to client {} senders", id, id_to_add);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id_to_add,
-                                format!("drone {} added to senders", id),
-                            ));
-                        }
-                    }
-                }
-                else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id_to_add,
-                        format!("error adding node {} to senders (client command channel not found)", id),
-                    ));
-                }
-            }
-            Drone => {
-                if let Some(sender) = self.drone_command_senders.get(&id_to_add) {
-                    if let Some(senderpacket) = self.all_sender_packets.get(&id) {
-                        if let Err(_e) = sender.send(AddSender(id, senderpacket.clone())) {
-                            println!("error adding drone {} to drone {} senders", id, id_to_add);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                ids.insert(id);
-                            }
-
-                            println!("drone {} added to drone {} senders", id, id_to_add);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id_to_add,
-                                format!("drone {} added to senders", id),
-                            ));
-                        }
-                    }
-                }
-                else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id_to_add,
-                        format!("error adding node {} to senders (drone command channel not found)", id),
-                    ));
-                }
-            }
-            Server => {
-                if let Some(sender) = self.server_command_senders.get(&id_to_add) {
-                    if let Some(senderpacket) = self.all_sender_packets.get(&id) {
-                        if let Err(_e) = sender.send(ServerCommand::AddSender(id, senderpacket.clone())) {
-                            println!("error adding drone {} to server {} senders", id, id_to_add);
-                        } else {
-                            if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id_to_add) {
-                                ids.insert(id);
-                            }
-
-                            println!("drone {} added to server {} senders", id, id_to_add);
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                id_to_add,
-                                format!("drone {} added to senders", id),
-                            ));
-                        }
-                    }
-                }
-                else {
-                    self.log.push_back(LogEntry::new(
-                        Cause::Managing,
-                        id_to_add,
-                        format!("error adding node {} to senders (server command channel not found)", id),
-                    ));
-                }
-            }
+        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+            ids.insert(id_to_add);
         }
+
+        println!("drone {} added to client {} senders", id_to_add, id);
+        self.log.push_back(LogEntry::new(
+            Cause::Managing,
+            id,
+            format!("drone {} added to senders", id_to_add),
+        ));
     }
 }
 

@@ -10,7 +10,7 @@ use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::ServerType;
-use crate::{ALL_FLOOD_MODE, DEBUG_MODE};
+use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::sleep;
@@ -89,7 +89,7 @@ impl NetworkEdge for ChatClient {
 
                 match self.comm.packet_send.get(&next_id) {
                     None => {
-                        self.send_event(ClientEvent::MissingRoute(next_id))
+                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
                     }
                     Some(sender) => {
                         match sender.try_send(packet.clone()) {
@@ -260,7 +260,9 @@ impl NetworkEdge for ChatClient {
                         }
                     }
                     ChatResponse::MessageFrom { from, message } => {
-                        self.send_event(SendChatText(self.get_src_id(), from, message.clone()));
+                        //only when a message arrive in toto, we care to inform SC
+                        //here is from the src of the text, so first parameter supplied is from!
+                        self.send_event(SendChatText(from, self.comm.node_id, message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
                     ChatResponse::MessageSent => {
@@ -302,7 +304,7 @@ impl NetworkEdge for ChatClient {
                             //if it's a client
                             self.comm.paths.get_mut(&from).unwrap().0 = 2;
 
-                            if ALL_FLOOD_MODE {
+                            if NO_SERVER_MODE {
                                 self.send_event(SendDestinations(self.comm.node_id, from));}
                                 self.send_event(SendContactsToSC(self.comm.node_id, from));
 
@@ -367,6 +369,10 @@ impl NetworkEdge for ChatClient {
 
     fn get_src_id(&self) -> NodeId {
         self.comm.get_src_id()
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.comm.remove_sender(id);
     }
 }
 
@@ -465,12 +471,7 @@ impl ClientTrait for ChatClient {
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::RemoveSender(node_id) => {
-                if self.comm.packet_send.contains_key(&node_id) {
-                    if let Some(to_be_dropped) = self.comm.packet_send.remove(&node_id) {
-                        drop(to_be_dropped);
-                        //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
-                    }
-                }
+                self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
                 self.comm.packet_send.insert(node_id, sender);
@@ -533,6 +534,12 @@ impl ChatClient {
 
     //id is the client receiver
     fn send_chat_text(&mut self, id: NodeId, str: String){
+        if NO_SERVER_MODE {
+            //come se fossimo nella destinazione!!
+            self.send_event(SendChatText(self.get_src_id(), id, str.clone()));
+
+        }
+
         let src = self.get_src_id();
         if let Some(servers) = self.contact_list.get(&id){
             if let Some(server_id) = self.comm.get_optimal_dest (servers){
@@ -546,7 +553,6 @@ impl ChatClient {
                 });
 
                 //keep track of the outgoing message in our personal chat
-                self.send_event(SendChatText(self.get_src_id(), id, str.clone()));
                 self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
 
                 let msg = Message::new(src, session, content);

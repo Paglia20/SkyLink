@@ -177,6 +177,8 @@ pub trait NetworkEdge {
     fn get_session_id(&mut self) -> u64;
 
     fn get_src_id(&self) -> NodeId;
+
+    fn remove_sender(&mut self, id: NodeId);
 }
 
 pub trait NetworkEdgeErrors: NetworkEdge {

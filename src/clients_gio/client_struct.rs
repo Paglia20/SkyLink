@@ -95,14 +95,14 @@ impl NetworkEdge for ClientStruct {
             None => {
                 //I first check if I have any path to the destination
                 println!("Tried to send fragment without path to {destination} with {}", self.node_id);
-                self.send_event(MissingDestination(destination));
+                self.send_event(MissingDestination(self.node_id, destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some((_state, route_list)) => {
                 match route_list.get_fastest_route() {
                     None => {
                         // I then check that we have an available route to the destination.
-                        self.send_event(MissingRoute(destination));
+                        self.send_event(MissingRoute(self.get_src_id(), destination));
 
                         self.add_unsent_fragment(fragment, session_id, destination);
                     },
@@ -121,7 +121,7 @@ impl NetworkEdge for ClientStruct {
                             None => {
                                 // If I want to pass for a node that I don't have as a neighbour, I need to remove
                                 // channels who contain it.
-                                self.send_event(MissingRoute(destination));
+                                self.send_event(MissingRoute(self.get_src_id(), destination));
                                 self.add_unsent_fragment(fragment, session_id, destination);
                                 for (_, (_state,route)) in self.paths.iter_mut() {
                                     route.remove_faulty_node(destination);
@@ -181,19 +181,21 @@ impl NetworkEdge for ClientStruct {
                 self.send_event(ClientEvent::PacketSent(packet_ack))
             }
             None => {
-                self.send_event(MissingDestination(next_id))
+                self.send_event(MissingDestination(self.node_id, next_id))
             }
         }
     }
 
     fn flood(&mut self) {
+        self.send_event(ClientEvent::Flooding(self.node_id));
+
         let flood_request = wg_2024::packet::FloodRequest {
             flood_id: self.get_flood_id(),
             initiator_id: self.node_id,
             path_trace: vec![(self.node_id, NodeType::Client)],
         };
-        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), fastrand::u64(..500), flood_request);
-        self.packet_send.values().for_each(|sender| {
+        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), self.get_session_id(), flood_request);
+        self.packet_send.iter().for_each(|(id, sender)| {
             sender.send(packet.clone()).unwrap()
         });
     }
@@ -228,6 +230,15 @@ impl NetworkEdge for ClientStruct {
 
     fn get_src_id(&self) -> NodeId {
         self.node_id
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        if self.packet_send.contains_key(&id) {
+            if let Some(to_be_dropped) = self.packet_send.remove(&id) {
+                drop(to_be_dropped);
+                //println!("Client {} no more has a connection to {}!", self.node_id, node_id);
+            }
+        }
     }
 }
 
@@ -270,14 +281,14 @@ impl NetworkEdgeErrors for ClientStruct {
         };
         let shr = match self.paths.get_mut(&dst){
             None => {
-                self.send_event(MissingDestination(dst));
+                self.send_event(MissingDestination(self.node_id, dst));
                 return;
             }
             Some((_state, route)) => {
                 if let Some(fastest_route) = route.get_fastest_route(){
                     fastest_route.to_source_routing_header()
                 }else {
-                    self.send_event(MissingRoute(dst));
+                    self.send_event(MissingRoute(self.get_src_id(), dst));
                     return;
                 }
             }
@@ -292,7 +303,7 @@ impl NetworkEdgeErrors for ClientStruct {
 
         match self.packet_send.get(&first_hop){
             None => {
-                self.send_event(MissingDestination(dst));
+                self.send_event(MissingDestination(self.node_id, dst));
                 return;
             }
             Some(sender) => {
