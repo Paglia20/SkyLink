@@ -24,16 +24,17 @@ pub enum ClientCommand {
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
+    Flooding(NodeId),
 
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
     AckReceived(Packet), //packet with inside the ack (so i can get the nodeid in SC)
     NackReceived(Packet),
-    MissingDestination(NodeId),
-    MissingRoute(NodeId),
-    LostMessage(u64, NodeId), // session_id and NodeId
-    LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
+    MissingDestination(NodeId, NodeId),
+    MissingRoute(NodeId, NodeId),
+    LostMessage(u64, NodeId), // session_id and NodeId that lost it
+    LostFragment(u64, NodeId, u64), // session_id, NodeId that lost it and fragment_index
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
     SendDestinations(NodeId, NodeId),

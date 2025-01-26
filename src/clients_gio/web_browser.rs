@@ -107,7 +107,7 @@ impl NetworkEdge for WebBrowser {
 
                 match self.comm.packet_send.get(&next_id) {
                     None => {
-                        self.send_event(ClientEvent::MissingRoute(next_id))
+                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
                     }
                     Some(sender) => {
                         match sender.try_send(packet.clone()) {

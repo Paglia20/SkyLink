@@ -610,8 +610,8 @@ impl MyApp {
                                     );
 
                                     if ui.button("Confirm").clicked() {
-
                                         self.sim_contr.add_sender(node.id, self.sender_id);
+                                        self.sender_id = 0;
                                         node.node_window_scenes = Start;
                                     }
                                     if ui.button("back").clicked(){
@@ -625,8 +625,8 @@ impl MyApp {
                                     });
 
                                     if ui.button("Confirm").clicked() {
-
                                         self.sim_contr.remove_senders(node.id, self.sender_id);
+                                        self.sender_id = 0;
                                         node.node_window_scenes = Start;
                                     }
                                     if ui.button("back").clicked(){
@@ -766,6 +766,7 @@ impl MyApp {
 
                                                             if ui.button("Confirm").clicked() {
                                                                 self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                self.sender_id = 0;
                                                                 node.node_window_scenes = Start;
                                                             }
                                                             if ui.button("back").clicked(){
@@ -781,8 +782,8 @@ impl MyApp {
                                                             );
 
                                                             if ui.button("Confirm").clicked() {
-
                                                                 self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                self.sender_id = 0;
                                                                 node.node_window_scenes = Start;
                                                             }
                                                             if ui.button("back").clicked(){
@@ -981,6 +982,7 @@ impl MyApp {
 
                                                             if ui.button("Confirm").clicked() {
                                                                 self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                self.sender_id = 0;
                                                                 node.node_window_scenes = Start;
                                                             }
                                                             if ui.button("back").clicked(){
@@ -996,8 +998,8 @@ impl MyApp {
                                                             );
 
                                                             if ui.button("Confirm").clicked() {
-
                                                                 self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                self.sender_id = 0;
                                                                 node.node_window_scenes = Start;
                                                             }
                                                             if ui.button("back").clicked(){
@@ -1194,10 +1196,7 @@ impl MyApp {
 
     pub fn enable_constant_read(&mut self) {
         //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
-        let enable_constant_read = true;
-        if enable_constant_read {
-            self.update_topology();
-        }
+        self.update_topology();
     }
 
     pub fn update_event_receivers(&mut self) {
