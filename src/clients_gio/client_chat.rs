@@ -27,6 +27,7 @@ pub struct ChatClient {
     //chat client specks
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
+    registered_to: Vec<NodeId>,
 
 }
 
@@ -114,12 +115,12 @@ impl NetworkEdge for ChatClient {
                         let initiator_id = packet.routing_header.hops[0];
                         let destination = self.comm.node_id; //he is the destination
                         let frag_index = fragment.fragment_index;
+
+
                         //add new frag
-                        if !self.comm.fragments.contains_key(&(packet.session_id, initiator_id, destination)) {
-                            self.comm.fragments.insert((session_id, initiator_id, destination), vec![fragment]);
-                        } else {
-                            self.comm.fragments.get_mut(&(session_id, initiator_id, destination)).unwrap().push(fragment);
-                        }
+                        let entry = self.comm.fragments.entry((session_id, initiator_id, destination)).or_insert((None, vec![]));
+                        entry.1.push(fragment);
+
 
                         //for each arrived frag, send back an ack
                         self.send_ack(packet.clone(), frag_index);
@@ -127,11 +128,8 @@ impl NetworkEdge for ChatClient {
                         //notify sc i got a packet
                         self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
-
-
-
                         // If all the frag have arrived recreate message
-                        let frags_clone = self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap();
+                        let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap().1;
                         if frags_clone.len() == tot_num_frag {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Ok(mess) => { mess }
@@ -154,11 +152,16 @@ impl NetworkEdge for ChatClient {
                         //the ack will have the source that was the destination of the initial packet
                         match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
                             None => {}
-                            Some(vec) => {
+                            Some((cont, vec)) => {
                                 vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
                                 //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
                                 if vec.is_empty() {
+                                    if let Some(ChatRequest(Register(node))) = cont{
+                                        self.registered_to.push(node.clone());
+                                        //todo!(client event)
+                                    }
+
                                     self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
                                 }
                             }
@@ -406,6 +409,7 @@ impl ClientTrait for ChatClient {
             comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             contact_list: HashMap::new(),
             all_messages: HashMap::new(),
+            registered_to: vec![],
         }
     }
 

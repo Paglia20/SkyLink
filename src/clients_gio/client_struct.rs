@@ -27,7 +27,7 @@ pub struct ClientStruct {
     pub (crate) used_session_id: HashSet<u64>,     // Do we need this?
     pub (crate) paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
     pub (crate) nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
-    pub (crate) fragments: HashMap<(u64, NodeId, NodeId), Vec<Fragment>>, //(session_id, source, destination)
+    pub (crate) fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registring ecc..) and frags), if the content is None is because it's yet to be fully arrived!
     pub (crate) unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
@@ -37,7 +37,7 @@ impl NetworkEdge for ClientStruct {
             ContentType::TypeExchange(_exc) =>{
                 let session_id = message.session_id;
                 let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), frags.clone());
+                self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
                 // I also save the fragments in the memory, in case I have to send them again.
 
                 for fragment in frags {
@@ -48,7 +48,7 @@ impl NetworkEdge for ClientStruct {
             ContentType::EdgeNack(_nack) => {
                 let session_id = message.session_id;
                 let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), frags.clone());
+                self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
                 // I also save the fragments in the memory, in case I have to send them again.
 
                 for fragment in frags {
@@ -60,7 +60,7 @@ impl NetworkEdge for ClientStruct {
                 if self.is_state_ok(destination) {
                     let session_id = message.session_id;
                     let frags = Self::fragment_message(&message);
-                    self.fragments.insert((session_id, self.node_id, destination), frags.clone());
+                    self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
                     // I also save the fragments in the memory, in case I have to send them again.
 
 
@@ -154,7 +154,7 @@ impl NetworkEdge for ClientStruct {
             None => {
                 self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
             },
-            Some(fragments) => {
+            Some((_, fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
                         self.send_event(ClientEvent::LostFragment(packet.session_id, self.node_id, nack.fragment_index));
