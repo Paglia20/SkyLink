@@ -8,7 +8,7 @@ use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use image::ImageDecoder;
 use eframe::egui;
-use egui::{Context, FontId, RichText, Vec2};
+use egui::{Context, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
@@ -330,6 +330,14 @@ impl MyApp {
                 ui.heading("Actions");
                 match self.side_panel_scenes {
                     InitialScene => {
+                        if ui.button("Add Drone!").clicked() {
+                            self.side_panel_scenes = ManageAdd;
+                        }
+                        if ui.button("remove Drone!").clicked() {
+                            self.side_panel_scenes = ManageCrash;
+                        }
+
+                        // for testing
                         if ui.button("test log!").clicked() {
                             self.sim_contr.log.push_back(LogEntry::new(
                                 Cause::Sent,
@@ -337,7 +345,7 @@ impl MyApp {
                                 "ciao".to_string(),
                             ));
                         }
-                        if ui.button("test chat with 0 and 11!").clicked() {
+                        if ui.button("test (graphically) chat with 0 and 11!").clicked() {
                             /* questo andrà cambiato appena leo avrà fatto il server,
                              è solo per vedere se ci piace il font delle chat */
 
@@ -347,7 +355,7 @@ impl MyApp {
                             self.sim_contr.storage.add_chat_text(0, 11, "si sto bene!".to_string());
                         }
 
-                        if ui.button("test media with 12").clicked() {
+                        if ui.button("test (graphically) media with 12").clicked() {
                             /* questo andrà cambiato appena leo avrà fatto il server,
                              è solo per vedere se ci piace il font delle media */
                             let v = include_bytes!("../test/esempio.png").to_vec();
@@ -355,15 +363,6 @@ impl MyApp {
                             self.sim_contr.storage.add_to_medias(12, 20020, "esempio.png".to_string(), v);
                         }
 
-
-                        if ui.button("Add Drone!").clicked() {
-                            self.side_panel_scenes = ManageAdd;
-                        }
-                        if ui.button("remove Drone!").clicked() {
-                            self.side_panel_scenes = ManageCrash;
-                        }
-
-                        // for testing
                         if ui.button("Test Drop with 5").clicked() {
                             self.sim_contr.set_pdr(5, 100.0);
 
@@ -1130,7 +1129,7 @@ impl MyApp {
                                 });
                             });
                     }
-                    NodeNature::ChatServer => {
+                    _ => {
                         egui::Window::new(format!("Server {}", node.id))
                             .resizable(true) // Allow resizing
                             .collapsible(true)
@@ -1171,11 +1170,40 @@ impl MyApp {
                                                             ui.label("Server infos will be here ");
                                                         }
                                                         AddSender => {
-                                                            todo!()
-                                                        },
-                                                        RemoveSender => {todo!()}
-                                                        ShowContents => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Add Channel to:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+                                                            }
+                                                            );
 
+                                                            if ui.button("Confirm").clicked() {
+                                                                self.sim_contr.add_sender(node.id, self.sender_id);
+                                                                self.sender_id = 0;
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        },
+                                                        RemoveSender => {
+                                                            ui.horizontal(|ui| {
+                                                                ui.label("Remove Channel to:");
+                                                                ui.add(egui::DragValue::new(&mut self.sender_id));
+
+                                                            }
+                                                            );
+
+                                                            if ui.button("Confirm").clicked() {
+                                                                self.sim_contr.remove_senders(node.id, self.sender_id);
+                                                                self.sender_id = 0;
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                            if ui.button("back").clicked(){
+                                                                node.node_window_scenes = Start;
+                                                            }
+                                                        }
+                                                        ShowContents => {
+                                                                todo!()
                                                         }
                                                         ShowDestinations => {
                                                             //idk
@@ -1187,8 +1215,6 @@ impl MyApp {
                                 });
                             });
                     }
-                    NodeNature::TextServer => {}
-                    NodeNature::MediaServer => {}
                 }
             }
         }
@@ -1273,11 +1299,6 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<egui::TextureH
 
 /*
 feel free to update this list.
-
-- se vuoi anche fare un "render drone window" "render client"..., insomma spezzare il match alla riga 493 in tre funzioni (che prenderanno sia ctx che anche il nodo stesso)
-
-- ho cambiato le dronewindowscene in nodewindowscene, quello che dovresti fare è aggiungere come hai fatto con i droni le "common" scene (tipo add sender, remove sender..).
-il match io lo metterei nel central panel che se vedi ho lasciato da fare. ma poi fai tu
 
 se hai altre idee di scene dimmelo
 

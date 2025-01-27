@@ -535,7 +535,7 @@ impl ChatClient {
     //id is the client receiver
     fn send_chat_text(&mut self, id: NodeId, str: String){
         if NO_SERVER_MODE {
-            //come se fossimo nella destinazione!!
+            //come se fossimo nella destinazione!! allora nella destinazione manderebbe from, self.node che qua però è scambiato
             self.send_event(SendChatText(self.get_src_id(), id, str.clone()));
 
         }
