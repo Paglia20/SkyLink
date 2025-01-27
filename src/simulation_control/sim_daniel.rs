@@ -11,6 +11,7 @@ use eframe::egui;
 use egui::{Context, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
+use std::vec;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
@@ -293,6 +294,9 @@ impl MyApp {
                     }
                     ClientEvent::SendMedia(src, media_id, str, media) => {
                         self.sim_contr.storage.add_to_medias(src, media_id, str, media);
+                    }
+                    ClientEvent::RegisterSuccessfully(src, dst) => {
+                        self.sim_contr.storage.add_to_registration(src, dst);
                     }
                     _ => {/* degli altri niente */}
                 }
@@ -870,8 +874,16 @@ impl MyApp {
                                                         }
 
                                                         ShowAuxiliaryLists => {
-                                                            //to witch is registered todo!()
+                                                            let node_reg = match self.sim_contr.storage.registrations.get(&node.id){
+                                                                Some(dsts) => dsts.clone(),
+                                                                None => Vec::new()
+                                                            };
+                                                            ui.label("Registered to Servers ".to_string());
+                                                            ui.separator();
 
+                                                            for (id) in node_reg {
+                                                                ui.label(format!("Server {id}"));
+                                                            }
                                                         }
 
                                                         _ => {

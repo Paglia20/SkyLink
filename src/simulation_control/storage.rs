@@ -12,7 +12,7 @@ pub struct SimulationStorage {
     pub contacts: HashMap<NodeId, HashSet<NodeId>>,  //if you want them sort change this in a BtreeSet
     pub destinations: HashMap<NodeId, HashSet<(NodeId)>>,
     pub chats: HashMap<NodeId, HashMap<NodeId, Vec<(NodeId, String)>>>, // 1st is node, second is the contact, third is chat (each string has the associated sender)
-
+    pub registrations: HashMap<NodeId, Vec<NodeId>>,
     //contents found...
     pub text_lists: HashMap<NodeId, Vec<(u64, String)>>,
     //per il momento, NON voglio che text lists anticipi già che media ha dentro per una risoluzione mirata
@@ -28,6 +28,7 @@ impl SimulationStorage{
             contacts: Default::default(),
             destinations: Default::default(),
             chats: Default::default(),
+            registrations: Default::default(),
             text_lists: Default::default(),
             catalogues: Default::default(),
             medias: Default::default(),
@@ -100,6 +101,13 @@ impl SimulationStorage{
         let medias_of_node = self.medias.entry(src).or_insert(vec![]);
         if !medias_of_node.contains(&(media_id, media_name.clone(),media.clone())){
             medias_of_node.push((media_id,media_name.clone(),media));
+        }
+    }
+
+    pub(crate) fn add_to_registration(&mut self, src: NodeId, dst: NodeId) {
+        let reg = self.registrations.entry(src).or_insert(vec![]);
+        if !reg.contains(&dst){
+            reg.push(dst);
         }
     }
 

@@ -178,6 +178,14 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             }
+            ClientEvent::RegisterSuccessfully(src, dst) => {
+                let new_log = LogEntry{
+                    cause: Flood,
+                    node_id: src,
+                    message: format!("{src} is now registered to {dst}")
+                };
+                self.log.push_back(new_log);
+            }
 
         }
     }
