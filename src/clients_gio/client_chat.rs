@@ -12,7 +12,7 @@ use crate::routing::{Route, RouteList};
 use crate::server::server_type::ServerType;
 use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::NodeId;
@@ -27,7 +27,7 @@ pub struct ChatClient {
     //chat client specks
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
     all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
-    registered_to: Vec<NodeId>,
+    registered_to: HashSet<NodeId>,
 
 }
 
@@ -158,7 +158,7 @@ impl NetworkEdge for ChatClient {
                                 //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
                                 if vec.is_empty() {
                                     if let Some(ChatRequest(Register(node))) = cont{
-                                        self.registered_to.push(node.clone());
+                                        self.registered_to.insert(node.clone());
                                         //todo!(client event)
                                     }
 
@@ -409,7 +409,7 @@ impl ClientTrait for ChatClient {
             comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             contact_list: HashMap::new(),
             all_messages: HashMap::new(),
-            registered_to: vec![],
+            registered_to: HashSet::new(),
         }
     }
 
@@ -546,7 +546,11 @@ impl ChatClient {
 
         let src = self.get_src_id();
         if let Some(servers) = self.contact_list.get(&id){
-            if let Some(server_id) = self.comm.get_optimal_dest (servers){
+
+            //to ensure is also registered to server
+            let available_servers: Vec<NodeId> = servers.clone().into_iter().filter(|x| self.registered_to.contains(x)).collect();
+
+            if let Some(server_id) = self.comm.get_optimal_dest (&available_servers){
                 //decide witch server to contact, for the moment just the first one is okay
 
                 let session = self.get_session_id();
