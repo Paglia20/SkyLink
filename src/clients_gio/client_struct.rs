@@ -94,7 +94,9 @@ impl NetworkEdge for ClientStruct {
         match self.paths.get_mut(&destination) {
             None => {
                 //I first check if I have any path to the destination
-                println!("Tried to send fragment without path to {destination} with {}", self.node_id);
+                if DEBUG_MODE {
+                    println!("Tried to send fragment without path to {destination} with {}", self.node_id);
+                }
                 self.send_event(MissingDestination(self.node_id, destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
             }

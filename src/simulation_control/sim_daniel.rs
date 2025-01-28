@@ -8,16 +8,17 @@ use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
 use image::ImageDecoder;
 use eframe::egui;
-use egui::{Context, FontId, RichText, TextureHandle, Vec2};
+use egui::{Color32, Context, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
+use eframe::glow::TRUE;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::NodeType;
-use crate::{ALL_CHAT, ALL_CONTENT};
+use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE};
 use crate::server::server_type::ServerType;
 
 #[derive(Clone)]
@@ -29,6 +30,7 @@ pub struct MyNodes {
     node_window_scenes: NodeWindowScene,
     content: Option<ContentIdentifier>,
     input_text: String,
+    texture: Option<TextureHandle>
 }
 
 
@@ -38,7 +40,7 @@ pub enum ContentIdentifier{
     RegisterOrList(NodeId),
     TextList(NodeId),
     MediaToResolve, // id
-    Media(egui::TextureHandle), // id - name - content
+    Media(TextureHandle), // content
 }
 
 impl Eq for MyNodes {}
@@ -113,6 +115,7 @@ pub struct MyApp {
     selected_drones: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
+    circle_mode: bool,
 }
 
 
@@ -134,6 +137,7 @@ impl MyApp {
                 node_window_scenes: Start,
                 content: None,
                 input_text: "".to_string(),
+                texture: None,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -146,8 +150,8 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
+            circle_mode: true,
         };
-        //app.generate_random_connections();
         app
     }
 
@@ -156,14 +160,14 @@ impl MyApp {
         let id_to_data: HashMap<_, _> = self
             .nodes
             .iter()
-            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone(), x.input_text.clone()))})
+            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone(), x.input_text.clone(), x.texture.clone()))})
             .collect();
 
         // Clear and rebuild nodes
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, (node_type, connections)) in network_graph {
-            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None, "".to_string()));
+            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None, "".to_string(), None));
 
             self.nodes.push(MyNodes {
                 id: node_id,
@@ -173,6 +177,7 @@ impl MyApp {
                 node_window_scenes: data.1,
                 content: data.2,
                 input_text: data.3,
+                texture: data.4,
             });
         }
     }
@@ -283,7 +288,7 @@ impl MyApp {
                     ClientEvent::SendDestinations(src, dst) => {
                         self.sim_contr.storage.add_destination(src, dst);
                     }
-                    ClientEvent::SendChatText(src, dst, str) => {
+                    ClientEvent::ReceivedChatText(src, dst, str) => {
                         self.sim_contr.storage.add_chat_text(src, dst, str);
                     }
                     ClientEvent::SendTextList(src, text_id, name) => {
@@ -491,17 +496,49 @@ impl MyApp {
                     ui.min_rect().left() + available_size.x / 2.0,
                     ui.min_rect().top() + available_size.y / 2.0,
                 );
-                let radius = available_size.x.min(available_size.y) * 0.4;
 
-                self.nodes.sort();
-                let total_items = self.nodes.len();
 
                 let mut positions = Vec::new();
-                for (index, _value) in self.nodes.iter().enumerate() {
-                    let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
-                    let x = center.x + radius * angle.cos();
-                    let y = center.y + radius * angle.sin();
-                    positions.push(egui::pos2(x, y));
+                let mut numbers_positions = Vec::new();
+
+                if self.circle_mode {
+                    let radius = available_size.x.min(available_size.y) * 0.4;
+
+                    self.nodes.sort();
+                    let total_items = self.nodes.len();
+                    for (index, _value) in self.nodes.iter().enumerate() {
+                        let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
+                        let x = center.x + radius * angle.cos();
+                        let y = center.y + radius * angle.sin();
+                        positions.push(egui::pos2(x, y));
+                        let x_num = center.x + (radius + 45.0) * angle.cos();
+                        let y_num = center.y + (radius + 45.0) * angle.sin();
+                        numbers_positions.push(egui::pos2(x_num, y_num));
+                    }
+                } else {
+                    // Calcolo della griglia
+                    let total_items = self.nodes.len();
+                    let grid_size = (total_items as f32).sqrt().ceil() as usize;
+                    let grid_spacing = 150.0; // Spaziatura tra i nodi,
+                    let grid_width = grid_size as f32 * grid_spacing;
+                    let grid_height = grid_size as f32 * grid_spacing;
+                    let grid_origin = egui::pos2(
+                        center.x - grid_width / 2.3,
+                        center.y - grid_height / 3.0,
+                    ); // Punto di partenza per la griglia (in alto a sinistra)
+
+                    for i in 0..total_items {
+                        let row = i / grid_size;
+                        let col = i % grid_size;
+
+                        let x = grid_origin.x + col as f32 * grid_spacing;
+                        let y = grid_origin.y + row as f32 * grid_spacing;
+                        positions.push(egui::pos2(x, y));
+
+                        let num_x = grid_origin.x + col as f32 * grid_spacing + 40.0;
+                        let num_y = grid_origin.y + row as f32 * grid_spacing + 40.0;
+                        numbers_positions.push(egui::pos2(num_x, num_y));
+                    }
                 }
 
                 let painter = ui.painter();
@@ -515,23 +552,49 @@ impl MyApp {
                     }
                 }
 
+                for node in &mut self.nodes {
+                    if node.texture.is_none() { // Carica la texture solo se non è già stata caricata
+                        node.texture = match node.node_type {
+                            NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone.png")),
+                            NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
+                            NodeNature::ChatClient => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatClient.png")),
+                            NodeNature::WebBrowser => Some(load_texture(ctx, "src/simulation_control/texture_pngs/WebBrowser.png")),
+                            NodeNature::TextServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/TextServer.png")),
+                            NodeNature::MediaServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/MediaServer.png")),
+                        };
+                    }
+                }
+
                 for (index, value) in self.nodes.iter_mut().enumerate() {
                     let rect =
-                        egui::Rect::from_center_size(positions[index], egui::vec2(50.0, 50.0));
+                        egui::Rect::from_center_size(positions[index], egui::vec2(80.0, 80.0));
                     let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
 
                     let circle_color = if value.selected {
-                        egui::Color32::BLUE
+                        Color32::from_rgb(255, 255, 255)
                     } else {
-                        egui::Color32::from_rgb(216, 100, 56)
+                        Color32::from_rgb(255, 255, 255)
                     };
 
+                    if value.selected{
+                        painter.circle_filled(positions[index], 30.0, Color32::DARK_GRAY);
+                    }
 
-                    painter.circle_filled(rect.center(), 15.0, circle_color);
+                    if let Some(texture) = &value.texture {
+                        painter.add(egui::Shape::image(
+                            texture.id(),
+                            rect,
+                            egui::Rect::from_min_max(
+                                egui::pos2(0.0, 0.0), // UV in alto a sinistra
+                                egui::pos2(1.0, 1.0), // UV in basso a destra
+                            ),
+                           circle_color, // Colore (modifica per trasparenza o effetti)
+                        ));
+                    }
 
                     // Disegna il testo
                     painter.text(
-                        rect.center(),
+                        numbers_positions[index],
                         egui::Align2::CENTER_CENTER,
                         value.id.to_string(),
                         FontId::proportional(16.0),
@@ -541,7 +604,9 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        println!("selected node: {:?}", value.id);
+                        if DEBUG_MODE {
+                            println!("selected node: {:?}", value.id);
+                        }
                     }
                 }
             });
@@ -553,7 +618,7 @@ impl MyApp {
             if node.selected {
                 match node.node_type {
                     NodeNature::Drone => {egui::Window::new(format!("Drone {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
+                        .resizable(true)
                         .collapsible(true)
                         .min_width(500.0)
                         .max_height(400.0)
@@ -1173,6 +1238,33 @@ impl MyApp {
                                                         });
                                                 });
 
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.separator();
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.content = None;
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
 
                                             egui::CentralPanel::default()
                                                 .show_inside(ui, |ui| {
@@ -1218,7 +1310,7 @@ impl MyApp {
                                                                 todo!()
                                                         }
                                                         ShowDestinations => {
-                                                            //idk
+                                                            todo!()
                                                         }
                                                         _ => {}
                                                     }
@@ -1287,6 +1379,15 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
     )
 }
 
+fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
+    // Legge l'immagine dal file system
+    let image = image::open(path).expect("Failed to load image").to_rgba8();
+    let size = [image.width() as usize, image.height() as usize];
+
+    // Converte l'immagine in un formato compatibile con egui
+    let color_image = eframe::epaint::ColorImage::from_rgba_unmultiplied(size, image.as_flat_samples().as_slice());
+    ctx.load_texture(path, color_image, egui::TextureOptions::default())
+}
 
 fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<egui::TextureHandle> {
     // Decodifica l'immagine usando il crate `image`
@@ -1301,7 +1402,7 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<egui::TextureH
         .collect();
 
     let texture = egui::ColorImage {
-        size: [width as usize, height as usize],
+        size: [50 as usize, 50 as usize],
         pixels,
     };
 

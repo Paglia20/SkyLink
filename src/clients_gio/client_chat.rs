@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{SendChatText, SendContactsToSC, SendDestinations};
+use crate::clients_gio::client_command::ClientEvent::{ReceivedChatText, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
@@ -225,7 +225,9 @@ impl NetworkEdge for ChatClient {
                                 if !self.comm.paths.contains_key(&node_id) {
                                     //if it's first time this server gets seen
                                     self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    println!("{} inserted {:?}",self.comm.node_id, node_id);
+                                    if DEBUG_MODE {
+                                        println!("{} inserted {:?}", self.comm.node_id, node_id);
+                                    }
                                 }
                                 // Clone the current path for the server and insert it into the route list
                                 match self.comm.paths.get_mut(&node_id) {
@@ -265,7 +267,7 @@ impl NetworkEdge for ChatClient {
                     ChatResponse::MessageFrom { from, message } => {
                         //only when a message arrive in toto, we care to inform SC
                         //here is from the src of the text, so first parameter supplied is from!
-                        self.send_event(SendChatText(from, self.comm.node_id, message.clone()));
+                        self.send_event(ReceivedChatText(from, self.comm.node_id, message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
                     ChatResponse::MessageSent => {
@@ -540,7 +542,7 @@ impl ChatClient {
     fn send_chat_text(&mut self, id: NodeId, str: String){
         if NO_SERVER_MODE {
             //come se fossimo nella destinazione!! allora nella destinazione manderebbe from, self.node che qua però è scambiato
-            self.send_event(SendChatText(self.get_src_id(), id, str.clone()));
+            self.send_event(ReceivedChatText(self.get_src_id(), id, str.clone()));
 
         }
 

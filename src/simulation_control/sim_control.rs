@@ -5,7 +5,7 @@ use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::storage::SimulationStorage;
 use crate::skylink_drone::drone::SkyLinkDrone;
 use crate::DEBUG_MODE;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender, TrySendError};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
@@ -138,7 +138,7 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             },
-            ClientEvent::SendChatText(src, dst, str) => {
+            ClientEvent::ReceivedChatText(src, dst, str) => {
                 let new_log = LogEntry{
                     cause: Sent,
                     node_id: src,
@@ -206,7 +206,7 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
-            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
+            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE todo!()
             ServerEvent::MissingDestination(missing_destination) => {}
             ServerEvent::MissingRoute(missing_node) => {}
             ServerEvent::LostMessage(session_id, node_id) => {}
@@ -325,20 +325,37 @@ impl SimulationControl {
                 println!("crash command sent do the drone {}", id);
 
                 // remove the drone from the neighbour's sends
-                if let mut vec = self.network_graph.keys().cloned().collect::<Vec<_>>() {
+                let mut vec = self.network_graph.get(&id).unwrap().1.clone();
                     self.drone_command_senders.iter().for_each(|(neigh_id, sender)|{
-                        if vec.contains(neigh_id) {
-                            sender.send(RemoveSender(id)).unwrap()
+                        match sender.try_send(DroneCommand::RemoveSender(id)) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{neigh_id} is not in network, so he cannot remove {id}");
+                                }
+                            }
                         }
                     });
                     self.client_command_senders.iter().for_each(|(neigh_id, sender)|{
-                        if vec.contains(neigh_id) {
-                            sender.send(ClientCommand::RemoveSender(id)).unwrap()
+                        match sender.try_send(ClientCommand::RemoveSender(id)) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{neigh_id} is not in network, so he cannot remove {id}");
+                                }
+                            }
                         }
                     });
                     self.server_command_senders.iter().for_each(|(neigh_id, sender)|{
-                        if vec.contains(neigh_id) {
-                            sender.send(ServerCommand::RemoveSender(id)).unwrap()
+                        if vec.contains(neigh_id){
+                           match sender.try_send(ServerCommand::RemoveSender(id)) {
+                               Ok(_) => {}
+                               Err(e) => {
+                                   if DEBUG_MODE {
+                                       println!("{neigh_id} is not in network, so he cannot remove {id}");
+                                   }
+                               }
+                           }
                         }
                     });
                 }
@@ -355,7 +372,7 @@ impl SimulationControl {
                     connections.retain(|&rem| rem != id);
                 });                self.network_graph.remove(&id);
 
-            }
+
         } else {
             println!("drone {} not found in the network.", id);
         }
@@ -440,7 +457,7 @@ impl SimulationControl {
                             ));
                         }
                     }
-                    _ => {todo!()},
+                    _ => {todo!("server??")},
                 }
             }
         }
@@ -581,8 +598,7 @@ impl SimulationControl {
         let new_log = LogEntry {
             cause: Cause::Sent,
             node_id: id_drone,
-            message: message
-
+            message
         };
         self.log.push_back(new_log);
     }
@@ -832,10 +848,9 @@ impl SimulationControl {
         };
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
-            message: message
-
+            message
         };
         self.log.push_back(new_log);
     }
