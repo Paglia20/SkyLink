@@ -286,7 +286,7 @@ impl MyApp {
                     ClientEvent::SendDestinations(src, dst) => {
                         self.sim_contr.storage.add_destination(src, dst);
                     }
-                    ClientEvent::SendChatText(src, dst, str) => {
+                    ClientEvent::ReceivedChatText(src, dst, str) => {
                         self.sim_contr.storage.add_chat_text(src, dst, str);
                     }
                     ClientEvent::SendTextList(src, text_id, name) => {

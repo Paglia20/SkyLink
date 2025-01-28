@@ -138,7 +138,7 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             },
-            ClientEvent::SendChatText(src, dst, str) => {
+            ClientEvent::ReceivedChatText(src, dst, str) => {
                 let new_log = LogEntry{
                     cause: Sent,
                     node_id: src,
