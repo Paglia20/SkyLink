@@ -16,7 +16,7 @@ mod event_wrapper;
 
 //for testing
 pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = false;
+pub const ALL_CONTENT: bool = true;
 pub const DEBUG_MODE : bool = false;
 pub const NO_SERVER_MODE: bool = true; //provvisoria finchè non ci sono i server
 
@@ -27,7 +27,7 @@ fn main() {
 
     match switch {
         Switch::SimDaniel => {
-            let (sim_contr, handles) = initialize("inputs/input_star.toml");
+            let (sim_contr, handles) = initialize("inputs/input_flood.toml");
 
             run_sim_dan(sim_contr).expect("TODO: panic message");
             for handle in handles.into_iter() {
