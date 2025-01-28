@@ -15,15 +15,15 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
-use crate::clients_gio::client_command::ClientEvent::{SendCatalogue, SendDestinations, SendMedia, SendTextList};
+use crate::clients_gio::client_command::ClientEvent::{MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
-                                                            //vettore con tutti i media di cui quello contiene un riferimento
-    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
+
+    available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
     arrived_content: HashMap<u64, (String, Vec<u8>)>,
 
@@ -273,7 +273,7 @@ impl NetworkEdge for WebBrowser {
                 match text_response{
                     TextResponse::TextLists(map) => {
                         for (text_file_id, name) in map {
-                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
+                            let entry = self.available_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
                             entry.0.push(src);
 
                             if entry.0.len() == 1 {
@@ -294,7 +294,7 @@ impl NetworkEdge for WebBrowser {
                         }
                     }
                     TextResponse::Incomplete(incomplete_text) => {
-                        todo!()
+                        self.retry_get_text_file(incomplete_text);
                     }
                     TextResponse::NotFound(media_id) => {
                         //update catalougue
@@ -441,7 +441,7 @@ impl ClientTrait for WebBrowser {
     ) -> Self {
         WebBrowser {
             comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
-            arrived_text_lists: Default::default(),
+            available_text_lists: Default::default(),
             arrived_content: Default::default(),
             catalogue: Default::default(),
         }
@@ -564,7 +564,7 @@ impl WebBrowser{
         let src = self.comm.get_src_id();
         let session = self.comm.get_session_id();
 
-        if let Some(map) = self.arrived_text_lists.get(&text_file_id) {
+        if let Some(map) = self.available_text_lists.get(&text_file_id) {
             let dests = map.0.clone();
             if !dests.is_empty() {
                 if let Some(dst) = self.comm.get_optimal_dest(&dests) {
@@ -577,11 +577,14 @@ impl WebBrowser{
                 }
             }
         } else {
-            //impossible to retrieve a text file since no text server told us it has it...
-            //client event incoming
+            self.send_event(MissingTextList(self.get_src_id(), text_file_id))
         }
     }
 
+    fn retry_get_text_file(&mut self, text_file_id: u64) {
+        sleep(Duration::from_secs(30));
+        self.get_text_file(text_file_id)
+    }
 
     fn get_media(&mut self, cont_id: u64) {
         let src = self.comm.get_src_id();
@@ -599,8 +602,7 @@ impl WebBrowser{
                 }
             }
         } else {
-            //impossible to retrieve a media since no text server told us a certain media server has it...
-            //client event incoming
+            self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
         }
     }
 }

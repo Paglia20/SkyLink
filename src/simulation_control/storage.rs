@@ -111,4 +111,15 @@ impl SimulationStorage{
         }
     }
 
+    pub(crate) fn missing_media(&mut self, p0: NodeId, p1: u64) {
+        if let Some(medias) = self.catalogues.get_mut(&p0){
+            medias.retain(|n| *n != p1);
+        }
+    }
+    pub(crate) fn missing_txt_list(&mut self, p0: NodeId, p1: u64) {
+        if let Some(medias) = self.text_lists.get_mut(&p0){
+            medias.retain(|n| n.0 != p1);
+        }
+    }
+
 }

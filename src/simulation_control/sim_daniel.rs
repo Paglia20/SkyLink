@@ -303,6 +303,12 @@ impl MyApp {
                     ClientEvent::RegisterSuccessfully(src, dst) => {
                         self.sim_contr.storage.add_to_registration(src, dst);
                     }
+                    ClientEvent::MissingTextList(src, list) => {
+                        self.sim_contr.storage.missing_txt_list(src, list);
+                    }
+                    ClientEvent::MissingDestForMedia(src, media) => {
+                        self.sim_contr.storage.missing_media(src, media);
+                    }
                     _ => {/* degli altri niente */}
                 }
             }

@@ -1,6 +1,6 @@
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::server::server_command::{ServerCommand, ServerEvent};
-use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Flood, LostMessage, MissingDestination, NackReceived, Sent};
+use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Error, Flood, LostMessage, MissingDestination, NackReceived, Sent};
 use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::storage::SimulationStorage;
 use crate::skylink_drone::drone::SkyLinkDrone;
@@ -180,9 +180,26 @@ impl SimulationControl {
             }
             ClientEvent::RegisterSuccessfully(src, dst) => {
                 let new_log = LogEntry{
-                    cause: Flood,
+                    cause: Sent,
                     node_id: src,
                     message: format!("{src} is now registered to {dst}")
+                };
+                self.log.push_back(new_log);
+            }
+
+            ClientEvent::MissingDestForMedia(src,  media) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: src,
+                    message: format!("{src} do not have a source for {media}")
+                };
+                self.log.push_back(new_log);
+            }
+            ClientEvent::MissingTextList(src,  text) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: src,
+                    message: format!("{src} do not have a source for {text}")
                 };
                 self.log.push_back(new_log);
             }
