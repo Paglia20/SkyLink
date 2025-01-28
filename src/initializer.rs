@@ -142,7 +142,7 @@ fn create_servers(servers: Vec<config::Server>,
                   server_event_send: &Sender<ServerEvent>,
                   packet_senders: &HashMap<NodeId, Sender<Packet>>,
                   packet_receivers: &mut HashMap<NodeId, Receiver<Packet>>,
-                  network_graph: &HashMap<NodeId, (NodeNature, HashSet<NodeId>)>) -> (bool, bool) {
+                  network_graph: &mut HashMap<NodeId, (NodeNature, HashSet<NodeId>)>) -> (bool, bool) {
 
     let length = servers.len();
     let mut chooser = 0;
@@ -156,6 +156,7 @@ fn create_servers(servers: Vec<config::Server>,
         // Give the server a copy of the sender of events to the Sim Contr.
         let node_event_send = server_event_send.clone();
 
+        network_graph.insert(server.id, (TextServer, HashSet::from_iter(server.connected_drone_ids.clone())));
 
         // Take the channels necessary to this client.
         let server_recv = packet_receivers.remove(&server.id).unwrap();
@@ -165,6 +166,7 @@ fn create_servers(servers: Vec<config::Server>,
             .map(|id| (id, packet_senders[&id].clone()))
             .collect();
 
+
         // Create the thread of the server,
         // and add it to a Vec to be pushed afterward.
 
@@ -173,20 +175,29 @@ fn create_servers(servers: Vec<config::Server>,
         // - Check a chooser variable, which at each iteration of the for creates a different server type.
         if length >= 2 && chooser == 0 {
             handles.push(thread::spawn(move || {
+
+
                 //create text server
 
             }));
             chooser += 1;
         } else if length >= 2 && chooser == 1 {
+            network_graph.entry(server.id).and_modify(|x|x.0 = MediaServer);
+
             handles.push(thread::spawn(move || {
+
                 //create media server
+
 
             }));
             media_servers = true;
             chooser += 1;
         } else {
+            network_graph.entry(server.id).and_modify(|x|x.0 = ChatServer);
+
             handles.push(thread::spawn(move || {
                 //create chat server
+
 
             }));
             chat_servers = true;
