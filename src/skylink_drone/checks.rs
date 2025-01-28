@@ -48,7 +48,7 @@ pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Pac
 pub fn pdr_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Packet> {
     if let PacketType::MsgFragment(_) = packet.pack_type.clone() {
         let random_number: u32 = fastrand::u32(0..101);
-        if random_number < drone.get_pdr() {
+        if random_number <= drone.get_pdr() {
             return Err(create_error(drone.get_id(), packet, NackType::Dropped));
         }
     }
