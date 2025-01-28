@@ -40,7 +40,7 @@ pub enum ContentIdentifier{
     RegisterOrList(NodeId),
     TextList(NodeId),
     MediaToResolve, // id
-    Media(egui::TextureHandle), // id - name - content
+    Media(TextureHandle), // content
 }
 
 impl Eq for MyNodes {}
@@ -152,7 +152,6 @@ impl MyApp {
             sender_id: 0,
             circle_mode: true,
         };
-        //app.generate_random_connections();
         app
     }
 
@@ -572,9 +571,9 @@ impl MyApp {
                     let response = ui.interact(rect, egui::Id::new(index), egui::Sense::click());
 
                     let circle_color = if value.selected {
-                        egui::Color32::from_rgb(255, 255, 255)
+                        Color32::from_rgb(255, 255, 255)
                     } else {
-                        egui::Color32::from_rgb(255, 255, 255)
+                        Color32::from_rgb(255, 255, 255)
                     };
 
                     if value.selected{
@@ -1237,6 +1236,33 @@ impl MyApp {
                                                         });
                                                 });
 
+                                            egui::SidePanel::right(format!("right_side_panel_{}", node.id))
+                                                .resizable(true)
+                                                .default_width(200.0) // Limit side panel width
+                                                .show_inside(ui, |ui| {
+                                                    let mut connections = String::new();
+                                                    for connection in node.connections.clone() {
+                                                        connections.push_str(connection.to_string().as_str());
+                                                        connections.push_str(", ");
+                                                    }
+
+                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.separator();
+
+                                                    if ui.button("Add Channel").clicked(){
+                                                        node.node_window_scenes = AddSender;
+                                                    }
+
+                                                    if ui.button("Remove Channel").clicked(){
+                                                        node.node_window_scenes = RemoveSender
+                                                    }
+
+                                                    if ui.button("Chiudi").clicked() {
+                                                        node.content = None;
+                                                        node.selected = false; // Close the window
+                                                    }
+                                                });
+
 
                                             egui::CentralPanel::default()
                                                 .show_inside(ui, |ui| {
@@ -1282,7 +1308,7 @@ impl MyApp {
                                                                 todo!()
                                                         }
                                                         ShowDestinations => {
-                                                            //idk
+                                                            todo!()
                                                         }
                                                         _ => {}
                                                     }
