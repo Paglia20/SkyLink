@@ -12,6 +12,7 @@ use egui::{Color32, Context, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
+use eframe::glow::TRUE;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
@@ -114,6 +115,7 @@ pub struct MyApp {
     selected_drones: Vec<bool>,
     pdr: f32,
     sender_id: NodeId,
+    circle_mode: bool,
 }
 
 
@@ -148,6 +150,7 @@ impl MyApp {
             sim_contr,
             pdr: 0.0,
             sender_id: 0,
+            circle_mode: true,
         };
         //app.generate_random_connections();
         app
@@ -494,21 +497,49 @@ impl MyApp {
                     ui.min_rect().left() + available_size.x / 2.0,
                     ui.min_rect().top() + available_size.y / 2.0,
                 );
-                let radius = available_size.x.min(available_size.y) * 0.4;
 
-                self.nodes.sort();
-                let total_items = self.nodes.len();
 
                 let mut positions = Vec::new();
                 let mut numbers_positions = Vec::new();
-                for (index, _value) in self.nodes.iter().enumerate() {
-                    let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
-                    let x = center.x + radius * angle.cos();
-                    let y = center.y + radius * angle.sin();
-                    positions.push(egui::pos2(x, y));
-                    let x_num = center.x + (radius + 45.0) * angle.cos();
-                    let y_num = center.y + (radius + 45.0) * angle.sin();
-                    numbers_positions.push(egui::pos2(x_num, y_num));
+
+                if self.circle_mode {
+                    let radius = available_size.x.min(available_size.y) * 0.4;
+
+                    self.nodes.sort();
+                    let total_items = self.nodes.len();
+                    for (index, _value) in self.nodes.iter().enumerate() {
+                        let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
+                        let x = center.x + radius * angle.cos();
+                        let y = center.y + radius * angle.sin();
+                        positions.push(egui::pos2(x, y));
+                        let x_num = center.x + (radius + 45.0) * angle.cos();
+                        let y_num = center.y + (radius + 45.0) * angle.sin();
+                        numbers_positions.push(egui::pos2(x_num, y_num));
+                    }
+                } else {
+                    // Calcolo della griglia
+                    let total_items = self.nodes.len();
+                    let grid_size = (total_items as f32).sqrt().ceil() as usize;
+                    let grid_spacing = 150.0; // Spaziatura tra i nodi,
+                    let grid_width = grid_size as f32 * grid_spacing;
+                    let grid_height = grid_size as f32 * grid_spacing;
+                    let grid_origin = egui::pos2(
+                        center.x - grid_width / 2.3,
+                        center.y - grid_height / 3.0,
+                    ); // Punto di partenza per la griglia (in alto a sinistra)
+
+                    for i in 0..total_items {
+                        let row = i / grid_size;
+                        let col = i % grid_size;
+
+                        let x = grid_origin.x + col as f32 * grid_spacing;
+                        let y = grid_origin.y + row as f32 * grid_spacing;
+                        positions.push(egui::pos2(x, y));
+
+                        let num_x = grid_origin.x + col as f32 * grid_spacing + 40.0;
+                        let num_y = grid_origin.y + row as f32 * grid_spacing + 40.0;
+                        numbers_positions.push(egui::pos2(num_x, num_y));
+                    }
                 }
 
                 let painter = ui.painter();
