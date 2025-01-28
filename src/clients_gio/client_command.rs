@@ -49,6 +49,9 @@ pub enum ClientEvent {
     SendTextList(NodeId, u64, String),
     SendCatalogue(NodeId, u64, String),
     SendMedia(NodeId, u64, String, Vec<u8>),
+    MissingDestForMedia(NodeId, u64),
+    MissingTextList(NodeId, u64),
+
 }
 
 
