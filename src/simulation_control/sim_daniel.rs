@@ -586,7 +586,7 @@ impl MyApp {
             if node.selected {
                 match node.node_type {
                     NodeNature::Drone => {egui::Window::new(format!("Drone {}", node.id))
-                        .resizable(true) // Permetti il ridimensionamento
+                        .resizable(true)
                         .collapsible(true)
                         .min_width(500.0)
                         .max_height(400.0)
