@@ -23,16 +23,11 @@ use crate::server::server_type::{ContentServerType, ServerType};
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
                                                             //vettore con tutti i media di cui quello contiene un riferimento
-    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String, Vec<(u64, String)>)>,
+    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
     arrived_content: HashMap<u64, (String, Vec<u8>)>,
 
     /*
-    arrived_text_lists: when a webclient receive a TextLists(HashMap<u64, (String, Vec<(u64, String)>)>), has to store it,
-    with the nodes ids.
-    wouldn't be 100% necessary, but if a text server send him 1000 files, resolving each would be a pain in the ass.
-    hence let's store it, create a command more and handle case by case each TextFile.
-
     arrived_content: media we retrieved
 
     catalogue: filled with information got from MediaReference(...), is the fkn catalogue of ikea.
@@ -277,8 +272,8 @@ impl NetworkEdge for WebBrowser {
             ContentType::TextResponse(text_response) => {
                 match text_response{
                     TextResponse::TextLists(map) => {
-                        for (text_file_id, (name, references)) in map {
-                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone(), references));
+                        for (text_file_id, name) in map {
+                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
                             entry.0.push(src);
 
                             if entry.0.len() == 1 {

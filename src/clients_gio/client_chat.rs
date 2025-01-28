@@ -225,7 +225,9 @@ impl NetworkEdge for ChatClient {
                                 if !self.comm.paths.contains_key(&node_id) {
                                     //if it's first time this server gets seen
                                     self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    println!("{} inserted {:?}",self.comm.node_id, node_id);
+                                    if DEBUG_MODE {
+                                        println!("{} inserted {:?}", self.comm.node_id, node_id);
+                                    }
                                 }
                                 // Clone the current path for the server and insert it into the route list
                                 match self.comm.paths.get_mut(&node_id) {

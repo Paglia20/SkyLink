@@ -111,7 +111,7 @@ pub enum MediaRequest {
 pub enum TextResponse {
     //la prima stringa indica il nome del textfile,
     //la seconda è il nome di ogni media associato all'id
-    TextLists(HashMap<u64, (String, Vec<(u64, String)>)>),
+    TextLists(HashMap<u64, String>),
 
     MediaReferences(HashMap<u64, (String, NodeId)>), //chi ha quel media
     NotFound(u64), //i didn't find that id.
