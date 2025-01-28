@@ -18,7 +18,7 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::NodeType;
-use crate::{ALL_CHAT, ALL_CONTENT};
+use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE};
 use crate::server::server_type::ServerType;
 
 #[derive(Clone)]
@@ -604,7 +604,9 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        println!("selected node: {:?}", value.id);
+                        if DEBUG_MODE {
+                            println!("selected node: {:?}", value.id);
+                        }
                     }
                 }
             });
