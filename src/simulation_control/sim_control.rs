@@ -206,7 +206,7 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
-            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
+            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE todo!()
             ServerEvent::MissingDestination(missing_destination) => {}
             ServerEvent::MissingRoute(missing_node) => {}
             ServerEvent::LostMessage(session_id, node_id) => {}
@@ -440,7 +440,7 @@ impl SimulationControl {
                             ));
                         }
                     }
-                    _ => {todo!()},
+                    _ => {todo!("server??")},
                 }
             }
         }
@@ -581,8 +581,7 @@ impl SimulationControl {
         let new_log = LogEntry {
             cause: Cause::Sent,
             node_id: id_drone,
-            message: message
-
+            message
         };
         self.log.push_back(new_log);
     }
@@ -832,10 +831,9 @@ impl SimulationControl {
         };
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
-            message: message
-
+            message
         };
         self.log.push_back(new_log);
     }

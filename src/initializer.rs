@@ -95,37 +95,6 @@ pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
         //implementation of other groups drones in our network.
     }
 
-    // for client in config.client.into_iter() {
-    //     //Adding the sender to this client to the senders of the Sim Contr.
-    //     let (contr_send, contr_recv) = unbounded();
-    //     client_command_send.insert(client.id, contr_send);
-    //
-    //     //Give the client a copy of the sender of events to the Sim Contr.
-    //     let node_event_send = client_event_send.clone();
-    //     network_graph.insert(client.id, (NodeNature::ChatClient, HashSet::from_iter(client.connected_drone_ids.clone())));
-    //
-    //     //Take the channels necessary to this client.
-    //     let client_recv = packet_receivers.remove(&client.id).unwrap();
-    //     let client_send: HashMap<NodeId, Sender<Packet>> = client
-    //         .connected_drone_ids
-    //         .into_iter()
-    //         .map(|id| (id, packet_senders[&id].clone()))
-    //         .collect();
-    //
-    //     //create the thread of the Client, and add it to a Vec to be pushed afterward
-    //     handles.push(thread::spawn(move || {
-    //         let mut client = ChatClient::new(
-    //             client.id,
-    //             contr_recv,
-    //             node_event_send,
-    //             client_recv,
-    //             client_send,
-    //         );
-    //         client.run();
-    //     }));
-    //     //This will probably need to be changed based on the
-    //     //implementation of other groups drones in our network.
-    // }
 
     // I create the servers in an external function, that'll add them to the 'handles' vector.
     let (chat_servers, media_servers) = create_servers(config.server.clone(),
