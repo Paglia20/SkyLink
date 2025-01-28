@@ -555,12 +555,12 @@ impl MyApp {
                 for node in &mut self.nodes {
                     if node.texture.is_none() { // Carica la texture solo se non è già stata caricata
                         node.texture = match node.node_type {
-                            NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/drone.png")),
-                            NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/ChatServer.png")),
-                            NodeNature::ChatClient => Some(load_texture(ctx, "src/simulation_control/ChatClient.png")),
-                            NodeNature::WebBrowser => Some(load_texture(ctx, "src/simulation_control/WebBrowser.png")),
-                            NodeNature::TextServer => Some(load_texture(ctx, "src/simulation_control/TextServer.png")),
-                            NodeNature::MediaServer => Some(load_texture(ctx, "src/simulation_control/MediaServer.png")),
+                            NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone.png")),
+                            NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
+                            NodeNature::ChatClient => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatClient.png")),
+                            NodeNature::WebBrowser => Some(load_texture(ctx, "src/simulation_control/texture_pngs/WebBrowser.png")),
+                            NodeNature::TextServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/TextServer.png")),
+                            NodeNature::MediaServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/MediaServer.png")),
                         };
                     }
                 }
