@@ -3,10 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
-use crate::clients_gio::client_command::ClientEvent::WrongDestinationType;
 use crate::clients_gio::client_type::ClientType;
 use crate::server::server_type::ServerType;
-use crate::server::server_struct::ServerStruct;
 
 pub trait NetworkEdge {
     fn send_message(&mut self, message: Message, destination: NodeId);
@@ -134,8 +132,7 @@ pub trait NetworkEdge {
 
     fn handle_message(&mut self, message: Message);
 
-    //its just the same of the drone, where can we put it so it's not duplicate?
-    fn send_flood_response(&mut self, flood: FloodRequest) {
+    fn edge_send_flood_response(&mut self, flood: FloodRequest) {
         //take a flood req, generate the response, send it
 
         let flood_resp = FloodResponse {

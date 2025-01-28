@@ -2,9 +2,10 @@ use crate::message::{ChatResponse, ContentType, EdgeNackType, Message, TypeExcha
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_trait::Server;
-use crate::server::server_type::ServerType;
+use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
+use std::fs;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::clients_gio::client_type::ClientType;
@@ -12,47 +13,25 @@ use crate::server::server_struct::ServerStruct;
 use crate::routing::{Route, RouteList};
 use crate::DEBUG_MODE;
 
-pub struct ChatServer {
+pub struct ContentServer {
     server_struct: ServerStruct,
+    text_files: HashMap<u64, (String, HashMap<String, Vec<(u64, NodeId)>>)>,
+    next_file_id: u64,
 }
 
-impl NetworkEdge for ChatServer {
+impl NetworkEdge for ContentServer {
     fn send_message(&mut self, message: Message, destination: NodeId) {
+
         match message.clone().content{
             ContentType::TypeExchange(_exc) =>{
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.server_struct.fragments.insert((session_id, self.server_struct.node_id, destination), frags.clone());
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
+                self.server_send_fragments(message, destination);
             },
             ContentType::EdgeNack(_nack) => {
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.server_struct.fragments.insert((session_id, self.server_struct.node_id, destination), frags.clone());
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
+                self.server_send_fragments(message, destination);
             }
             _=>{
                 if self.is_state_ok(destination) {
-                    let session_id = message.session_id;
-                    let frags = Self::fragment_message(&message);
-                    self.server_struct.fragments.insert((session_id, self.server_struct.node_id, destination), frags.clone());
-                    // I also save the fragments in the memory, in case I have to send them again.
-
-
-                    for fragment in frags {
-                        self.send_fragment(fragment, destination, session_id);
-                        // I apply the send operation on each single fragment.
-                    }
+                    self.server_send_fragments(message, destination);
                 }
                 else {
                     let new_nack = ServerEvent::WrongDestinationType(self.get_src_id(), destination);
@@ -62,54 +41,14 @@ impl NetworkEdge for ChatServer {
         }
     }
 
-    fn fragment_message(message: &Message) -> Vec<Fragment> {
-        todo!()
-    }
-
-    fn reassemble_message(session_id: u64, source_id: NodeId, packets: &Vec<Fragment>) -> Result<Message, String> {
-        todo!()
-    }
-
     fn handle_packet(&mut self, mut packet: Packet) {
         if let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone(){
-            flood_request
-                .path_trace
-                .push((self.server_struct.node_id, NodeType::Server));
-
-            if self.server_struct.flood_ids.insert((
-                flood_request.flood_id.clone(),
-                flood_request.initiator_id.clone(),
-            )) {
-                if self.server_struct.packet_send.len() == 1 {
-                    self.edge_send_flood_response(flood_request);
-                } else {
-                    let mut prev = flood_request.initiator_id.clone();
-                    if flood_request.path_trace.clone().len() > 1 {
-                        prev = flood_request
-                            .path_trace
-                            .get(flood_request.path_trace.len() - 2)
-                            .unwrap()
-                            .0;
-                    }
-                    //I update the path_trace in the packet.
-                    packet.pack_type = PacketType::FloodRequest(flood_request);
-                    for (key, _) in self.server_struct.packet_send.iter() {
-                        //println!("Previous: {}", prev);
-                        //println!("Key: {}", key);
-                        if *key != prev {
-                            //I send the flooding to everyone except the node I received it from.
-                            if let Ok(_) =
-                                self.server_struct.packet_send.get(key).unwrap().send(packet.clone())
-                            {
-                                // self.send_event(ServerEvent::PacketSent(packet.clone()));
-                                //If the message was sent, I also notify the sim controller.
-                            } //There's no else, since I don't care of nodes which can't be reached.
-                        }
-                    }
-                }
-            } else {
+            // The inner struct compute the functions and try to send it to all it's neighbours.
+            if !self.server_struct.handle_flood_request(flood_request.clone(), packet) {
+                // Otherwise if I need to create a flood_response, I call this function common to all network edges.
                 self.edge_send_flood_response(flood_request);
             }
+
         } else {
             if packet.routing_header.destination().unwrap() != self.server_struct.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
@@ -530,7 +469,7 @@ impl NetworkEdge for ChatServer {
     }
 }
 
-impl NetworkEdgeErrors for ChatServer {
+impl NetworkEdgeErrors for ContentServer {
     fn check_type(&mut self, id: NodeId) {
         let req = TypeExchange::TypeRequest { from: self.server_struct.node_id };
         let exc = ContentType::TypeExchange(req);
@@ -601,17 +540,46 @@ impl NetworkEdgeErrors for ChatServer {
     }
 }
 
-impl Server for ChatServer {
+impl Server for ContentServer {
     fn new(
         node_id: NodeId,
         command_recv: Receiver<ServerCommand>,
         event_send: Sender<ServerEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
-        _files: Vec<String> // Should be empty since it's a chat server.
+        files: Vec<String>
     ) -> Self {
-        ChatServer {
+        let mut starting_id:u64 = 0;
+        let mut text_files = HashMap::new();
+        for e in files.iter() {
+            // I read the file as a string
+            let file_str = fs::read_to_string(e).unwrap();
+
+            // I divide the string to obtain the name of the medias contained in it.
+            let mut medias = HashMap::new();
+            let mut tmp_string = String::new();
+            for c in file_str.chars() {
+                if c != '\n' {
+                   tmp_string.push(c);
+                } else {
+                    // I save the name of the media, but still can't know which media server might have it.
+                    medias.insert(tmp_string, Vec::new());
+                    tmp_string = String::new();
+                }
+            }
+
+            // I created a unique id that distinguish that media, used by clients to easier computation.
+            // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
+            // Since we should have less text files than media ones, only the two right-most bytes are dedicated to text files' ids.
+            let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) + starting_id;
+            starting_id += 1;
+
+            text_files.insert(file_id, (file_str, medias));
+        }
+        ContentServer {
             server_struct: ServerStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            text_files,
+            next_file_id: starting_id
         }
     }
 
@@ -622,13 +590,13 @@ impl Server for ChatServer {
         loop {
             select_biased! {
                 recv(self.server_struct.command_recv) -> cmd => {
-                    if let Ok(_command) = cmd {
-                       // self.handle_command(command);
+                    if let Ok(command) = cmd {
+                       self.handle_command(command);
                     }
                 }
                 recv(self.server_struct.packet_recv) -> pkt => {
-                    if let Ok(_packet) = pkt {
-                        //self.handle_packet(packet);
+                    if let Ok(packet) = pkt {
+                        self.handle_packet(packet);
                     }
                 }
             }
@@ -642,7 +610,7 @@ impl Server for ChatServer {
         }
     }
     fn get_server_type(&self) -> ServerType {
-        ServerType::Chat
+        ServerType::Content(ContentServerType::Text)
     }
 
     fn send_event(&self, se: ServerEvent) {
@@ -653,6 +621,20 @@ impl Server for ChatServer {
                     println!("simulation control unreachable")
                 }
             }
+        }
+    }
+}
+
+impl ContentServer {
+    fn server_send_fragments(&mut self, message: Message, destination: NodeId) {
+        let session_id = message.session_id;
+        let frags = Self::fragment_message(&message);
+        self.server_struct.fragments.insert((session_id, self.server_struct.node_id, destination), frags.clone());
+        // I also save the fragments in the memory, in case I have to send them again.
+
+        for fragment in frags {
+            self.send_fragment(fragment, destination, session_id);
+            // I apply the send operation on each single fragment.
         }
     }
 }

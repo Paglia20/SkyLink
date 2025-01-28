@@ -13,6 +13,7 @@ pub trait Server: NetworkEdge {
         event_send: Sender<ServerEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
+        files: Vec<String> // Left empty in chat servers.
     ) -> Self;
 
     fn run(&mut self);

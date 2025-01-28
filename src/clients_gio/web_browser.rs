@@ -23,7 +23,7 @@ use crate::server::server_type::{ContentServerType, ServerType};
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
                                                             //vettore con tutti i media di cui quello contiene un riferimento
-    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String, Vec<(u64, String)>)>,
+    arrived_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
     arrived_content: HashMap<u64, (String, Vec<u8>)>,
 
@@ -64,7 +64,7 @@ impl NetworkEdge for WebBrowser {
                 flood_request.initiator_id.clone(),
             )) {
                 if self.comm.packet_send.len() == 1 {
-                    self.send_flood_response(flood_request);
+                    self.edge_send_flood_response(flood_request);
                 } else {
                     let mut prev = flood_request.initiator_id.clone();
                     if flood_request.path_trace.clone().len() > 1 {
@@ -91,7 +91,7 @@ impl NetworkEdge for WebBrowser {
                     }
                 }
             } else {
-                self.send_flood_response(flood_request);
+                self.edge_send_flood_response(flood_request);
             }
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
@@ -277,8 +277,8 @@ impl NetworkEdge for WebBrowser {
             ContentType::TextResponse(text_response) => {
                 match text_response{
                     TextResponse::TextLists(map) => {
-                        for (text_file_id, (name, references)) in map {
-                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone(), references));
+                        for (text_file_id, name) in map {
+                            let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
                             entry.0.push(src);
 
                             if entry.0.len() == 1 {
@@ -289,12 +289,17 @@ impl NetworkEdge for WebBrowser {
                     TextResponse::MediaReferences(media_refs) => {
                         for (media_id, (name, media_server_id)) in media_refs{
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
-                            entry.push(media_server_id);
+                            for e in media_server_id {
+                                entry.push(e);
+                            }
 
                             if entry.len() == 1 {
                                 self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
                             }
                         }
+                    }
+                    TextResponse::Incomplete(incomplete_text) => {
+                        todo!()
                     }
                     TextResponse::NotFound(media_id) => {
                         //update catalougue
