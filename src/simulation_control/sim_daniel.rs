@@ -2,24 +2,21 @@ use crate::clients_gio::client_command::ClientEvent;
 use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
-use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, TextList, RegisterOrList, MediaToResolve, Media};
+use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, Media, MediaToResolve, RegisterOrList, TextList};
 use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowAuxiliaryLists, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
-use image::ImageDecoder;
+use crate::DEBUG_MODE;
 use eframe::egui;
-use egui::{Color32, Context, FontId, RichText, TextureHandle, Vec2};
+use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
-use eframe::glow::TRUE;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
+use wg_2024::packet::NodeType;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::NodeType;
-use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE};
-use crate::server::server_type::ServerType;
 
 #[derive(Clone)]
 pub struct MyNodes {
@@ -104,7 +101,7 @@ pub enum NodeWindowScene {
     SetPDR,
 
     //client scenes
-    ShowAuxiliaryLists, //for a chat client will be the clients to which he is registered, for a webbrowser the text file he can resolve!
+    ShowAuxiliaryLists, //for a chat client will be the clients to which he is registered, for a web browser the text file he can resolve!
     ShowContents, //for a chat client will be chats, for webclient will be medias
     ShowDestinations,   // for a chat client are chat server available(to register ecc..), for a web clint are text server available
 }
@@ -224,13 +221,13 @@ impl MyApp {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
-                                    "Shortcut used for unusual packet type: msgfragment".to_string()))
+                                    "Shortcut used for unusual packet type: fragment".to_string()))
                             }
                             FloodRequest(_) => {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Error,
                                     packet.routing_header.hops[packet.routing_header.hop_index],
-                                    "Shortcut used for unusual packet type: floodrequest".to_string()))
+                                    "Shortcut used for unusual packet type: flood request".to_string()))
                             }
                             _ => {
                                 let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
@@ -240,7 +237,7 @@ impl MyApp {
                                         self.sim_contr.log.push_back(LogEntry::new(
                                             Error,
                                             next_id,
-                                            format!("error in sendig packet to {} through shortcut (packet not present)", next_id),
+                                            format!("error in sending packet to {} through shortcut (packet not present)", next_id),
                                         ));
                                         return;
                                     },
@@ -552,7 +549,7 @@ impl MyApp {
                 for (i, node) in self.nodes.iter().enumerate() {
                     for &connection in &node.connections {
                         if let Some(j) = self.nodes.iter().position(|n| n.id == connection) {
-                            let line_color = egui::Color32::WHITE;
+                            let line_color = Color32::WHITE;
                             painter.line_segment([positions[i], positions[j]], (2.0, line_color));
                         }
                     }
@@ -604,7 +601,7 @@ impl MyApp {
                         egui::Align2::CENTER_CENTER,
                         value.id.to_string(),
                         FontId::proportional(16.0),
-                        egui::Color32::WHITE,
+                        Color32::WHITE,
                     );
 
                     // Gestisci il clic
@@ -751,8 +748,8 @@ impl MyApp {
                             .show(ctx, |ui| {
                                 ui.push_id(format!("client_window_{}", node.id), |ui| {
                                     egui::Frame::default()
-                                        .fill(egui::Color32::BLACK) // Set the frame's background color
-                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .fill(Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, Color32::BLACK)) // Add a border
                                         .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
                                         .show(ui, |ui| {
                                             // Split panels with proper layout
@@ -870,7 +867,7 @@ impl MyApp {
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
-                                                                ui.label(format!("MyContacts are: "));
+                                                                ui.label("MyContacts are: ".to_string());
                                                                 ui.separator();
                                                                 for id in node_contacts {
                                                                     if ui.button(id.to_string()).clicked() {
@@ -912,7 +909,7 @@ impl MyApp {
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
-                                                                ui.label(format!("My Servers are: "));
+                                                                ui.label("My Servers are: ".to_string());
                                                                 ui.separator();
                                                                 for (id) in node_dst {
                                                                    if ui.button(id.to_string()).clicked() {
@@ -977,8 +974,8 @@ impl MyApp {
                             .show(ctx, |ui| {
                                 ui.push_id(format!("client_window_{}", node.id), |ui| {
                                     egui::Frame::default()
-                                        .fill(egui::Color32::BLACK) // Set the frame's background color
-                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .fill(Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, Color32::BLACK)) // Add a border
                                         .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
                                         .show(ui, |ui| {
                                             // Split panels with proper layout
@@ -1169,8 +1166,8 @@ impl MyApp {
                                                                 None => vec![],
                                                             };
                                                             if node.content.is_none() {
-                                                                ui.label(format!("My Text TextLists are: "));
-                                                                ui.label(format!("Choose witch you want to resolve to update your catalogue"));
+                                                                ui.label("My Text TextLists are: ".to_string());
+                                                                ui.label("Choose witch you want to resolve to update your catalogue".to_string());
                                                                 ui.separator();
                                                                 for (id) in node_text_lists {
                                                                     if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
@@ -1181,7 +1178,7 @@ impl MyApp {
                                                             } else {
                                                                 if let Some(MediaToResolve) = node.content {
                                                                     if let Some(media_available) = self.sim_contr.storage.catalogues.get(&node.id){
-                                                                        ui.label(format!("All Medias you can Get: "));
+                                                                        ui.label("All Medias you can Get: ".to_string());
 
                                                                         for id in media_available {
                                                                             if ui.button(id.to_string()).clicked() {
@@ -1191,7 +1188,7 @@ impl MyApp {
                                                                             }
                                                                         }
                                                                     } else {
-                                                                        ui.label(format!("Updating catalogue, might take a second... "));
+                                                                        ui.label("Updating catalogue, might take a second... ".to_string());
                                                                     }
                                                                 }
                                                             }
@@ -1222,8 +1219,8 @@ impl MyApp {
                             .show(ctx, |ui| {
                                 ui.push_id(format!("server_window_{}", node.id), |ui| {
                                     egui::Frame::default()
-                                        .fill(egui::Color32::BLACK) // Set the frame's background color
-                                        .stroke(egui::Stroke::new(1.0, egui::Color32::BLACK)) // Add a border
+                                        .fill(Color32::BLACK) // Set the frame's background color
+                                        .stroke(egui::Stroke::new(1.0, Color32::BLACK)) // Add a border
                                         .inner_margin(egui::Margin::symmetric(10.0, 10.0)) // Optional padding
                                         .show(ui, |ui| {
                                             // Split panels with proper layout
@@ -1262,8 +1259,13 @@ impl MyApp {
                                                     }
 
                                                     if ui.button("Remove Channel").clicked(){
-                                                        node.node_window_scenes = RemoveSender
+                                                        node.node_window_scenes = RemoveSender;
                                                     }
+
+                                                    if ui.button("See Content").clicked(){
+                                                        node.node_window_scenes = ShowDestinations;
+                                                    }
+
 
                                                     if ui.button("Chiudi").clicked() {
                                                         node.content = None;
@@ -1313,7 +1315,7 @@ impl MyApp {
                                                             }
                                                         }
                                                         ShowContents => {
-                                                                todo!()
+                                                            todo!()
                                                         }
                                                         ShowDestinations => {
                                                             todo!()
@@ -1331,7 +1333,7 @@ impl MyApp {
     }
 
     pub fn enable_constant_read(&mut self) {
-        //setting this true assure you keep reading from SC, retest wont work (but you can delete it)
+        //setting this true assure you keep reading from SC, retest won't work (but you can delete it)
         self.update_topology();
     }
 
@@ -1387,7 +1389,7 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
 
 fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
     // Legge l'immagine dal file system
-    let image = image::open(path).expect("Failed to load image").to_rgba8();
+    let image = image::open(path).expect(format!{"Failed to load image {path}"}.as_str()).to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
 
     // Converte l'immagine in un formato compatibile con egui
@@ -1395,20 +1397,19 @@ fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
     ctx.load_texture(path, color_image, egui::TextureOptions::default())
 }
 
-fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<egui::TextureHandle> {
+fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle> {
     // Decodifica l'immagine usando il crate `image`
     let decoded_image = image::load_from_memory(&image_data).ok()?;
     let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
-    let (width, height) = rgba_image.dimensions();
 
     // Crea una texture da RGBA bytes
-    let pixels: Vec<egui::Color32> = rgba_image
+    let pixels: Vec<Color32> = rgba_image
         .pixels()
-        .map(|p| egui::Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
+        .map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
         .collect();
 
     let texture = egui::ColorImage {
-        size: [50 as usize, 50 as usize],
+        size: [50usize, 50usize],
         pixels,
     };
 

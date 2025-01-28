@@ -1,7 +1,5 @@
 use crate::initializer::initialize;
 use crate::simulation_control::{sim_control, sim_daniel::*};
-use crate::test::test_bench::*;
-use std::sync::Arc;
 
 mod clients_gio;
 mod initializer;
@@ -34,13 +32,6 @@ fn main() {
                 handle.join().unwrap();
             }
         }
-        Switch::SimSam => {
-            let (sim_contr, handles) = initialize("inputs/input_generic_fragment_forward.toml");
-            // sim_sam::run_simulation_gui(sim_contr.clone()).expect("TODO: panic message");
-            for handle in handles.into_iter() {
-                handle.join().unwrap();
-            }
-        }
         Switch::Test => {
             //Comment functions we aren't testing
 
@@ -59,8 +50,8 @@ fn main() {
     }
 }
 
+/* we will have to change this Switch and change the client spawned if gio or sam */
 enum Switch {
     Test,
     SimDaniel,
-    SimSam,
 }
