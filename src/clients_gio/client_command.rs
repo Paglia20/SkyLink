@@ -42,7 +42,7 @@ pub enum ClientEvent {
     //chat client only
     SendContactsToSC(NodeId, NodeId), //first is src second is dst
     MissingContacts(NodeId, NodeId), //first is src second is dst
-    SendChatText(NodeId, NodeId, String), //from-dst-chat text
+    ReceivedChatText(NodeId, NodeId, String), //from-dst-chat text
     RegisterSuccessfully(NodeId, NodeId),
 
     //Web client only
