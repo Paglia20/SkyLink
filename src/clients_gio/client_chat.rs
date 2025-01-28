@@ -47,7 +47,7 @@ impl NetworkEdge for ChatClient {
                 flood_request.initiator_id.clone(),
             )) {
                 if self.comm.packet_send.len() == 1 {
-                    self.send_flood_response(flood_request);
+                    self.edge_send_flood_response(flood_request);
                 } else {
                     let mut prev = flood_request.initiator_id.clone();
                     if flood_request.path_trace.clone().len() > 1 {
@@ -74,7 +74,7 @@ impl NetworkEdge for ChatClient {
                     }
                 }
             } else {
-                self.send_flood_response(flood_request);
+                self.edge_send_flood_response(flood_request);
             }
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {

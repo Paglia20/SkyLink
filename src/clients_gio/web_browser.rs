@@ -59,7 +59,7 @@ impl NetworkEdge for WebBrowser {
                 flood_request.initiator_id.clone(),
             )) {
                 if self.comm.packet_send.len() == 1 {
-                    self.send_flood_response(flood_request);
+                    self.edge_send_flood_response(flood_request);
                 } else {
                     let mut prev = flood_request.initiator_id.clone();
                     if flood_request.path_trace.clone().len() > 1 {
@@ -86,7 +86,7 @@ impl NetworkEdge for WebBrowser {
                     }
                 }
             } else {
-                self.send_flood_response(flood_request);
+                self.edge_send_flood_response(flood_request);
             }
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
@@ -284,12 +284,17 @@ impl NetworkEdge for WebBrowser {
                     TextResponse::MediaReferences(media_refs) => {
                         for (media_id, (name, media_server_id)) in media_refs{
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
-                            entry.push(media_server_id);
+                            for e in media_server_id {
+                                entry.push(e);
+                            }
 
                             if entry.len() == 1 {
                                 self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
                             }
                         }
+                    }
+                    TextResponse::Incomplete(incomplete_text) => {
+                        todo!()
                     }
                     TextResponse::NotFound(media_id) => {
                         //update catalougue

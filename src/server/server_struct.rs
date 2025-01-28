@@ -4,7 +4,7 @@ use crate::server::server_trait::Server;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Packet};
+use wg_2024::packet::{FloodRequest, Fragment, NodeType, Packet, PacketType};
 
 pub struct ServerStruct {
     pub node_id: NodeId,
@@ -46,6 +46,48 @@ impl ServerStruct {
             fragments: HashMap::new(),
             arrived_messages: HashMap::new(),
             unsent_fragments: (0, HashMap::new()),
+        }
+    }
+
+    pub fn handle_flood_request(&mut self, mut flood_request: FloodRequest, packet: Packet) -> bool{
+        flood_request
+            .path_trace
+            .push((self.node_id, NodeType::Server));
+        // I first add myself to the path_trace.
+
+        // I try to insert the new flood in the already known ones.
+        if self.flood_ids.insert((flood_request.flood_id.clone(),flood_request.initiator_id.clone())) {
+
+            if self.packet_send.len() == 1 {
+                return false
+            } else {
+                let mut prev = flood_request.initiator_id.clone();
+                if flood_request.path_trace.clone().len() > 1 {
+                    prev = flood_request
+                        .path_trace
+                        .get(flood_request.path_trace.len() - 2)
+                        .unwrap()
+                        .0;
+                }
+                //I update the path_trace in the packet.
+                //packet.pack_type = PacketType::FloodRequest(flood_request);
+                for (key, _) in self.packet_send.iter() {
+                    //println!("Previous: {}", prev);
+                    //println!("Key: {}", key);
+                    if *key != prev {
+                        //I send the flooding to everyone except the node I received it from.
+                        if let Ok(_) =
+                            self.packet_send.get(key).unwrap().send(packet.clone())
+                        {
+                            // self.send_event(ServerEvent::PacketSent(packet.clone()));
+                            //If the message was sent, I also notify the sim controller.
+                        } //There's no else, since I don't care of nodes which can't be reached.
+                    }
+                }
+            }
+            true
+        } else {
+            false
         }
     }
 }

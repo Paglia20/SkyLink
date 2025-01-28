@@ -97,29 +97,27 @@ pub enum ChatResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextRequest {
-    TextList, // solo ai text server
-    TextFile(u64), // solo ai text server
+    TextList, // Only to text severs
+    TextFile(u64), // Only to text severs
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaRequest {
-    MediaList, // solo dai text server ai media server
-    Media(u64), // solo da webclient ai media server !!
+    MediaList, // Used only between servers.
+    Media(u64), // Only from client to media server.
 }
 
 // solo dai text server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextResponse {
-    //la prima stringa indica il nome del textfile,
-    //la seconda è il nome di ogni media associato all'id
-    TextLists(HashMap<u64, String>),
-
-    MediaReferences(HashMap<u64, (String, NodeId)>), //chi ha quel media
-    NotFound(u64), //i didn't find that id.
+    TextLists(HashMap<u64, String>), // ID and name of all texts contained in the server.
+    MediaReferences(HashMap<u64, (String, Vec<NodeId>)>), // List of media contained inside a specific text, and which server has them.
+    Incomplete(u64), // If we don't know where some of the media are.
+    NotFound(u64), // If we didn't find that ID.
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
-    MediaList(Vec<(u64, String)>), // solo tra server viene usata !!
-    Media(((u64, String), Vec<u8>)),
+    MediaList(Vec<(u64, String)>), // Used only between servers.
+    Media(((u64, String), Vec<u8>)), // Sent back to clients.
 }
 
 /*
