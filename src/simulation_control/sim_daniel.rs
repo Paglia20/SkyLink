@@ -113,6 +113,7 @@ pub struct MyApp {
     pdr: f32,
     sender_id: NodeId,
     circle_mode: bool,
+    sort: bool,
 }
 
 
@@ -148,6 +149,7 @@ impl MyApp {
             pdr: 0.0,
             sender_id: 0,
             circle_mode: true,
+            sort: false,
         };
         app
     }
@@ -342,6 +344,22 @@ impl MyApp {
                 ui.heading("Actions");
                 match self.side_panel_scenes {
                     InitialScene => {
+
+                        if ui.button("Grid").clicked() {
+                            self.circle_mode = false;
+                            self.sort = false;
+
+                        }
+                        if ui.button("Circle").clicked() {
+                            self.circle_mode = true;
+                            self.sort = false;
+
+                        }
+                        if ui.button("Sort").clicked() {
+                            self.sort = true;
+                        }
+
+
                         if ui.button("Add Drone!").clicked() {
                             self.side_panel_scenes = ManageAdd;
                         }
@@ -390,6 +408,7 @@ impl MyApp {
                         if ui.button("Test flooding with 0").clicked() {
                             self.sim_contr.flood_with(0);
                         }
+
 
                         if ui.button("Test Shortcut").clicked() {
                             let msg = create_packet(vec![0, 1, 8]);
@@ -503,11 +522,15 @@ impl MyApp {
 
                 let mut positions = Vec::new();
                 let mut numbers_positions = Vec::new();
+                
+                
+                if self.sort {
+                    self.nodes.sort();
+                }
 
                 if self.circle_mode {
                     let radius = available_size.x.min(available_size.y) * 0.4;
-
-                    self.nodes.sort();
+                    
                     let total_items = self.nodes.len();
                     for (index, _value) in self.nodes.iter().enumerate() {
                         let angle = (index as f32 / total_items as f32) * std::f32::consts::TAU;
@@ -558,7 +581,7 @@ impl MyApp {
                 for node in &mut self.nodes {
                     if node.texture.is_none() { // Carica la texture solo se non è già stata caricata
                         node.texture = match node.node_type {
-                            NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone.png")),
+                            NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone_mod.png")),
                             NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
                             NodeNature::ChatClient => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatClient.png")),
                             NodeNature::WebBrowser => Some(load_texture(ctx, "src/simulation_control/texture_pngs/WebBrowser.png")),
@@ -818,6 +841,23 @@ impl MyApp {
                                                         node.content = None;
                                                         node.selected = false; // Close the window
                                                     }
+
+                                                    if let Some(texture) = node.texture.clone() {
+                                                        // obtain available space
+                                                        let available_size = ui.available_size();
+
+                                                        let size = texture.size_vec2();
+                                                        let aspect_ratio = size.x / size.y;
+                                                        let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                                            egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                                        } else {
+                                                            egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                                        };
+
+                                                        //immagine scalata
+                                                        ui.image((texture.id(), new_size));
+
+                                                    }
                                                 });
 
                                             egui::CentralPanel::default()
@@ -1043,6 +1083,27 @@ impl MyApp {
                                                         node.content = None;
                                                         node.selected = false; // Close the window
                                                     }
+
+                                                    if let Some(texture) = node.texture.clone() {
+                                                        // obtain available space
+                                                        let available_size = ui.available_size();
+
+                                                        let size = texture.size_vec2();
+                                                        let aspect_ratio = size.x / size.y;
+                                                        let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                                            egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                                        } else {
+                                                            egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                                        };
+
+                                                        //immagine scalata
+                                                        ui.image((texture.id(), new_size));
+
+                                                    }
+
+
+
+
                                                 });
 
                                             egui::CentralPanel::default()
@@ -1271,6 +1332,23 @@ impl MyApp {
                                                         node.content = None;
                                                         node.selected = false; // Close the window
                                                     }
+
+                                                    if let Some(texture) = node.texture.clone() {
+                                                        // obtain available space
+                                                        let available_size = ui.available_size();
+
+                                                        let size = texture.size_vec2();
+                                                        let aspect_ratio = size.x / size.y;
+                                                        let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                                            egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                                        } else {
+                                                            egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                                        };
+
+                                                        //immagine scalata
+                                                        ui.image((texture.id(), new_size));
+
+                                                    }
                                                 });
 
 
@@ -1416,6 +1494,8 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
     // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
+
+
 
 /*
 feel free to update this list.
