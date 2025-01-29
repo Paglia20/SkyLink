@@ -652,16 +652,19 @@ impl MyApp {
                             match node.node_window_scenes {
                                 Start => {
                                     let mut connections= String::new();
+                                    let mut first = true;
                                     for connection in node.connections.clone() {
-                                        connections.push_str(connection.to_string().as_str());
-                                        connections.push_str(", ");
+                                        if !first {
+                                            connections.push_str(", ");
+                                        }
+                                        first = false;
+                                        connections.push_str(&connection.to_string());
                                     }
-                                    ui.label(format!("Connected to :{}", connections));
+                                    ui.label( RichText::new(format!("Connected to: {}", connections))
+                                                  .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                  .color(Color32::WHITE),);
 
-
-                                    if ui.button("Add Channel").clicked(){
-                                        node.node_window_scenes = AddSender;
-                                    }
+                                    ui.separator();
 
                                     if ui.button("Remove Channel").clicked(){
                                         node.node_window_scenes = RemoveSender
@@ -669,6 +672,10 @@ impl MyApp {
 
                                     if ui.button("Crash This Drone").clicked(){
                                         node.node_window_scenes = Crash
+                                    }
+
+                                    if ui.button("Add Channel").clicked(){
+                                        node.node_window_scenes = AddSender;
                                     }
 
                                     if ui.button("set PDR").clicked(){
@@ -679,17 +686,24 @@ impl MyApp {
                                         node.selected = false; // Chiudi il popup
                                     }
 
-
+                                    ui.separator();
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
                                     self.sender_id = 0;
-                                    ui.label("Log:");
+                                    ui.label( RichText::new(format!("Log:"))
+                                                  .font(FontId::new(14.0, egui::FontFamily::Monospace))
+                                                  .color(Color32::LIGHT_RED),);
+                                    ui.separator();
                                     ui.vertical(|ui| {
                                         egui::ScrollArea::vertical()
                                             .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                                             .show (ui, |ui|
                                                 for s in &self.sim_contr.log {
                                                     if s.get_id() == node.id {
-                                                        ui.label(format!("{}", s));
+                                                        ui.label(RichText::new(format!("{}", s))
+                                                                     .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                     .color(Color32::LIGHT_GRAY),
+                                                        );
+                                                        ui.separator();
                                                     }
                                                 }
                                             )
@@ -780,7 +794,9 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    ui.label(format!("Log of {}:", node.id));
+                                                    ui.label(RichText::new(format!("Log of {}:", node.id))
+                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                 .color(Color32::WHITE),);
                                                     ui.separator();
 
                                                     egui::ScrollArea::vertical()
@@ -788,7 +804,12 @@ impl MyApp {
                                                         .show(ui, |ui| {
                                                             for s in &self.sim_contr.log {
                                                                 if s.get_id() == node.id {
-                                                                    ui.label(format!("{}", s));
+                                                                    ui.label(
+                                                                        RichText::new(format!("{}", s))
+                                                                            .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                            .color(Color32::LIGHT_RED),
+                                                                    );
+                                                                    ui.separator();
                                                                 }
                                                             }
                                                         });
@@ -799,12 +820,18 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
                                                     let mut connections = String::new();
+                                                    let mut first = true;
                                                     for connection in node.connections.clone() {
-                                                        connections.push_str(connection.to_string().as_str());
-                                                        connections.push_str(", ");
+                                                        if !first {
+                                                            connections.push_str(", ");
+                                                        }
+                                                        first = false;
+                                                        connections.push_str(&connection.to_string());
                                                     }
 
-                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.label(RichText::new(format!("Connected to: {}", connections))
+                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                 .color(Color32::WHITE),);
                                                     ui.separator();
 
                                                     if ui.button("Add Channel").clicked(){
@@ -949,7 +976,9 @@ impl MyApp {
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
-                                                                ui.label("My Servers are: ".to_string());
+                                                                ui.label( RichText::new(format!("My Servers are: "))
+                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                              .color(Color32::GRAY),);
                                                                 ui.separator();
                                                                 for (id) in node_dst {
                                                                    if ui.button(id.to_string()).clicked() {
@@ -1023,7 +1052,10 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    ui.label(format!("Log of {}:", node.id));
+                                                    ui.label( RichText::new(format!("Log of {}:", node.id))
+                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                  .color(Color32::WHITE),);
+
                                                     ui.separator();
 
                                                     egui::ScrollArea::vertical()
@@ -1031,7 +1063,11 @@ impl MyApp {
                                                         .show(ui, |ui| {
                                                             for s in &self.sim_contr.log {
                                                                 if s.get_id() == node.id {
-                                                                    ui.label(format!("{}", s));
+                                                                    ui.label(RichText::new(format!("{}", s))
+                                                                                 .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                                 .color(Color32::LIGHT_BLUE),
+                                                                    );
+                                                                    ui.separator();
                                                                 }
                                                             }
                                                         });
@@ -1042,12 +1078,18 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
                                                     let mut connections = String::new();
+                                                    let mut first = true;
                                                     for connection in node.connections.clone() {
-                                                        connections.push_str(connection.to_string().as_str());
-                                                        connections.push_str(", ");
+                                                        if !first {
+                                                            connections.push_str(", ");
+                                                        }
+                                                        first = false;
+                                                        connections.push_str(&connection.to_string());
                                                     }
 
-                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.label( RichText::new(format!("Connected to: {}", connections))
+                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                  .color(Color32::WHITE),);
                                                     ui.separator();
 
                                                     if ui.button("Add Channel").clicked(){
@@ -1289,15 +1331,22 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    ui.label("Log:");
 
+                                                    ui.label(RichText::new(format!("Log:"))
+                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                 .color(Color32::WHITE),);
+
+                                                    ui.separator();
                                                     egui::ScrollArea::vertical()
                                                         .auto_shrink([false; 2]) // Prevent shrinking
                                                         .show(ui, |ui| {
                                                             for s in &self.sim_contr.log {
                                                                 if s.get_id() == node.id {
-                                                                    ui.label(format!("{}", s));
+                                                                    ui.label(RichText::new(format!("{}", s))
+                                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                                 .color(Color32::YELLOW),);
                                                                 }
+                                                                ui.separator();
                                                             }
                                                         });
                                                 });
@@ -1307,12 +1356,20 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
                                                     let mut connections = String::new();
+
+                                                    let mut first = true;
                                                     for connection in node.connections.clone() {
-                                                        connections.push_str(connection.to_string().as_str());
-                                                        connections.push_str(", ");
+                                                        if !first {
+                                                            connections.push_str(", ");
+                                                        }
+                                                        first = false;
+                                                        connections.push_str(&connection.to_string());
                                                     }
 
-                                                    ui.label(format!("Connected to: {}", connections));
+                                                    ui.label(RichText::new(format!("Connected to: {}", connections))
+                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                                                                 .color(Color32::WHITE),);
+
                                                     ui.separator();
 
                                                     if ui.button("Add Channel").clicked(){
