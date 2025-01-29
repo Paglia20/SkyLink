@@ -747,8 +747,7 @@ impl SimulationControl {
         let new_log = LogEntry{
             cause: Flood,
             node_id: src,
-            message: format!("Flood infos received by: {}",
-                             src)
+            message: format!("Flood infos received.")
         };
         self.log.push_back(new_log);
     }
@@ -1085,7 +1084,7 @@ impl LogEntry {
 
 impl Display for LogEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Node {} notified {}", self.node_id, self.message)
+        write!(f, "Node {} notified:  {}", self.node_id, self.message)
     }
 }
 
@@ -1094,3 +1093,55 @@ impl Debug for LogEntry {
         write!(f, "id: {}", self.node_id)
     }
 }
+
+
+
+
+
+
+/*
+
+let mut first = true;
+for connection in node.connections.clone() {
+if !first {
+connections.push_str(", ");
+}
+first = false;
+connections.push_str(&connection.to_string());
+}
+
+ui.label(RichText::new(format!("Connected to: {}", connections))
+                .font(FontId::new(15.0, egui::FontFamily::Monospace))
+                .color(Color32::WHITE),);
+
+ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
