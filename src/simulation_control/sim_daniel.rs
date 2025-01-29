@@ -17,6 +17,8 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet};
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
+use egui_plot::{Bar, BarChart, Plot};
+
 
 #[derive(Clone)]
 pub struct MyNodes {
@@ -479,35 +481,61 @@ impl MyApp {
                         }
                     }
                     ManageDrop => {
-                        if let Some(id) = self.dropper{
-                            if let Some(dropped_packet) = self
-                                .sim_contr
-                                .storage
-                                .dropped_packets
-                                .get(&id)
-                            {
-                                let dropped = match dropped_packet.last(){
-                                    None => {"impossible to recover".to_string()}
-                                    Some(x) => {x.to_string()}
-                                };
-                                // Display the dropped packet
-                                ui.label(format!("{id} dropped packet: {dropped}", ));
 
-                                // Options for handling the packet
-                                if ui.button("Close it").clicked() {
-                                    self.dropper = None;
+                        let max_value = self.sim_contr.storage.dropped_packets.values().map(|vec| vec.len() as f64).fold(0.0, f64::max);
+
+                        if max_value > 0.0 {
+                            ui.heading("Packet Droppers Histogram");
+                            let bars: Vec<Bar> = self.sim_contr.storage.dropped_packets
+                                .iter()
+                                .map(|(&id, vec)| {
+                                    let length = vec.len() as f64;
+                                    Bar::new(id as f64, length / max_value * 10.0).width(0.8) // Normalizzazione
+                                })
+                                .collect();
+
+                            let chart = BarChart::new(bars).name("Normalised lenght");
+
+                            Plot::new("Histogram")
+                                .view_aspect(2.0)
+                                .show(ui, |plot_ui| {
+                                    plot_ui.bar_chart(chart);
+                                });
+
+
+
+                            ui.label("Choose a Drone to Inspect:");
+                            for (i, dropped) in &self.sim_contr.storage.dropped_packets {
+                                if ui.button(format!("{i} dropped {} packets", dropped.len())).clicked() {
+                                    self.dropper = Some(*i);
                                 }
                             }
-                        } else {
-                            // Inform the user if recovery is not possible
-                            ui.label("Choose a Drone:");
-                        }
-                        for (i, dropped) in &self.sim_contr.storage.dropped_packets {
-                            if ui.button(format!("{i} dropped {} packets", dropped.len())).clicked() {
-                                self.dropper = Some(*i);
-                            }
-                        }
 
+
+                            if let Some(id) = self.dropper{
+                                if let Some(dropped_packet) = self
+                                    .sim_contr
+                                    .storage
+                                    .dropped_packets
+                                    .get(&id)
+                                {
+                                    let dropped = match dropped_packet.last(){
+                                        None => {"impossible to recover".to_string()}
+                                        Some(x) => {x.to_string()}
+                                    };
+                                    // Display the dropped packet
+                                    ui.label(format!("{id} dropped packet: {dropped}", ));
+
+                                    // Options for handling the packet
+                                    if ui.button("Close The Inspection").clicked() {
+                                        self.dropper = None;
+                                    }
+                                }
+                            }
+
+                        } else {
+                            ui.label("No packet dropped so far");
+                        }
 
                         if ui.button("Close").clicked() {
                             self.side_panel_scenes = InitialScene; // Close the alert
