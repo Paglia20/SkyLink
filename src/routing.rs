@@ -147,10 +147,9 @@ impl Route {
     }
 
     fn check_for_100_pdr(&self) -> Option<NodeId> {
-        println!("..");
         let mut res = None;
         for node in self.path.iter() {
-            if node.borrow().dropped_packets > 10 {
+            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 1000 {
                 res = Some(node.borrow().id);
             }
         }
