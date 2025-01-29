@@ -22,6 +22,7 @@ toml = "0.8.19"
 crossbeam-channel = "0.5.13"
 fastrand = "2.2.0"
 egui = "0.29.1"
+egui_plot = "0.29.0"
 eframe = "0.29.1"
 winapi = { version = "0.3", features = ["winuser"] }
 image = "0.25.5"

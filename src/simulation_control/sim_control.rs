@@ -576,10 +576,6 @@ impl SimulationControl {
         out
     }
 
-    pub(crate) fn resend_packet(&self, _p0: &Packet) {
-        //tell client/server (depending on source_id) to send it again recomputing the way
-    }
-
     // functions to process the adding of client events to log: (denoted with "c_")
     fn c_process_packet_sent(& mut self, packet: Packet){
         let mut message = String::new();

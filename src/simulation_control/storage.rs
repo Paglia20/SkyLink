@@ -8,7 +8,7 @@ use crate::server::server_type::ContentServerType::{Media, Text};
 use crate::server::server_type::ServerType;
 
 pub struct SimulationStorage {
-    pub dropped_packets: Vec<(NodeId, Packet)>, // to display dropped packets
+    pub dropped_packets: HashMap<NodeId, Vec<Packet>>, // to display dropped packets
     pub contacts: HashMap<NodeId, HashSet<NodeId>>,  //if you want them sort change this in a BtreeSet
     pub destinations: HashMap<NodeId, HashSet<(NodeId)>>,
     pub chats: HashMap<NodeId, HashMap<NodeId, Vec<(NodeId, String)>>>, // 1st is node, second is the contact, third is chat (each string has the associated sender)

@@ -201,6 +201,12 @@ impl RouteList {
     }
 
     pub fn get_fastest_route(&mut self) -> Option<Route> {
+        /*
+        todo!() fix
+
+        */
+
+
         let mut res = None;
         let mut reliability: f64 = 0.0;
         let mut to_remove = Vec::new();
