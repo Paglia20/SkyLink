@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::vec;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
-use wg_2024::packet::NodeType;
+use wg_2024::packet::{NodeType, Packet};
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 
@@ -114,6 +114,7 @@ pub struct MyApp {
     sender_id: NodeId,
     circle_mode: bool,
     sort: bool,
+    dropper: Option<NodeId>,
 }
 
 
@@ -150,6 +151,7 @@ impl MyApp {
             sender_id: 0,
             circle_mode: true,
             sort: false,
+            dropper: None,
         };
         app
     }
@@ -214,8 +216,8 @@ impl MyApp {
                     PacketDropped(packet) => {
                         let dropper = packet.routing_header.current_hop().unwrap();
                         //println!("packet dropped by {dropper}"); debug printing
-                        self.sim_contr.storage.dropped_packets.push((dropper, packet));
-                        self.side_panel_scenes = ManageDrop;
+                        let e = self.sim_contr.storage.dropped_packets.entry(dropper).or_insert(vec![]);
+                        e.push(packet);
                     }
                     ControllerShortcut(packet) => {
                         match packet.clone().pack_type {
@@ -366,6 +368,9 @@ impl MyApp {
                         if ui.button("remove Drone!").clicked() {
                             self.side_panel_scenes = ManageCrash;
                         }
+                        if ui.button("Manage Drop!").clicked() {
+                            self.side_panel_scenes = ManageDrop;
+                        }
 
                         // for testing
                         if ui.button("test log!").clicked() {
@@ -474,31 +479,39 @@ impl MyApp {
                         }
                     }
                     ManageDrop => {
-                        ui.label("Packet has been dropped!");
-                        // Attempt to find the last dropped packet in the log
-                        if let Some((id,dropped_packet)) = self
-                            .sim_contr
-                            .storage
-                            .dropped_packets
-                            .last()
-                        {
-                            // Display the dropped packet
-                            ui.label(format!("{id} dropped packet: {}", dropped_packet));
+                        if let Some(id) = self.dropper{
+                            if let Some(dropped_packet) = self
+                                .sim_contr
+                                .storage
+                                .dropped_packets
+                                .get(&id)
+                            {
+                                let dropped = match dropped_packet.last(){
+                                    None => {"impossible to recover".to_string()}
+                                    Some(x) => {x.to_string()}
+                                };
+                                // Display the dropped packet
+                                ui.label(format!("{id} dropped packet: {dropped}", ));
 
-                            // Options for handling the packet
-                            if ui.button("Resend it").clicked() {
-                                self.sim_contr.resend_packet(dropped_packet);
-                                self.side_panel_scenes = InitialScene;
-                            }
-                            if ui.button("Lose it").clicked() {
-                                self.side_panel_scenes = InitialScene; // Navigate back to the start
+                                // Options for handling the packet
+                                if ui.button("Close it").clicked() {
+                                    self.dropper = None;
+                                }
                             }
                         } else {
                             // Inform the user if recovery is not possible
-                            ui.label("Impossible to recover the packet.");
-                            if ui.button("Close").clicked() {
-                                self.side_panel_scenes = InitialScene; // Close the alert
+                            ui.label("Choose a Drone:");
+                        }
+                        for (i, dropped) in &self.sim_contr.storage.dropped_packets {
+                            if ui.button(format!("{i} dropped {} packets", dropped.len())).clicked() {
+                                self.dropper = Some(*i);
                             }
+                        }
+
+
+                        if ui.button("Close").clicked() {
+                            self.side_panel_scenes = InitialScene; // Close the alert
+                            self.dropper = None
                         }
                     }
                 }

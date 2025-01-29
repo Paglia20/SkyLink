@@ -465,12 +465,14 @@ impl ClientTrait for WebBrowser {
                     // Wait a second before going on.
                 }
             }
+
+
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
 
                 self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0{
+                    if *state == 0 {
                         self.check_type(dst.clone());
                     }
                 });

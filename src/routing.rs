@@ -147,9 +147,10 @@ impl Route {
     }
 
     fn check_for_100_pdr(&self) -> Option<NodeId> {
+        println!("..");
         let mut res = None;
         for node in self.path.iter() {
-            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 1000 {
+            if node.borrow().dropped_packets > 10 {
                 res = Some(node.borrow().id);
             }
         }
@@ -201,6 +202,12 @@ impl RouteList {
     }
 
     pub fn get_fastest_route(&mut self) -> Option<Route> {
+        /*
+        todo!() fix
+
+        */
+
+
         let mut res = None;
         let mut reliability: f64 = 0.0;
         let mut to_remove = Vec::new();
