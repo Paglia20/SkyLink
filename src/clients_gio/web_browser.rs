@@ -207,12 +207,12 @@ impl NetworkEdge for WebBrowser {
                                 self.comm.paths.remove(wrong_node);
                             },
                             NackType::Dropped => {
-                                // I just send it again
-                                self.send_fragment_after_nack(packet.clone(), nack);
-
                                 // Who dropped will be source of the nack
                                 let dropper = packet.routing_header.source().unwrap();
                                 self.comm.nodes.negative_feed(dropper);
+
+                                // I just send it again
+                                self.send_fragment_after_nack(packet.clone(), nack);
                             }
                         }
                     }
@@ -584,7 +584,10 @@ impl WebBrowser{
     }
 
     fn retry_get_text_file(&mut self, text_file_id: u64) {
-        sleep(Duration::from_secs(30));
+        let wait_time: u32 = (u16::MAX as u32) * 2_32;
+        for i in 0..wait_time {
+
+        }
         self.get_text_file(text_file_id)
     }
 

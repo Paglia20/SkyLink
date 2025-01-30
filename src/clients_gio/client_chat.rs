@@ -202,12 +202,12 @@ impl NetworkEdge for ChatClient {
                                 self.comm.paths.remove(wrong_node);
                             },
                             NackType::Dropped => {
-                                // I just send it again
-                                self.send_fragment_after_nack(packet.clone(), nack);
-
                                 // Who dropped will be source of the nack
                                 let dropper = packet.routing_header.source().unwrap();
                                 self.comm.nodes.negative_feed(dropper);
+
+                                // I just send it again
+                                self.send_fragment_after_nack(packet.clone(), nack);
                             }
                         }
                     }
