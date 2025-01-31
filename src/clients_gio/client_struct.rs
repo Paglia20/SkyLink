@@ -2,7 +2,7 @@ use crate::clients_gio::client_command::ClientEvent::{MissingDestination, Missin
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{ContentType, Message, TypeExchange};
+use crate::message::{ContentType, EdgeNackType, Message, TypeExchange};
 use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crate::routing::{Nodes, Route, RouteList};
 use crate::DEBUG_MODE;
@@ -10,7 +10,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, Ack};
 use wg_2024::packet::NackType::ErrorInRouting;
 //here the common struct of both the clients, important: some functions are left unreachable since will be called ad hoc by each client.
 //attention, also all function that call handle packet and handle message are unreachable obv
@@ -27,7 +27,7 @@ pub struct ClientStruct {
     pub (crate) used_session_id: HashSet<u64>,     // Do we need this?
     pub (crate) paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
     pub (crate) nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
-    pub (crate) fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registring ecc..) and frags), if the content is None is because it's yet to be fully arrived!
+    pub (crate) fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
     pub (crate) unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
@@ -35,39 +35,14 @@ impl NetworkEdge for ClientStruct {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         match message.clone().content{
             ContentType::TypeExchange(_exc) =>{
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
+                self.client_send_fragment(message, destination);
             },
             ContentType::EdgeNack(_nack) => {
-                let session_id = message.session_id;
-                let frags = Self::fragment_message(&message);
-                self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
-                // I also save the fragments in the memory, in case I have to send them again.
-
-                for fragment in frags {
-                    self.send_fragment(fragment, destination, session_id);
-                    // I apply the send operation on each single fragment.
-                }
+                self.client_send_fragment(message, destination);
             }
             _=>{
                 if self.is_state_ok(destination) {
-                    let session_id = message.session_id;
-                    let frags = Self::fragment_message(&message);
-                    self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
-                    // I also save the fragments in the memory, in case I have to send them again.
-
-
-                    for fragment in frags {
-                        self.send_fragment(fragment, destination, session_id);
-                        // I apply the send operation on each single fragment.
-                    }
+                    self.client_send_fragment(message, destination);
                 }
                 else {
                     let new_nack = WrongDestinationType(self.get_src_id(), destination);
@@ -87,7 +62,9 @@ impl NetworkEdge for ClientStruct {
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         if destination == self.node_id {
-            println!("Sending message to yourself with {:?}", destination);
+            if DEBUG_MODE {
+                println!("Sending message to yourself with {:?}", destination);
+            }
             return;
         }
 
@@ -324,7 +301,7 @@ impl ClientTrait for ClientStruct {
         unreachable!();
     }
 
-    fn handle_command(&mut self, command: ClientCommand) {
+    fn handle_command(&mut self, _command: ClientCommand) {
         unreachable!()
     }
 
@@ -345,19 +322,19 @@ impl ClientTrait for ClientStruct {
 }
 
 impl ClientStruct {
-    //sta fn la metterei in networkedge
-   pub (crate) fn get_optimal_dest (&mut self, v: &Vec<NodeId>) -> Option<NodeId> {
+    //sta fn la metterei in networking
+    pub (crate) fn get_optimal_dest (&mut self, v: &Vec<NodeId>) -> Option<NodeId> {
         let mut out: Option<(Route, NodeId)> = None;
         for i in v {
-            if let Some((state, routelist)) = self.paths.get_mut(i) {
+            if let Some((state, route_list)) = self.paths.get_mut(i) {
                 if *state == 1{
-                    if let Some(route) = routelist.get_fastest_route(){
+                    if let Some(route) = route_list.get_fastest_route(){
                         if let Some((best_route, _)) = &out {
                             if route > *best_route {
                                 out = Some((route, *i));
                             }
                         } else {
-                            // Prima route valida trovata
+                            // Prima route valida found
                             out = Some((route, *i));
                         }
                     }
@@ -370,28 +347,22 @@ impl ClientStruct {
 
     pub fn send_as_drone(&mut self, mut packet: Packet){
         packet.routing_header.hop_index += 1;
-        let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
-            Some(id) => *id,
-            None => {
-                //teoricamente se è none è perchè è lui stesso la destinazione
-                unreachable!()
-            },
-        };
-
-        match self.packet_send.get(&next_id) {
-            None => {
-                self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
-            }
-            Some(sender) => {
-                match sender.try_send(packet.clone()) {
-                    Err(_) => {
-                        // !!You need to send back the same errors a drone would
-                        self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                        self.send_event(ClientEvent::PacketSendingError(packet));
-                    }
-                    Ok(_) => {
-                        self.send_event(ClientEvent::PacketSent(packet.clone()));
-                        // If the message was sent, I also notify the sim controller.
+        if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
+            match self.packet_send.get(&next_id) {
+                None => {
+                    self.send_event(MissingRoute(self.get_src_id(), next_id))
+                }
+                Some(sender) => {
+                    match sender.try_send(packet.clone()) {
+                        Err(_) => {
+                            // !!You need to send back the same errors a drone would
+                            self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                            self.send_event(ClientEvent::PacketSendingError(packet));
+                        }
+                        Ok(_) => {
+                            self.send_event(ClientEvent::PacketSent(packet.clone()));
+                            // If the message was sent, I also notify the sim controller.
+                        }
                     }
                 }
             }
@@ -404,5 +375,90 @@ impl ClientStruct {
                 self.check_type(dst.clone());
             }
         });
+    }
+
+    pub fn client_send_fragment(&mut self, message: Message, destination: NodeId){
+        let session_id = message.session_id;
+        let frags = Self::fragment_message(&message);
+        self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
+        // I also save the fragments in the memory, in case I have to send them again.
+
+
+        for fragment in frags {
+            self.send_fragment(fragment, destination, session_id);
+            // I apply the send operation on each single fragment.
+        }
+    }
+
+    pub fn process_unsent_periodically(&mut self){
+        // I create a temporary copy of the fragments that needs to be processed.
+        let mut to_process = Vec::new();
+        for (identifier, content) in self.unsent_fragments.1.iter() {
+            for fragment in content.iter() {
+                to_process.push((fragment.clone(), identifier.clone()));
+            }
+        }
+        // I then empty the HashMap to not have any duplicate.as
+        self.unsent_fragments.1 = HashMap::new();
+        self.unsent_fragments.0 = 0; for (fragment, identifier) in to_process {
+            self.send_fragment(fragment.clone(), identifier.2, identifier.0);
+        }
+    }
+
+    pub fn handle_nack(&mut self, nack: Nack, packet: Packet){
+        match nack.nack_type.clone() {
+            NackType::UnexpectedRecipient(wrong_node) => {
+                // I remove all the routes with that destination, since it's probably faulty
+                for (_, (_state,route)) in self.paths.iter_mut() {
+                    route.remove_faulty_node(wrong_node);
+                }
+                self.nodes.remove_faulty_node(wrong_node);
+                self.send_fragment_after_nack(packet, nack);
+            },
+            ErrorInRouting(wrong_node) => {
+                // I again remove the routes containing the (probably) crushed drone
+                for (_, (_state,route)) in self.paths.iter_mut() {
+                    route.remove_faulty_node(wrong_node);
+                }
+                self.nodes.remove_faulty_node(wrong_node);
+                self.send_fragment_after_nack(packet, nack);
+            },
+            NackType::DestinationIsDrone => {
+                let wrong_node = packet.routing_header.hops.last().unwrap();
+                for (_, (_state,route)) in self.paths.iter_mut() {
+                    route.remove_faulty_node(*wrong_node);
+                }
+                self.nodes.remove_faulty_node(*wrong_node);
+                // Since the destination was a drone, the message was faulty,
+                // so I remove the destination and consider the message as lost.
+                self.paths.remove(wrong_node);
+            },
+            NackType::Dropped => {
+                // Who dropped will be source of the nack
+                let dropper = packet.routing_header.source().unwrap();
+                self.nodes.negative_feed(dropper);
+
+                // I just send it again
+                self.send_fragment_after_nack(packet.clone(), nack);
+            }
+        }
+    }
+
+    pub fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId){
+        match nack {
+            UnexpectedMessage => {
+                //vuol dire che ha mandato un message al dst con state sbagliato.
+                if let Some((state, _route)) = self.paths.get_mut(&src){
+                    *state = 2;
+                }
+
+                //e il messaggio viene scartato credo
+
+                if DEBUG_MODE{
+                    println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.node_id, src)
+                }
+
+            }
+        }
     }
 }

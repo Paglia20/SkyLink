@@ -138,9 +138,9 @@ impl NetworkEdge for ChatClient {
                     Ack(ack) => {
                         self.send_event(ClientEvent::AckReceived(packet.clone()));
                         //the ack will have the source that was the destination of the initial packet
-                        //if it's registered then i also want to notify SC, so i send it
+                        //if it's registered then I also want to notify SC, so I send it
                         let mut registered = None;
-                        //i can write it better
+                        //I can write it better
                         match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
                             None => {}
                             Some((cont, vec)) => {
@@ -168,42 +168,7 @@ impl NetworkEdge for ChatClient {
 
                     PacketType::Nack(nack) => {
                         self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        match nack.nack_type.clone() {
-                            NackType::UnexpectedRecipient(wrong_node) => {
-                                // I remove all the routes with that destination, since it's probably faulty
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(wrong_node);
-                                self.send_fragment_after_nack(packet, nack);
-                            },
-                            ErrorInRouting(wrong_node) => {
-                                // I again remove the routes containing the (probably) crushed drone
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(wrong_node);
-                                self.send_fragment_after_nack(packet, nack);
-                            },
-                            NackType::DestinationIsDrone => {
-                                let wrong_node = packet.routing_header.hops.last().unwrap();
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(*wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(*wrong_node);
-                                // Since the destination was a drone, the message was faulty,
-                                // so I remove the destination and consider the message as lost.
-                                self.comm.paths.remove(wrong_node);
-                            },
-                            NackType::Dropped => {
-                                // Who dropped will be source of the nack
-                                let dropper = packet.routing_header.source().unwrap();
-                                self.comm.nodes.negative_feed(dropper);
-
-                                // I just send it again
-                                self.send_fragment_after_nack(packet.clone(), nack);
-                            }
-                        }
+                        self.comm.handle_nack(nack, packet);
                     }
                     FloodRequest(_) => {
                         unreachable!()
@@ -298,21 +263,7 @@ impl NetworkEdge for ChatClient {
                 }
             }
             EdgeNack(nack) => {
-                match nack {
-                    UnexpectedMessage => {
-                        //vuol dire che ha mandato un message al dst con state sbagliato.
-                       if let Some((state, _route)) = self.comm.paths.get_mut(&message.source_id){
-                           *state = 2;
-                       }
-
-                        //e il messaggio viene scartato credo
-
-                        if DEBUG_MODE{
-                            println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.comm.node_id, message.source_id)
-                        }
-
-                    }
-                }
+                self.comm.handle_edge_nack(nack, message.source_id);
 
             },
             _ => {
@@ -422,7 +373,7 @@ impl ClientTrait for ChatClient {
                     match self.comm.paths.get(&0) {
                         None => {}
                         Some((_, rl)) => {
-                            println!("routelist per 0 da 9:");
+                            println!("route list per 0 da 9:");
                             for i in &rl.routes {
                                 println!("{}", i);
                             }
@@ -432,18 +383,7 @@ impl ClientTrait for ChatClient {
 
                 self.comm.periodic_check_type();
 
-                // I create a temporary copy of the fragments that needs to be processed.
-                let mut to_process = Vec::new();
-                for (identifier, content) in self.comm.unsent_fragments.1.iter() {
-                    for fragment in content.iter() {
-                        to_process.push((fragment.clone(), identifier.clone()));
-                    }
-                }
-                // I then empty the HashMap to not have any duplicate.as
-                self.comm.unsent_fragments.1 = HashMap::new();
-                self.comm.unsent_fragments.0 = 0; for (fragment, identifier) in to_process {
-                    self.send_fragment(fragment.clone(), identifier.2, identifier.0);
-                }
+                self.comm.process_unsent_periodically();
 
                 //uncomment to check flood periodically
 
@@ -476,7 +416,7 @@ impl ClientTrait for ChatClient {
                 self.flood();
             }
 
-            //commands for chatclient
+            //commands for chat client
             ClientCommand::RetrieveList(id) => {
                 self.get_list(id);
             }
@@ -530,7 +470,7 @@ impl ChatClient {
     //id is the client receiver
     fn send_chat_text(&mut self, id: NodeId, str: String){
         if NO_SERVER_MODE {
-            //come se fossimo nella destinazione!! allora nella destinazione manderebbe from, self.node che qua però è scambiato
+            //come se fortissimo nella destination!! allora nella destination manderebbe from, self.node che qua però è scambiato
             self.send_event(ReceivedChatText(self.get_src_id(), id, str.clone()));
 
         }
@@ -559,7 +499,7 @@ impl ChatClient {
             }
         } else {
             self.send_event(ClientEvent::MissingContacts(src,id))
-            // i don't think we should resend it when we have it, if we want to resend it just wait another input
+            // I don't think we should resend it when we have it, if we want to resend it just wait another input
 
         }
 

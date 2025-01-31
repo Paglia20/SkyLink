@@ -158,42 +158,7 @@ impl NetworkEdge for WebBrowser {
 
                     PacketType::Nack(nack) => {
                         self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        match nack.nack_type.clone() {
-                            NackType::UnexpectedRecipient(wrong_node) => {
-                                // I remove all the routes with that destination, since it's probably faulty
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(wrong_node);
-                                self.send_fragment_after_nack(packet, nack);
-                            },
-                            ErrorInRouting(wrong_node) => {
-                                // I again remove the routes containing the (probably) crushed drone
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(wrong_node);
-                                self.send_fragment_after_nack(packet, nack);
-                            },
-                            NackType::DestinationIsDrone => {
-                                let wrong_node = packet.routing_header.hops.last().unwrap();
-                                for (_, (_state,route)) in self.comm.paths.iter_mut() {
-                                    route.remove_faulty_node(*wrong_node);
-                                }
-                                self.comm.nodes.remove_faulty_node(*wrong_node);
-                                // Since the destination was a drone, the message was faulty,
-                                // so I remove the destination and consider the message as lost.
-                                self.comm.paths.remove(wrong_node);
-                            },
-                            NackType::Dropped => {
-                                // Who dropped will be source of the nack
-                                let dropper = packet.routing_header.source().unwrap();
-                                self.comm.nodes.negative_feed(dropper);
-
-                                // I just send it again
-                                self.send_fragment_after_nack(packet.clone(), nack);
-                            }
-                        }
+                        self.comm.handle_nack(nack, packet);
                     }
                     FloodRequest(_) => {
                         unreachable!()
@@ -319,21 +284,7 @@ impl NetworkEdge for WebBrowser {
                 }
             }
             ContentType::EdgeNack(nack) => {
-                match nack {
-                    UnexpectedMessage => {
-                        //vuol dire che ha mandato un message al dst con state sbagliato.
-                        if let Some((state, _route)) = self.comm.paths.get_mut(&message.source_id){
-                            *state = 2;
-                        }
-
-                        //e il messaggio viene scartato credo
-
-                        if DEBUG_MODE{
-                            println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.comm.node_id, message.source_id)
-                        }
-
-                    }
-                }
+                self.comm.handle_edge_nack(nack, message.source_id);
 
             },
             _ => {
@@ -456,20 +407,7 @@ impl ClientTrait for WebBrowser {
                 self.comm.periodic_check_type();
 
 
-
-
-                // I create a temporary copy of the fragments that needs to be processed.
-                let mut to_process = Vec::new();
-                for (identifier, content) in self.comm.unsent_fragments.1.iter() {
-                    for fragment in content.iter() {
-                        to_process.push((fragment.clone(), identifier.clone()));
-                    }
-                }
-                // I then empty the HashMap to not have any duplicate.as
-                self.comm.unsent_fragments.1 = HashMap::new();
-                self.comm.unsent_fragments.0 = 0; for (fragment, identifier) in to_process {
-                    self.send_fragment(fragment.clone(), identifier.2, identifier.0);
-                }
+                self.comm.process_unsent_periodically();
 
                 //uncomment to check flood periodically
 
