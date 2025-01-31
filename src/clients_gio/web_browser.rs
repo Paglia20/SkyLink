@@ -222,7 +222,6 @@ impl NetworkEdge for WebBrowser {
                         unreachable!()
                     }
                     FloodResponse(flood_resp) => {
-                        // As of rn it "saves" all possible servers and client... we want something else I think...
                         let mut current_path = Vec::new();
                         for (node_id, node_type) in flood_resp.path_trace {
 
@@ -231,7 +230,10 @@ impl NetworkEdge for WebBrowser {
                             if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
                                 let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
                                 entry.1.add_route(Route::new(current_path.clone()));
-                                println!("added {:?}", current_path);
+
+                                if DEBUG_MODE && self.get_src_id() == 10 {
+                                    println!("10 added {:?}", current_path);
+                                }
 
                             }
                         }

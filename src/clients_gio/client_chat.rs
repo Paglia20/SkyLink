@@ -441,6 +441,19 @@ impl ClientTrait for ChatClient {
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
 
+                if DEBUG_MODE && self.get_src_id() == 9 {
+                    println!("----------");
+                    match self.comm.paths.get(&0) {
+                        None => {}
+                        Some((i, rl)) => {
+                            println!("routelist per 0 da 9:");
+                            for i in &rl.routes {
+                                println!("{}", i);
+                            }
+                        }
+                    }
+                }
+
                 self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
                     if *state == 0{
                         self.check_type(dst.clone());
