@@ -52,7 +52,7 @@ connected_drone_ids = [2,6]
 
 [[client]]
 id = 12
-connected_drone_ids = [3,6]
+connected_drone_ids = [3, 6]
 
 [[client]]
 id = 0

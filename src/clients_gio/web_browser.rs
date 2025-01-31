@@ -15,7 +15,7 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
-use crate::clients_gio::client_command::ClientEvent::{MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
+use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
@@ -144,9 +144,11 @@ impl NetworkEdge for WebBrowser {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Ok(mess) => { mess }
                                 Err(e) => {
-                                    println!("{e} with {}", self.comm.node_id);
-
-                                    unimplemented!() //
+                                    if DEBUG_MODE {
+                                        println!("{e} with {}", self.comm.node_id);
+                                    }
+                                    self.send_event(ErrorReassembling(self.get_src_id()));
+                                    return;
                                 }
                             };
                             //handle message
@@ -458,26 +460,26 @@ impl ClientTrait for WebBrowser {
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
-                println!("----------");
-                match self.comm.paths.get(&0){
-                    None => {}
-                    Some((i, rl)) => {
-                        println!("routelist per 0:");
-                        for i in &rl.routes {
-                            println!("{}", i);
-                        }
 
+                if DEBUG_MODE && self.get_src_id() == 10 {
+                    println!("----------");
+                    match self.comm.paths.get(&0) {
+                        None => {}
+                        Some((i, rl)) => {
+                            println!("routelist per 0 da 10:");
+                            for i in &rl.routes {
+                                println!("{}", i);
+                            }
+                        }
                     }
                 }
 
-                println!("----------");
 
-
-                // self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                //     if *state == 0 {
-                //         self.check_type(dst.clone());
-                //     }
-                // });
+                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
+                    if *state == 0 {
+                        self.check_type(dst.clone());
+                    }
+                });
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();

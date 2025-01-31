@@ -56,7 +56,7 @@ connected_drone_ids = [3,6]
 
 [[client]]
 id = 0
-connected_drone_ids = [1]
+connected_drone_ids = [1,8]
 
 [[server]]
 id = 14

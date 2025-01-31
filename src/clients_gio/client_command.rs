@@ -38,6 +38,7 @@ pub enum ClientEvent {
     DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
     WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
     SendDestinations(NodeId, NodeId),
+    ErrorReassembling(NodeId),
 
     //chat client only
     SendContactsToSC(NodeId, NodeId), //first is src second is dst

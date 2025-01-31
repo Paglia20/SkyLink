@@ -203,6 +203,14 @@ impl SimulationControl {
                 };
                 self.log.push_back(new_log);
             }
+            ClientEvent::ErrorReassembling(src) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: src,
+                    message: format!("{src} couldn't reassemble the message")
+                };
+                self.log.push_back(new_log);
+            }
 
         }
     }
@@ -591,10 +599,12 @@ impl SimulationControl {
                 message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::FloodRequest(rq) => {
-                message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
             }
             PacketType::FloodResponse(rr) => {
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
             }
         }
 
@@ -763,10 +773,12 @@ impl SimulationControl {
                 message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::FloodRequest(rq) => {
-                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
             }
             PacketType::FloodResponse(rr) => {
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
             }
         }
 
@@ -842,10 +854,12 @@ impl SimulationControl {
                 message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::FloodRequest(rq) => {
-                message = format!("sent flood request: ({},{}) containing {:?}", rq.flood_id, rq.initiator_id, rq.path_trace);
+                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
             }
             PacketType::FloodResponse(rr) => {
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), rr.path_trace)
+                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(),path)
             }
         }
 

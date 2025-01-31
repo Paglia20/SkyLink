@@ -333,11 +333,11 @@ impl ClientTrait for ClientStruct {
     }
 
    fn send_event(&self, ce: ClientEvent) {
-        match self.event_send.try_send(ce){
+        match self.event_send.try_send(ce.clone()){
             Ok(_) => {}
             Err(_err) => {
                 if DEBUG_MODE {
-                    println!("simulation control unreachable")
+                    println!("{} - simulation control unreachable for {:?}", self.node_id, ce)
                 }
             }
         }
