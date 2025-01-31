@@ -271,7 +271,7 @@ impl NetworkEdge for WebBrowser {
             },
             ContentType::TextResponse(text_response) => {
                 match text_response{
-                    TextResponse::TextLists(map) => {
+                    TextResponse::TextList(map) => {
                         for (text_file_id, name) in map {
                             let entry = self.arrived_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
                             entry.0.push(src);
@@ -513,7 +513,6 @@ impl ClientTrait for WebBrowser {
             ClientCommand::AddSender(node_id, sender) => {
                 self.comm.packet_send.insert(node_id, sender);
             }
-
             ClientCommand::Flood =>{
                 self.flood();
             }

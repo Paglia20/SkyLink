@@ -61,10 +61,10 @@ pub trait MessageType: Serialize + DeserializeOwned {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TypeExchange {
-    TypeRequest{
+    TypeRequest {
         from: NodeId,
     },
-    TypeResponse{
+    TypeResponse {
         edge_type: EdgeType,
         from: NodeId,
     },
@@ -109,7 +109,7 @@ pub enum MediaRequest {
 // solo dai text server
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextResponse {
-    TextLists(HashMap<u64, String>), // ID and name of all texts contained in the server.
+    TextList(HashMap<u64, String>), // ID and name of all texts contained in the server.
     MediaReferences(HashMap<u64, (String, Vec<NodeId>)>), // List of media contained inside a specific text, and which server has them.
     Incomplete(u64), // If we don't know where some of the media are.
     NotFound(u64), // If we didn't find that ID.

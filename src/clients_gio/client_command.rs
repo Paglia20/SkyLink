@@ -1,4 +1,3 @@
-use crate::message::{Message};
 use crossbeam_channel::Sender;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Packet};
@@ -8,19 +7,17 @@ pub enum ClientCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
     Flood,
-    RetrieveList(NodeId), //both for a chat list or a text/media list
-    //for a webclient is a retrieve TextList
+    RetrieveList(NodeId), // Both for a chat list or a text/media list
+    // For a webclient is a retrieve TextList
 
-    //special commands for chat client
-    Register(NodeId), //dst id
-    SendMSG(NodeId, String), //contact id, not dst (that will be a server), nb: it's different from sendmessage
+    // Special commands for chat client
+    Register(NodeId), // dst id
+    SendMSG(NodeId, String), // Contact id, not dst (that will be a server), nb: it's different from sendmessage
 
-    //special command for webclient
-    GetTextFile(u64), //get a TextFile full of media references, hence the response will be a mediareferences(..)
-    GetContent(u64) //get a Content from any server with that given id (the string)
+    // Special command for webclient
+    GetTextFile(u64), // Get a TextFile full of media references, hence the response will be a mediareferences(..)
+    GetContent(u64) // Get a Content from any server with that given id (the string)
 }
-
-//add a send packet for testing??
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
@@ -29,7 +26,7 @@ pub enum ClientEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
-    AckReceived(Packet), //packet with inside the ack (so i can get the nodeid in SC)
+    AckReceived(Packet), // Packet with inside the ack (so I can get the node_id in SC)
     NackReceived(Packet),
     MissingDestination(NodeId, NodeId),
     MissingRoute(NodeId, NodeId),
@@ -39,13 +36,13 @@ pub enum ClientEvent {
     WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
     SendDestinations(NodeId, NodeId),
 
-    //chat client only
-    SendContactsToSC(NodeId, NodeId), //first is src second is dst
-    MissingContacts(NodeId, NodeId), //first is src second is dst
-    ReceivedChatText(NodeId, NodeId, String), //from-dst-chat text
+    // Chat client only
+    SendContactsToSC(NodeId, NodeId), // First is src second is dst
+    MissingContacts(NodeId, NodeId), // First is src second is dst
+    ReceivedChatText(NodeId, NodeId, String), // From-dst-chat text
     RegisterSuccessfully(NodeId, NodeId),
 
-    //Web client only
+    // Web client only
     SendTextList(NodeId, u64, String),
     SendCatalogue(NodeId, u64, String),
     SendMedia(NodeId, u64, String, Vec<u8>),
