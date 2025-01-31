@@ -122,8 +122,8 @@ pub trait NetworkEdge {
             });
         }
 
-        // no deserialization succeeds
-       let err=  format!("Failed to determine content type for {}", string_to_cont);
+        // If no deserialization succeeds
+        let err=  format!("Failed to determine content type for {}", string_to_cont);
 
         Err(err)
     }

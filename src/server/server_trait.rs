@@ -21,6 +21,4 @@ pub trait Server: NetworkEdge {
     fn handle_command(&mut self, command: ServerCommand);
 
     fn get_server_type(&self) -> ServerType;
-
-    fn send_event(&self, se: ServerEvent);
 }

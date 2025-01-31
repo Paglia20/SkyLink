@@ -224,12 +224,11 @@ impl SimulationControl {
                 self.s_process_nack_received(packet);
             }
             // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE todo!()
-            ServerEvent::MissingDestination(missing_destination) => {}
-            ServerEvent::MissingRoute(missing_node) => {}
-            ServerEvent::LostMessage(session_id, node_id) => {}
             ServerEvent::LostFragment(session_id, node_id, fragment_index) => {}
-            ServerEvent::DroneInsideDestination(wrong_node_id) => {}
             ServerEvent::WrongDestinationType(my_node_id, wrong_node_id) => {}
+            _ => {
+                // Some of them are missing, we shouldn't have _ => here !!
+            }
         }
     }
 

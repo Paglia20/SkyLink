@@ -6,7 +6,9 @@ use wg_2024::packet::Packet;
 pub enum ServerCommand {
     RemoveSender(NodeId),
     AddSender(NodeId, Sender<Packet>),
-    //SendPacket(Packet), // Not sure yet if I want this or not
+    Flood,
+    AddFile(String),
+    // SendPacket(Packet), // Not sure yet if I want this or not
 }
 
 #[derive(Debug, Clone)]
@@ -14,14 +16,19 @@ pub enum ServerEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
-    AckReceived(Packet), //packet with inside the ack (so I can get the NodeId in SC)
+    AckReceived(Packet), // Packet with inside the ACK (so I can get the NodeId in SC).
     NackReceived(Packet),
-    // CreatedConnection(NodeId, NodeId),
-    MissingDestination(NodeId),
-    MissingRoute(NodeId),
-    LostMessage(u64, NodeId), // session_id and NodeId
-    LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index
-    DroneInsideDestination(NodeId), // Received when a destination is removed because it's a drone
-    // OpenedChat(NodeID),
-    WrongDestinationType(NodeId, NodeId), //first node id think that second node id is of wrong type
+    
+    MissingDestination(NodeId, NodeId), // First id is server one, second is missing destination.
+    MissingRoute(NodeId, NodeId), // First id is server one, second is destination for which I don't have route.
+    LostMessage(u64, NodeId, String), // session_id, NodeId of initiator and error String.
+    LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index.
+    DiscardedMessage(NodeId, u64), // Server NodeId and session_id.
+    DroneInsideDestination(NodeId, NodeId), // Received when a destination is removed because it's a drone; First NodeID is the server one.
+    WrongDestinationType(NodeId, NodeId), // First NodeId thinks that second NodeId is of wrong type.
+    WrongDestination(NodeId, Packet), // Server id and packet sent to wrong dst. Used for ACKs or NACKs that might create an error loop if resolved normally.
+    
+    FileNotFound(NodeId, u64), // Server id and file_id requested but not owned.
+    IncompleteFile(NodeId, u64), // Server id and file_id of file whose at least one media is still missing.
+    FilesState(NodeId, Vec<(u64, String)>, Vec<(u64, String)>), // Server id, completed file and files with still missing medias.
 }
