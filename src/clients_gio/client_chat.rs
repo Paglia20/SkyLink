@@ -15,7 +15,6 @@ use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
-use serde::de::Unexpected::Option;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
@@ -92,33 +91,8 @@ impl NetworkEdge for ChatClient {
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
-                packet.routing_header.hop_index += 1;
-                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                    Some(id) => *id,
-                    None => {
-                        //teoricamente se è none è perchè è lui stesso la destinazione
-                        unreachable!()
-                    },
-                };
 
-                match self.comm.packet_send.get(&next_id) {
-                    None => {
-                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
-                    }
-                    Some(sender) => {
-                        match sender.try_send(packet.clone()) {
-                            Err(_) => {
-                                // !!You need to send back the same errors a drone would
-                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                                self.send_event(ClientEvent::PacketSendingError(packet));
-                            }
-                            Ok(_) => {
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                // If the message was sent, I also notify the sim controller.
-                            }
-                        }
-                    }
-                }
+                self.comm.periodic_check_type();
             } else {
                 // We can take for granted he is the destination
                 match packet.pack_type.clone() {
@@ -447,7 +421,7 @@ impl ClientTrait for ChatClient {
                     println!("----------");
                     match self.comm.paths.get(&0) {
                         None => {}
-                        Some((i, rl)) => {
+                        Some((_, rl)) => {
                             println!("routelist per 0 da 9:");
                             for i in &rl.routes {
                                 println!("{}", i);
@@ -456,11 +430,7 @@ impl ClientTrait for ChatClient {
                     }
                 }
 
-                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0{
-                        self.check_type(dst.clone());
-                    }
-                });
+                self.comm.periodic_check_type();
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();

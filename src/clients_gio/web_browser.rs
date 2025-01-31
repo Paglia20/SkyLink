@@ -93,33 +93,8 @@ impl NetworkEdge for WebBrowser {
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
-                packet.routing_header.hop_index += 1;
-                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                    Some(id) => *id,
-                    None => {
-                        //teoricamente se è none è perchè è lui stesso la destinazione
-                        unreachable!()
-                    },
-                };
+                self.comm.send_as_drone(packet);
 
-                match self.comm.packet_send.get(&next_id) {
-                    None => {
-                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
-                    }
-                    Some(sender) => {
-                        match sender.try_send(packet.clone()) {
-                            Err(_) => {
-                                // !!You need to send back the same errors a drone would
-                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                                self.send_event(ClientEvent::PacketSendingError(packet));
-                            }
-                            Ok(_) => {
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                // If the message was sent, I also notify the sim controller.
-                            }
-                        }
-                    }
-                }
             } else {
                 // We can take for granted he is the destination
                 match packet.pack_type.clone() {
@@ -469,7 +444,7 @@ impl ClientTrait for WebBrowser {
                     println!("----------");
                     match self.comm.paths.get(&0) {
                         None => {}
-                        Some((i, rl)) => {
+                        Some((_, rl)) => {
                             println!("routelist per 0 da 10:");
                             for i in &rl.routes {
                                 println!("{}", i);
@@ -478,12 +453,10 @@ impl ClientTrait for WebBrowser {
                     }
                 }
 
+                self.comm.periodic_check_type();
 
-                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0 {
-                        self.check_type(dst.clone());
-                    }
-                });
+
+
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();
@@ -593,7 +566,7 @@ impl WebBrowser{
 
     fn retry_get_text_file(&mut self, text_file_id: u64) {
         let wait_time: u32 = (u16::MAX as u32) * 2_32;
-        for i in 0..wait_time {
+        for _ in 0..wait_time {
 
         }
         self.get_text_file(text_file_id)

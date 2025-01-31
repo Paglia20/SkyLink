@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
-
+use wg_2024::packet::NackType::ErrorInRouting;
 //here the common struct of both the clients, important: some functions are left unreachable since will be called ad hoc by each client.
 //attention, also all function that call handle packet and handle message are unreachable obv
 
@@ -365,5 +365,44 @@ impl ClientStruct {
             }
         }
         out.map(|(_, id)| id)
+    }
+
+
+    pub fn send_as_drone(&mut self, mut packet: Packet){
+        packet.routing_header.hop_index += 1;
+        let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
+            Some(id) => *id,
+            None => {
+                //teoricamente se è none è perchè è lui stesso la destinazione
+                unreachable!()
+            },
+        };
+
+        match self.packet_send.get(&next_id) {
+            None => {
+                self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
+            }
+            Some(sender) => {
+                match sender.try_send(packet.clone()) {
+                    Err(_) => {
+                        // !!You need to send back the same errors a drone would
+                        self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                        self.send_event(ClientEvent::PacketSendingError(packet));
+                    }
+                    Ok(_) => {
+                        self.send_event(ClientEvent::PacketSent(packet.clone()));
+                        // If the message was sent, I also notify the sim controller.
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn periodic_check_type(&mut self){
+        self.paths.clone().iter().for_each(|(dst, (state, path))| {
+            if *state == 0 {
+                self.check_type(dst.clone());
+            }
+        });
     }
 }
