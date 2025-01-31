@@ -20,7 +20,7 @@ pub struct ServerStruct {
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
     pub unsent_fragments: (u8, UnsentFragments),
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
-    
+
     next_flood_id: u64,
     next_session_id: u64,
     pub flood_counter: u8, // Counter used to avoid flooding too often.
@@ -204,6 +204,22 @@ impl ServerStruct {
             },
         }
     }
+    
+    pub fn can_flood(&mut self) -> bool {
+        if self.flood_counter == 0 {
+            self.flood_counter += 1;
+            return true;
+        } else if self.flood_counter == 10 {
+            self.flood_counter = 0;
+        }
+        false
+    }
+    
+    pub fn send_to_all(&mut self, packet: Packet) {
+        self.packet_send.values().for_each(|sender| {
+            sender.send(packet.clone()).unwrap()
+        });
+    }
 
     pub fn get_flood_id(&mut self) -> u64 {
         let res = self.next_flood_id;
@@ -215,5 +231,9 @@ impl ServerStruct {
         let res = self.next_session_id;
         self.next_session_id += 1;
         res
+    }
+    
+    pub fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)> {
+        &mut self.fragments
     }
 }

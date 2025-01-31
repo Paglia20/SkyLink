@@ -117,7 +117,8 @@ pub enum TextResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
     MediaList(Vec<(u64, String)>), // Used only between servers.
-    Media(((u64, String), Vec<u8>)), // Sent back to clients.
+    Media(u64, String, Vec<u8>), // Sent back to clients; media_id, media_name and the media itself;
+    NotFound(u64), // If we didn't find that ID.
 }
 
 /*
