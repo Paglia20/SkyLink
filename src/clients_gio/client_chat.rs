@@ -222,23 +222,9 @@ impl NetworkEdge for ChatClient {
                              current_path.push((node_id, node_type));
 
                             if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                if !self.comm.paths.contains_key(&node_id) {
-                                    //if it's first time this server gets seen
-                                    self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    if DEBUG_MODE {
-                                        println!("{} inserted {:?}", self.comm.node_id, node_id);
-                                    }
-                                }
-                                // Clone the current path for the server and insert it into the route list
-                                match self.comm.paths.get_mut(&node_id) {
-                                    None => {
-                                        unreachable!()
-                                        //i hope it's unreachable
-                                    }
-                                    Some((_state,route_list)) => {
-                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
-                                        route_list.add_route(Route::new(current_path.clone()));
-                                    }
+                                if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
+                                    let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
+                                    entry.1.add_route(Route::new(current_path.clone()));
                                 }
                             }
                         }

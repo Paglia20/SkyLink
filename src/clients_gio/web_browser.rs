@@ -227,22 +227,10 @@ impl NetworkEdge for WebBrowser {
                             current_path.push((node_id, node_type));
 
                             if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                if !self.comm.paths.contains_key(&node_id) {
-                                    //if it's first time this server gets seen
-                                    self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    println!("{} inserted {:?}",self.comm.node_id, node_id);
-                                }
-                                // Clone the current path for the server and insert it into the route list
-                                match self.comm.paths.get_mut(&node_id) {
-                                    None => {
-                                        unreachable!()
-                                        //i hope it's unreachable
-                                    }
-                                    Some((_state,route_list)) => {
-                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
-                                        route_list.add_route(Route::new(current_path.clone()));
-                                    }
-                                }
+                                let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
+                                entry.1.add_route(Route::new(current_path.clone()));
+                                println!("added {:?}", current_path);
+
                             }
                         }
                     }
@@ -470,12 +458,26 @@ impl ClientTrait for WebBrowser {
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
+                println!("----------");
+                match self.comm.paths.get(&0){
+                    None => {}
+                    Some((i, rl)) => {
+                        println!("routelist per 0:");
+                        for i in &rl.routes {
+                            println!("{}", i);
+                        }
 
-                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0 {
-                        self.check_type(dst.clone());
                     }
-                });
+                }
+
+                println!("----------");
+
+
+                // self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
+                //     if *state == 0 {
+                //         self.check_type(dst.clone());
+                //     }
+                // });
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();

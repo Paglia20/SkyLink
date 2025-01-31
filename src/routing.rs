@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 // use std::fmt;
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NodeType;
@@ -23,9 +23,21 @@ pub struct Nodes {
 pub struct Route {
     path: Vec<Arc<RefCell<Node>>>,
 }
+
+
+impl Display for Route{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut s = String::new();
+        for i in &self.path {
+            s.push_str(format!("{} -", i.borrow().id).as_str());
+        }
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RouteList {
-    routes: Vec<Route>,
+    pub routes: Vec<Route>,
 }
 
 impl Node {
@@ -126,9 +138,9 @@ impl Route {
     fn get_reliability(&self) -> f64 {
         let mut reliability = 0.0;
         for node in self.path.iter() {
-            reliability *= node.borrow().get_reliability();
+            reliability += node.borrow().get_reliability();
         }
-        reliability
+        reliability / (self.path.len() as f64)
         // By weighting the routes, we consider the drop rates.
     }
     pub fn to_source_routing_header(&self) -> SourceRoutingHeader {
@@ -149,7 +161,7 @@ impl Route {
     fn check_for_100_pdr(&self) -> Option<NodeId> {
         let mut res = None;
         for node in self.path.iter() {
-            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 1000 {
+            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 100 {
                 res = Some(node.borrow().id);
             }
         }
@@ -201,17 +213,10 @@ impl RouteList {
     }
 
     pub fn get_fastest_route(&mut self) -> Option<Route> {
-        /*
-        todo!() fix
-
-        */
-
-
         let mut res = None;
         let mut reliability: f64 = 0.0;
         let mut to_remove = Vec::new();
         for route in self.routes.iter() {
-
             if res.is_none() || route.get_reliability() > reliability{
                 res = Some(route.clone());
                 reliability = route.get_reliability();

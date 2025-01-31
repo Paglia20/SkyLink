@@ -25,7 +25,7 @@ fn main() {
 
     match switch {
         Switch::SimDaniel => {
-            let (sim_contr, handles) = initialize("inputs/input_star.toml");
+            let (sim_contr, handles) = initialize("inputs/input_star_with_pdr.toml");
 
             run_sim_dan(sim_contr).expect("TODO: panic message");
             for handle in handles.into_iter() {
