@@ -20,12 +20,14 @@ use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
 
+type ArrivedMedia = (String, Vec<u8>);
+
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
 
     available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
-    arrived_content: HashMap<u64, (String, Vec<u8>)>,
+    arrived_content: HashMap<u64, ArrivedMedia>,
 
     /*
     arrived_content: media we retrieved

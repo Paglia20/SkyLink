@@ -23,11 +23,13 @@ use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::message::ChatRequest::{ClientList, Register, SendMessage};
 use crate::message::ContentType::*;
 
+type ChatMsg = (NodeId, String);
+
 pub struct ChatClient {
     comm: ClientStruct, //common client duh
     //chat client specks
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
-    all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
+    all_messages: HashMap<NodeId, Vec<ChatMsg>>,
     registered_to: HashSet<NodeId>,
 
 }
