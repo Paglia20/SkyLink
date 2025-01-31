@@ -5,10 +5,11 @@ use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
 use wg_2024::config;
+use wg_2024::config::Config;
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType, Packet};
-use crate::{ALL_CHAT, ALL_CONTENT};
+use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::web_browser::WebBrowser;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
@@ -18,117 +19,120 @@ use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::sim_daniel::NodeNature::*;
 
 
-pub fn initialize(file: &str) -> (SimulationControl, Vec<JoinHandle<()>>) {
+pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)> {
     let config = parse_config(file);
-    let mut handles = Vec::new();
-    //I'll return the handles of the threads, and join them to the main thread.
+    if check_config(&config) {
+        let mut handles = Vec::new();
+        //I'll return the handles of the threads, and join them to the main thread.
 
-    let mut drone_command_send = HashMap::new();
-    let mut client_command_send = HashMap::new();
-    let mut server_command_send = HashMap::new();
+        let mut drone_command_send = HashMap::new();
+        let mut client_command_send = HashMap::new();
+        let mut server_command_send = HashMap::new();
 
-    //This will be given to the Sim Contr to command the drones.
-    let (drone_event_send, drone_event_recv) = unbounded();
-    //I create the channel, the 'send' will be given to every drone,
-    //while the 'recv' will go to the Sim contr.
+        //This will be given to the Sim Contr to command the drones.
+        let (drone_event_send, drone_event_recv) = unbounded();
+        //I create the channel, the 'send' will be given to every drone,
+        //while the 'recv' will go to the Sim contr.
 
-    let (client_event_send, client_event_recv) = unbounded();
-    let (server_event_send, server_event_recv) = unbounded();
+        let (client_event_send, client_event_recv) = unbounded();
+        let (server_event_send, server_event_recv) = unbounded();
 
 
+        let mut packet_senders = HashMap::new();
+        let mut packet_receivers = HashMap::new();
+        //I create receivers and senders for every drone.
+        for drone in config.drone.iter() {
+            let (send, recv) = unbounded();
+            packet_senders.insert(drone.id, send);
+            packet_receivers.insert(drone.id, recv);
+        }
+        for client in config.client.iter() {
+            let (send, recv) = unbounded();
+            packet_senders.insert(client.id, send);
+            packet_receivers.insert(client.id, recv);
+        }
+        for server in config.server.iter() {
+            let (send, recv) = unbounded();
+            packet_senders.insert(server.id, send);
+            packet_receivers.insert(server.id, recv);
+        }
 
-    let mut packet_senders = HashMap::new();
-    let mut packet_receivers = HashMap::new();
-    //I create receivers and senders for every drone.
-    for drone in config.drone.iter() {
-        let (send, recv) = unbounded();
-        packet_senders.insert(drone.id, send);
-        packet_receivers.insert(drone.id, recv);
+        //I crate a hashmap that will be used as graph by the Simulation Controller.
+        let mut network_graph = HashMap::new();
+        for drone in config.drone.iter() {
+            network_graph.insert(drone.id, (NodeNature::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
+        }
+
+        for drone in config.drone.into_iter() {
+            //Adding the sender to this drone to the senders of the Sim Contr.
+            let (contr_send, contr_recv) = unbounded();
+            drone_command_send.insert(drone.id, contr_send);
+
+            //Give the drone a copy of the sender of events to the Sim Contr.
+            let node_event_send = drone_event_send.clone();
+
+            //Take the channels necessary to this drone.
+            let drone_recv = packet_receivers.remove(&drone.id).unwrap();
+            let drone_send = drone
+                .connected_node_ids
+                .into_iter()
+                .map(|id| (id, packet_senders[&id].clone()))
+                .collect();
+
+            //create the thread of the drone, and add it to a Vec to be pushed afterward
+            handles.push(thread::spawn(move || {
+                let mut drone = SkyLinkDrone::new(
+                    drone.id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    drone.pdr,
+                );
+
+                drone.run();
+            }));
+            //This will probably need to be changed based on the
+            //implementation of other groups drones in our network.
+        }
+
+
+        // I create the servers in an external function, that'll add them to the 'handles' vector.
+        let (chat_servers, media_servers) = create_servers(config.server.clone(),
+                                                           &mut handles,
+                                                           &mut server_command_send,
+                                                           &server_event_send,
+                                                           &packet_senders,
+                                                           &mut packet_receivers,
+                                                           &mut network_graph
+        );
+        create_clients(config.client.clone(),
+                       &mut handles,
+                       &mut client_command_send,
+                       &client_event_send,
+                       &packet_senders,
+                       &mut packet_receivers,
+                       chat_servers,
+                       media_servers,
+                       &mut network_graph,
+        );
+
+        let mut sim_contr = SimulationControl::new(
+            drone_command_send,
+            client_command_send,
+            server_command_send,
+            drone_event_recv,
+            client_event_recv,
+            server_event_recv,
+            drone_event_send,
+            packet_senders,
+            network_graph,
+        );
+
+       Some((sim_contr, handles))
+    } else {
+        None
     }
-    for client in config.client.iter() {
-        let (send, recv) = unbounded();
-        packet_senders.insert(client.id, send);
-        packet_receivers.insert(client.id, recv);
-    }
-    for server in config.server.iter() {
-        let (send, recv) = unbounded();
-        packet_senders.insert(server.id, send);
-        packet_receivers.insert(server.id, recv);
-    }
-
-    //I crate a hashmap that will be used as graph by the Simulation Controller.
-    let mut network_graph = HashMap::new();
-    for drone in config.drone.iter() {
-        network_graph.insert(drone.id, (NodeNature::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
-    }
-
-    for drone in config.drone.into_iter() {
-        //Adding the sender to this drone to the senders of the Sim Contr.
-        let (contr_send, contr_recv) = unbounded();
-        drone_command_send.insert(drone.id, contr_send);
-
-        //Give the drone a copy of the sender of events to the Sim Contr.
-        let node_event_send = drone_event_send.clone();
-
-        //Take the channels necessary to this drone.
-        let drone_recv = packet_receivers.remove(&drone.id).unwrap();
-        let drone_send = drone
-            .connected_node_ids
-            .into_iter()
-            .map(|id| (id, packet_senders[&id].clone()))
-            .collect();
-
-        //create the thread of the drone, and add it to a Vec to be pushed afterward
-        handles.push(thread::spawn(move || {
-            let mut drone = SkyLinkDrone::new(
-                drone.id,
-                node_event_send,
-                contr_recv,
-                drone_recv,
-                drone_send,
-                drone.pdr,
-            );
-
-            drone.run();
-        }));
-        //This will probably need to be changed based on the
-        //implementation of other groups drones in our network.
-    }
-
-
-    // I create the servers in an external function, that'll add them to the 'handles' vector.
-    let (chat_servers, media_servers) = create_servers(config.server.clone(),
-                                                       &mut handles,
-                                                       &mut server_command_send,
-                                                       &server_event_send,
-                                                       &packet_senders,
-                                                       &mut packet_receivers,
-                                                       &mut network_graph
-    );
-    create_clients(config.client.clone(),
-                   &mut handles,
-                   &mut client_command_send,
-                   &client_event_send,
-                   &packet_senders,
-                   &mut packet_receivers,
-                   chat_servers,
-                   media_servers,
-                   &mut network_graph,
-    );
-
-    let mut sim_contr = SimulationControl::new(
-        drone_command_send,
-        client_command_send,
-        server_command_send,
-        drone_event_recv,
-        client_event_recv,
-        server_event_recv,
-        drone_event_send,
-        packet_senders,
-        network_graph,
-    );
-
-    (sim_contr, handles)
 }
 
 fn parse_config(file: &str) -> config::Config {
@@ -294,3 +298,158 @@ fn create_clients(clients: Vec<config::Client>,
         panic!("Clients can't work without servers");
     }
 }
+
+fn check_config(conf: &Config) -> bool {
+    check_bidirectional(conf) && check_edges(conf)
+}
+
+fn check_edges(conf: &Config) -> bool{
+    let all_server_ids: Vec<NodeId> = conf.server.iter().map(|z| z.id).collect();
+    let all_client_ids: Vec<NodeId> = conf.client.iter().map(|z| z.id).collect();
+
+    if !NO_SERVER_MODE {
+        //untill we don't have servers i don't check if they are rightfully connected.
+
+        for server in &conf.server {
+            if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
+                if DEBUG_MODE {
+                    println!("server {} has not enough connections, or has itself as one", server.id)
+                }
+                return false
+            }
+            for connection in &server.connected_drone_ids {
+                if all_client_ids.contains(&connection) || all_server_ids.contains(&connection) {
+                    if DEBUG_MODE {
+                        println!("server {} is wrongly connected to {connection}", server.id)
+                    }
+                    return false;
+                }
+            }
+        }
+    }
+
+    for client in &conf.client {
+        if client.connected_drone_ids.len() < 2 || client.connected_drone_ids.contains(&client.id){
+            return false
+        }
+        for connection in &client.connected_drone_ids {
+            if all_client_ids.contains(&connection) || all_server_ids.contains(&connection)  {
+                if DEBUG_MODE{
+                    println!("client {} is wrongly connected to {connection}", client.id)
+                }
+                return false;
+            }
+        }
+    }
+    true
+}
+
+
+
+
+
+
+
+fn check_bidirectional(conf: &Config) -> bool{
+    // Controlla le connessioni per i droni
+    for drone in &conf.drone {
+        for &conn in &drone.connected_node_ids {
+            let mut valid = false;
+            // Cerca il nodo target in droni
+            check_in_drones(conf, drone.id, conn, &mut valid);
+            // Cerca il nodo target in client
+            check_in_clients(conf, drone.id, conn, &mut valid);
+
+            // Cerca il nodo target in server
+            check_in_server(conf, drone.id, conn, &mut valid);
+
+            // Se non troviamo una connessione valida inversa, ritorna false
+            if !valid {
+                return false;
+            }
+        }
+    }
+
+    // Controlla le connessioni per i client
+    for client in &conf.client {
+        for &conn in &client.connected_drone_ids {
+            let mut valid = false;
+            // Cerca il nodo target in droni
+            check_in_drones(conf, client.id, conn, &mut valid);
+
+            //non devi cercarlo nel resto perchè client e server sono connessi solo a droni
+
+            // Se non troviamo una connessione valida inversa, ritorna false
+            if !valid {
+                println!("..");
+                return false;
+            }
+        }
+    }
+
+
+    if !NO_SERVER_MODE {
+        // Controlla le connessioni per i server
+        for server in &conf.server {
+            for &conn in &server.connected_drone_ids {
+                let mut valid = false;
+                // Cerca il nodo target in droni
+                check_in_drones(conf, server.id, conn, &mut valid);
+
+                // Se non troviamo una connessione valida inversa, ritorna false
+                if !valid {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
+fn check_in_drones(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
+    for target in &conf.drone {
+        if target.id == conn {
+            if target.connected_node_ids.contains(&src) {
+                *valid = true;
+                break;
+            } else {
+                if DEBUG_MODE{
+                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
+                }
+            }
+        }
+    }
+}
+
+fn check_in_clients(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
+    for target in &conf.client {
+        if target.id == conn {
+            if target.connected_drone_ids.contains(&src) {
+                *valid = true;
+                break;
+            } else {
+                if DEBUG_MODE{
+                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
+                }
+            }
+
+        }
+    }
+}
+
+fn check_in_server(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
+    for target in &conf.server {
+        if target.id == conn {
+            if target.connected_drone_ids.contains(&src) {
+                *valid = true;
+                break;
+            } else {
+                if DEBUG_MODE{
+                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
+                }
+            }
+        }
+    }
+}
+

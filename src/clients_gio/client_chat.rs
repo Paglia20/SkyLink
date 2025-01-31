@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{ReceivedChatText, SendContactsToSC, SendDestinations};
+use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, ReceivedChatText, RegisterSuccessfully, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
@@ -22,11 +22,13 @@ use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::message::ChatRequest::{ClientList, Register, SendMessage};
 use crate::message::ContentType::*;
 
+type ChatMsg = (NodeId, String);
+
 pub struct ChatClient {
     comm: ClientStruct, //common client duh
     //chat client specks
     contact_list: HashMap<NodeId, Vec<NodeId>>, // First NodeId is the client we communicate with, the second one is the vec of servers that make the connection possible
-    all_messages: HashMap<NodeId, Vec<(NodeId, String)>>,
+    all_messages: HashMap<NodeId, Vec<ChatMsg>>,
     registered_to: HashSet<NodeId>,
 
 }
@@ -41,6 +43,15 @@ impl NetworkEdge for ChatClient {
             flood_request
                 .path_trace
                 .push((self.comm.node_id, NodeType::Client));
+
+            if DEBUG_MODE {
+                if self.comm.node_id == 0 {
+                    println!("0 received - {:?}", flood_request.path_trace);
+                }
+                if self.comm.node_id == 9 {
+                    println!("9 received - {:?}", flood_request.path_trace);
+                }
+            }
 
             if self.comm.flood_ids.insert((
                 flood_request.flood_id.clone(),
@@ -57,15 +68,16 @@ impl NetworkEdge for ChatClient {
                             .unwrap()
                             .0;
                     }
+
+
                     //I update the path_trace in the packet.
                     packet.pack_type = FloodRequest(flood_request);
-                    for (key, _) in self.comm.packet_send.iter() {
+                    for (key, sender) in self.comm.packet_send.iter() {
                         //println!("Previous: {}", prev);
-                        //println!("Key: {}", key);
                         if *key != prev {
                             //I send the flooding to everyone except the node I received it from.
                             if let Ok(_) =
-                                self.comm.packet_send.get(key).unwrap().send(packet.clone())
+                                sender.send(packet.clone())
                             {
                                 self.send_event(ClientEvent::PacketSent(packet.clone()));
                                 //If the message was sent, I also notify the sim controller.
@@ -79,33 +91,8 @@ impl NetworkEdge for ChatClient {
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
-                packet.routing_header.hop_index += 1;
-                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                    Some(id) => *id,
-                    None => {
-                        //teoricamente se è none è perchè è lui stesso la destinazione
-                        unreachable!()
-                    },
-                };
 
-                match self.comm.packet_send.get(&next_id) {
-                    None => {
-                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
-                    }
-                    Some(sender) => {
-                        match sender.try_send(packet.clone()) {
-                            Err(_) => {
-                                // !!You need to send back the same errors a drone would
-                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                                self.send_event(ClientEvent::PacketSendingError(packet));
-                            }
-                            Ok(_) => {
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                // If the message was sent, I also notify the sim controller.
-                            }
-                        }
-                    }
-                }
+                self.comm.periodic_check_type();
             } else {
                 // We can take for granted he is the destination
                 match packet.pack_type.clone() {
@@ -134,9 +121,11 @@ impl NetworkEdge for ChatClient {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Ok(mess) => { mess }
                                 Err(e) => {
-                                    println!("{e} with {}", self.comm.node_id);
-
-                                    unimplemented!() //
+                                    if DEBUG_MODE {
+                                        println!("{e} with {}", self.comm.node_id);
+                                    }
+                                    self.send_event(ErrorReassembling(self.get_src_id()));
+                                    return;
                                 }
                             };
                             //handle message
@@ -148,8 +137,10 @@ impl NetworkEdge for ChatClient {
                     }
                     Ack(ack) => {
                         self.send_event(ClientEvent::AckReceived(packet.clone()));
-
                         //the ack will have the source that was the destination of the initial packet
+                        //if it's registered then i also want to notify SC, so i send it
+                        let mut registered = None;
+                        //i can write it better
                         match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
                             None => {}
                             Some((cont, vec)) => {
@@ -159,12 +150,15 @@ impl NetworkEdge for ChatClient {
                                 if vec.is_empty() {
                                     if let Some(ChatRequest(Register(node))) = cont{
                                         self.registered_to.insert(node.clone());
-                                        //todo!(client event)
+                                        registered = Some(node.clone());
                                     }
-
                                     self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
                                 }
                             }
+                        }
+
+                        if let Some(node) = registered {
+                            self.send_event(RegisterSuccessfully(self.get_src_id(), node));
                         }
 
                         // I apply the positive feed on all nodes in the path
@@ -222,23 +216,9 @@ impl NetworkEdge for ChatClient {
                              current_path.push((node_id, node_type));
 
                             if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                if !self.comm.paths.contains_key(&node_id) {
-                                    //if it's first time this server gets seen
-                                    self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    if DEBUG_MODE {
-                                        println!("{} inserted {:?}", self.comm.node_id, node_id);
-                                    }
-                                }
-                                // Clone the current path for the server and insert it into the route list
-                                match self.comm.paths.get_mut(&node_id) {
-                                    None => {
-                                        unreachable!()
-                                        //i hope it's unreachable
-                                    }
-                                    Some((_state,route_list)) => {
-                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
-                                        route_list.add_route(Route::new(current_path.clone()));
-                                    }
+                                if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
+                                    let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
+                                    entry.1.add_route(Route::new(current_path.clone()));
                                 }
                             }
                         }
@@ -437,11 +417,20 @@ impl ClientTrait for ChatClient {
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
 
-                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0{
-                        self.check_type(dst.clone());
+                if DEBUG_MODE && self.get_src_id() == 9 {
+                    println!("----------");
+                    match self.comm.paths.get(&0) {
+                        None => {}
+                        Some((_, rl)) => {
+                            println!("routelist per 0 da 9:");
+                            for i in &rl.routes {
+                                println!("{}", i);
+                            }
+                        }
                     }
-                });
+                }
+
+                self.comm.periodic_check_type();
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();

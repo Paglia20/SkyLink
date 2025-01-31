@@ -15,17 +15,19 @@ use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
-use crate::clients_gio::client_command::ClientEvent::{MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
+use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
+
+type ArrivedMedia = (String, Vec<u8>);
 
 pub struct WebBrowser{
     comm: ClientStruct, //common client duh
 
     available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
     catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
-    arrived_content: HashMap<u64, (String, Vec<u8>)>,
+    arrived_content: HashMap<u64, ArrivedMedia>,
 
     /*
     arrived_content: media we retrieved
@@ -91,33 +93,8 @@ impl NetworkEdge for WebBrowser {
         } else {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
-                packet.routing_header.hop_index += 1;
-                let next_id = match packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                    Some(id) => *id,
-                    None => {
-                        //teoricamente se è none è perchè è lui stesso la destinazione
-                        unreachable!()
-                    },
-                };
+                self.comm.send_as_drone(packet);
 
-                match self.comm.packet_send.get(&next_id) {
-                    None => {
-                        self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
-                    }
-                    Some(sender) => {
-                        match sender.try_send(packet.clone()) {
-                            Err(_) => {
-                                // !!You need to send back the same errors a drone would
-                                self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
-                                self.send_event(ClientEvent::PacketSendingError(packet));
-                            }
-                            Ok(_) => {
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                // If the message was sent, I also notify the sim controller.
-                            }
-                        }
-                    }
-                }
             } else {
                 // We can take for granted he is the destination
                 match packet.pack_type.clone() {
@@ -144,9 +121,11 @@ impl NetworkEdge for WebBrowser {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Ok(mess) => { mess }
                                 Err(e) => {
-                                    println!("{e} with {}", self.comm.node_id);
-
-                                    unimplemented!() //
+                                    if DEBUG_MODE {
+                                        println!("{e} with {}", self.comm.node_id);
+                                    }
+                                    self.send_event(ErrorReassembling(self.get_src_id()));
+                                    return;
                                 }
                             };
                             //handle message
@@ -220,29 +199,19 @@ impl NetworkEdge for WebBrowser {
                         unreachable!()
                     }
                     FloodResponse(flood_resp) => {
-                        // As of rn it "saves" all possible servers and client... we want something else I think...
                         let mut current_path = Vec::new();
                         for (node_id, node_type) in flood_resp.path_trace {
 
                             current_path.push((node_id, node_type));
 
                             if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                if !self.comm.paths.contains_key(&node_id) {
-                                    //if it's first time this server gets seen
-                                    self.comm.paths.insert(node_id.clone(), (0,RouteList::new()));
-                                    println!("{} inserted {:?}",self.comm.node_id, node_id);
+                                let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
+                                entry.1.add_route(Route::new(current_path.clone()));
+
+                                if DEBUG_MODE && self.get_src_id() == 10 {
+                                    println!("10 added {:?}", current_path);
                                 }
-                                // Clone the current path for the server and insert it into the route list
-                                match self.comm.paths.get_mut(&node_id) {
-                                    None => {
-                                        unreachable!()
-                                        //i hope it's unreachable
-                                    }
-                                    Some((_state,route_list)) => {
-                                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
-                                        route_list.add_route(Route::new(current_path.clone()));
-                                    }
-                                }
+
                             }
                         }
                     }
@@ -471,11 +440,23 @@ impl ClientTrait for WebBrowser {
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
 
-                self.comm.paths.clone().iter().for_each(|(dst, (state, path))| {
-                    if *state == 0 {
-                        self.check_type(dst.clone());
+                if DEBUG_MODE && self.get_src_id() == 10 {
+                    println!("----------");
+                    match self.comm.paths.get(&0) {
+                        None => {}
+                        Some((_, rl)) => {
+                            println!("routelist per 0 da 10:");
+                            for i in &rl.routes {
+                                println!("{}", i);
+                            }
+                        }
                     }
-                });
+                }
+
+                self.comm.periodic_check_type();
+
+
+
 
                 // I create a temporary copy of the fragments that needs to be processed.
                 let mut to_process = Vec::new();
@@ -584,7 +565,7 @@ impl WebBrowser{
 
     fn retry_get_text_file(&mut self, text_file_id: u64) {
         let wait_time: u32 = (u16::MAX as u32) * 2_32;
-        for i in 0..wait_time {
+        for _ in 0..wait_time {
 
         }
         self.get_text_file(text_file_id)
