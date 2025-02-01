@@ -21,6 +21,7 @@ rust_do_it = { git = "https://github.com/RustDoIt/Drone.git" }
 toml = "0.8.19"
 crossbeam-channel = "0.5.13"
 fastrand = "2.2.0"
+petgraph = "0.7.1"
 egui = "0.29.1"
 egui_plot = "0.29.0"
 eframe = "0.29.1"

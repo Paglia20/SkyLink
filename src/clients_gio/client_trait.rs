@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::*;
 use wg_2024::packet::{Fragment, Nack, NackType, Packet};
 use crate::message::Message;
-use crate::routing::{Nodes, RouteList};
 
 pub trait ClientTrait: NetworkEdge + NetworkEdgeErrors{
     fn new(

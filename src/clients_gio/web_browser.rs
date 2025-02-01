@@ -13,11 +13,9 @@ use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
-use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
 use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
-use crate::routing::{Route, RouteList};
 use crate::server::server_type::{ContentServerType, ServerType};
 
 type ArrivedMedia = (String, Vec<u8>);
@@ -153,7 +151,7 @@ impl NetworkEdge for WebBrowser {
 
                         // I apply the positive feed on all nodes in the path
                         let nodes = packet.routing_header.hops;
-                        self.comm.nodes.positive_feed(nodes);
+                        self.comm.network.positive_feedback(nodes);
                     }
 
                     PacketType::Nack(nack) => {
@@ -164,19 +162,11 @@ impl NetworkEdge for WebBrowser {
                         unreachable!()
                     }
                     FloodResponse(flood_resp) => {
-                        let mut current_path = Vec::new();
-                        for (node_id, node_type) in flood_resp.path_trace {
+                        self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
 
-                            current_path.push((node_id, node_type));
-
-                            if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
-                                entry.1.add_route(Route::new(current_path.clone()));
-
-                                if DEBUG_MODE && self.get_src_id() == 10 {
-                                    println!("10 added {:?}", current_path);
-                                }
-
+                        if DEBUG_MODE {
+                            if self.comm.node_id == 10 {
+                                println!("10 received - {:?}", flood_resp.path_trace);
                             }
                         }
                     }
@@ -249,7 +239,7 @@ impl NetworkEdge for WebBrowser {
                         };
                         let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
-                        if !self.comm.paths.contains_key(&from) {
+                        if let None = self.comm.network.best_path(&self.get_src_id(), &from){
                             println!("i don't have a path with {} to {from}", self.comm.node_id);
                             self.flood();
                         }
@@ -260,7 +250,7 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         if let EdgeType::Server(server_type) = edge_type{
                             if let ServerType::Content(ty) = server_type{
-                                self.comm.paths.get_mut(&from).unwrap().0 = 1;
+                                self.comm.network.update_state(from, 1);
 
                                 if ty == ContentServerType::Text{
                                     //only if it's a text server I will notify the sc that is a dst.
@@ -270,11 +260,11 @@ impl NetworkEdge for WebBrowser {
                                 }
                             }
                             else {
-                                self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                                self.comm.network.update_state(from, 2);
                             }
                         } else {
                             //if it's a client
-                            self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                            self.comm.network.update_state(from, 2);
 
                             if NO_SERVER_MODE {
                                 self.send_event(SendDestinations(self.comm.node_id, from));
@@ -390,19 +380,6 @@ impl ClientTrait for WebBrowser {
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
-
-                if DEBUG_MODE && self.get_src_id() == 10 {
-                    println!("----------");
-                    match self.comm.paths.get(&0) {
-                        None => {}
-                        Some((_, rl)) => {
-                            println!("routelist per 0 da 10:");
-                            for i in &rl.routes {
-                                println!("{}", i);
-                            }
-                        }
-                    }
-                }
 
                 self.comm.periodic_check_type();
 

@@ -4,7 +4,7 @@ use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{ContentType, EdgeNackType, Message, TypeExchange};
 use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
-use crate::routing::{Nodes, Route, RouteList};
+use crate::routing::{Network};
 use crate::DEBUG_MODE;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -25,8 +25,7 @@ pub struct ClientStruct {
 
     pub (crate) flood_ids: HashSet<(u64, NodeId)>, // Just like drones
     pub (crate) used_session_id: HashSet<u64>,     // Do we need this?
-    pub (crate) paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if usable (1), if not usable (2), or if yet to be checked (0)
-    pub (crate) nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
+    pub (crate) network: Network,
     pub (crate) fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
     pub (crate) unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
@@ -68,49 +67,36 @@ impl NetworkEdge for ClientStruct {
             return;
         }
 
-        match self.paths.get_mut(&destination) {
+        match self.network.get_srh(&self.node_id, &destination){
             None => {
-                //I first check if I have any path to the destination
                 if DEBUG_MODE {
                     println!("Tried to send fragment without path to {destination} with {}", self.node_id);
                 }
-                self.send_event(MissingDestination(self.node_id, destination));
+                self.send_event(MissingRoute(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
-            Some((_state, route_list)) => {
-                match route_list.get_fastest_route() {
+            Some(srh) => {
+                let first_dst = srh.hops[1];
+                let packet = Packet::new_fragment(srh, session_id, fragment.clone());
+
+                // If everything worked, I try to send.
+                match self.packet_send.get(&first_dst) {
+                    Some(sender) => {
+                        sender.send(packet.clone()).unwrap();
+                        self.send_event(ClientEvent::PacketSent(packet.clone()));
+
+                    }
                     None => {
-                        // I then check that we have an available route to the destination.
+                        // If I want to pass for a node that I don't have as a neighbour, I need to remove
+                        // channels who contain it.
                         self.send_event(MissingRoute(self.get_src_id(), destination));
-
                         self.add_unsent_fragment(fragment, session_id, destination);
-                    },
-                    Some(route) => {
-                        let srh = route.to_source_routing_header();
-                        let first_dst = srh.hops[1];
-                        let packet = Packet::new_fragment(srh, session_id, fragment.clone());
-
-                        // If everything worked, I try to send.
-                        match self.packet_send.get(&first_dst) {
-                            Some(sender) => {
-                                sender.send(packet.clone()).unwrap();
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-
-                            }
-                            None => {
-                                // If I want to pass for a node that I don't have as a neighbour, I need to remove
-                                // channels who contain it.
-                                self.send_event(MissingRoute(self.get_src_id(), destination));
-                                self.add_unsent_fragment(fragment, session_id, destination);
-                                for (_, (_state,route)) in self.paths.iter_mut() {
-                                    route.remove_faulty_node(destination);
-                                }
-                            }
-                        }
-                    },
+                        self.network.remove_faulty_connection(self.node_id, first_dst);
+                    }
                 }
-            },
-        };
+            }
+        }
+
     }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
@@ -234,9 +220,9 @@ impl NetworkEdgeErrors for ClientStruct {
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
-        let out =  match self.paths.get(&node_id){
-            Some(path) => {
-                path.0 == 1
+        let out =  match self.network.get_state(&node_id){
+            Some(s) => {
+               s == 1
             }
             None =>{false}
         };
@@ -258,43 +244,33 @@ impl NetworkEdgeErrors for ClientStruct {
             fragment_index: 0,
             nack_type: nack,
         };
-        let shr = match self.paths.get_mut(&dst){
-            None => {
-                self.send_event(MissingDestination(self.node_id, dst));
-                return;
-            }
-            Some((_state, route)) => {
-                if let Some(fastest_route) = route.get_fastest_route(){
-                    fastest_route.to_source_routing_header()
-                }else {
-                    self.send_event(MissingRoute(self.get_src_id(), dst));
+        if let Some(shr) = self.network.get_srh(&self.node_id, &dst){
+            let first_hop = shr.next_hop().unwrap_or(self.node_id);
+            let packet = Packet{
+                routing_header: shr,
+                session_id: self.get_session_id(),
+                pack_type: Nack(new_nack),
+            };
+
+            match self.packet_send.get(&first_hop){
+                None => {
+                    self.send_event(MissingDestination(self.node_id, dst));
                     return;
                 }
+                Some(sender) => {
+                    sender.send(packet).unwrap();
+                }
             }
-        };
-        let first_hop = shr.next_hop().unwrap_or(self.node_id);
-
-        let packet = Packet{
-            routing_header: shr,
-            session_id: self.get_session_id(),
-            pack_type: Nack(new_nack),
-        };
-
-        match self.packet_send.get(&first_hop){
-            None => {
-                self.send_event(MissingDestination(self.node_id, dst));
-                return;
-            }
-            Some(sender) => {
-                sender.send(packet).unwrap();
-            }
+        } else {
+            self.send_event(MissingDestination(self.node_id, dst));
+            return;
         }
     }
 }
 
 impl ClientTrait for ClientStruct {
     fn new(node_id: NodeId, command_recv: Receiver<ClientCommand>, event_send: Sender<ClientEvent>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
-        Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), paths: HashMap::default(), nodes: Nodes::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()) }
+        Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), network: Network::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()) }
     }
 
     fn run(&mut self) {
@@ -324,24 +300,18 @@ impl ClientTrait for ClientStruct {
 impl ClientStruct {
     //sta fn la metterei in networking
     pub (crate) fn get_optimal_dest (&mut self, v: &Vec<NodeId>) -> Option<NodeId> {
-        let mut out: Option<(Route, NodeId)> = None;
+        let mut out: Option<NodeId> = None;
+        let mut weight = f64::MIN;
         for i in v {
-            if let Some((state, route_list)) = self.paths.get_mut(i) {
-                if *state == 1{
-                    if let Some(route) = route_list.get_fastest_route(){
-                        if let Some((best_route, _)) = &out {
-                            if route > *best_route {
-                                out = Some((route, *i));
-                            }
-                        } else {
-                            // Prima route valida found
-                            out = Some((route, *i));
-                        }
+            if let Some((r, r_weight)) = self.network.best_path(&self.node_id, i){
+                if weight < r_weight{
+                    if !r.is_empty(){
+                        out = Some(r[0]);
                     }
                 }
             }
         }
-        out.map(|(_, id)| id)
+        out
     }
 
 
@@ -370,11 +340,9 @@ impl ClientStruct {
     }
 
     pub fn periodic_check_type(&mut self){
-        self.paths.clone().iter().for_each(|(dst, (state, path))| {
-            if *state == 0 {
-                self.check_type(dst.clone());
-            }
-        });
+        for i in self.network.get_unresolved(){
+            self.check_type(i)
+        }
     }
 
     pub fn client_send_fragment(&mut self, message: Message, destination: NodeId){
@@ -408,35 +376,24 @@ impl ClientStruct {
     pub fn handle_nack(&mut self, nack: Nack, packet: Packet){
         match nack.nack_type.clone() {
             NackType::UnexpectedRecipient(wrong_node) => {
-                // I remove all the routes with that destination, since it's probably faulty
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(wrong_node);
-                }
-                self.nodes.remove_faulty_node(wrong_node);
+                self.network.remove_node(wrong_node);
                 self.send_fragment_after_nack(packet, nack);
             },
             ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(wrong_node);
-                }
-                self.nodes.remove_faulty_node(wrong_node);
+                self.network.remove_node(wrong_node);
                 self.send_fragment_after_nack(packet, nack);
             },
             NackType::DestinationIsDrone => {
                 let wrong_node = packet.routing_header.hops.last().unwrap();
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(*wrong_node);
-                }
-                self.nodes.remove_faulty_node(*wrong_node);
+                self.network.update_state(*wrong_node, 2);
                 // Since the destination was a drone, the message was faulty,
-                // so I remove the destination and consider the message as lost.
-                self.paths.remove(wrong_node);
+                // so I update the destination state and consider the message as lost.
             },
             NackType::Dropped => {
                 // Who dropped will be source of the nack
                 let dropper = packet.routing_header.source().unwrap();
-                self.nodes.negative_feed(dropper);
+                self.network.negative_feedback(dropper);
 
                 // I just send it again
                 self.send_fragment_after_nack(packet.clone(), nack);
@@ -446,11 +403,9 @@ impl ClientStruct {
 
     pub fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId){
         match nack {
-            UnexpectedMessage => {
+            EdgeNackType::UnexpectedMessage => {
                 //vuol dire che ha mandato un message al dst con state sbagliato.
-                if let Some((state, _route)) = self.paths.get_mut(&src){
-                    *state = 2;
-                }
+                self.network.update_state(src, 2);
 
                 //e il messaggio viene scartato credo
 

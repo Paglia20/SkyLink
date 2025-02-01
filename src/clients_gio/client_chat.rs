@@ -8,7 +8,6 @@ use crate::message::EdgeNackType::*;
 use crate::message::TextRequest::*;
 use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
-use crate::routing::{Route, RouteList};
 use crate::server::server_type::ServerType;
 use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
@@ -16,7 +15,6 @@ use std::collections::{HashMap, HashSet};
 use std::thread::sleep;
 use std::time::Duration;
 use wg_2024::network::NodeId;
-use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::message::ChatRequest::{ClientList, Register, SendMessage};
@@ -44,14 +42,6 @@ impl NetworkEdge for ChatClient {
                 .path_trace
                 .push((self.comm.node_id, NodeType::Client));
 
-            if DEBUG_MODE {
-                if self.comm.node_id == 0 {
-                    println!("0 received - {:?}", flood_request.path_trace);
-                }
-                if self.comm.node_id == 9 {
-                    println!("9 received - {:?}", flood_request.path_trace);
-                }
-            }
 
             if self.comm.flood_ids.insert((
                 flood_request.flood_id.clone(),
@@ -92,7 +82,7 @@ impl NetworkEdge for ChatClient {
             if packet.routing_header.destination().unwrap() != self.comm.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
 
-                self.comm.periodic_check_type();
+                self.comm.send_as_drone(packet);
             } else {
                 // We can take for granted he is the destination
                 match packet.pack_type.clone() {
@@ -163,7 +153,7 @@ impl NetworkEdge for ChatClient {
 
                         // I apply the positive feed on all nodes in the path
                         let nodes = packet.routing_header.hops;
-                        self.comm.nodes.positive_feed(nodes);
+                        self.comm.network.positive_feedback(nodes);
                     }
 
                     PacketType::Nack(nack) => {
@@ -175,16 +165,15 @@ impl NetworkEdge for ChatClient {
                     }
                     FloodResponse(flood_resp) => {
                         // As of rn it "saves" all possible servers and client... we want something else I think...
-                        let mut current_path = Vec::new();
-                        for (node_id, node_type) in flood_resp.path_trace {
-                          
-                             current_path.push((node_id, node_type));
+                        self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
 
-                            if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.comm.node_id {
-                                    let entry = self.comm.paths.entry(node_id).or_insert((0,RouteList::new()));
-                                    entry.1.add_route(Route::new(current_path.clone()));
-                                }
+
+                        if DEBUG_MODE {
+                            if self.comm.node_id == 0 {
+                                println!("0 received - {:?}", flood_resp.path_trace);
+                            }
+                            else if self.comm.node_id == 9 {
+                                println!("9 received - {:?}", flood_resp.path_trace);
                             }
                         }
                     }
@@ -231,7 +220,7 @@ impl NetworkEdge for ChatClient {
                         };
                         let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
-                        if !self.comm.paths.contains_key(&from) {
+                        if let None = self.comm.network.best_path(&self.get_src_id(), &from){
                             println!("i don't have a path with {} to {from}", self.comm.node_id);
                             self.flood();
                         }
@@ -243,16 +232,16 @@ impl NetworkEdge for ChatClient {
                         if let EdgeType::Server(server_type) = edge_type{
                             match server_type{
                                 ServerType::Chat => {
-                                    self.comm.paths.get_mut(&from).unwrap().0 = 1;
+                                    self.comm.network.update_state(from, 1);
                                     self.send_event(SendDestinations(self.comm.node_id, from));
                                     },
                                 _ => {
-                                    self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                                    self.comm.network.update_state(from, 2);
                                 }
                             }
                         } else {
                             //if it's a client
-                            self.comm.paths.get_mut(&from).unwrap().0 = 2;
+                            self.comm.network.update_state(from, 2);
 
                             if NO_SERVER_MODE {
                                 self.send_event(SendDestinations(self.comm.node_id, from));}
@@ -367,20 +356,6 @@ impl ClientTrait for ChatClient {
             // I check a counter, so that I don't try to send all the fragments every loop.
             if self.comm.unsent_fragments.0 >= 150 {
                 //if I have some unchecked nodes I try to check them
-
-                if DEBUG_MODE && self.get_src_id() == 9 {
-                    println!("----------");
-                    match self.comm.paths.get(&0) {
-                        None => {}
-                        Some((_, rl)) => {
-                            println!("route list per 0 da 9:");
-                            for i in &rl.routes {
-                                println!("{}", i);
-                            }
-                        }
-                    }
-                }
-
                 self.comm.periodic_check_type();
 
                 self.comm.process_unsent_periodically();
@@ -393,8 +368,6 @@ impl ClientTrait for ChatClient {
                 //     path_printable.push_str(destination.as_str());
                 // });
                 // println!("{} has paths: {:?}",self.node_id, path_printable);
-
-
 
             } else {
                 self.comm.unsent_fragments.0 += 1;
