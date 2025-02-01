@@ -185,13 +185,11 @@ impl NetworkEdge for WebBrowser {
                         let new_nack = self.create_nack(UnexpectedMessage);
                         self.send_nack_message(message.source_id, new_nack);
                     }
-                    MediaResponse::Media(((id, name), media)) => {
+                    MediaResponse::Media(id, name, media) => {
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
                         self.send_event(SendMedia(self.get_src_id(), id, name, media))
                     }
                 }
-
-
             },
             ContentType::TextResponse(text_response) => {
                 match text_response{

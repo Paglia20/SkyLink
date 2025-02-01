@@ -78,22 +78,17 @@ impl Default for TypeExchange {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatRequest {
-    ClientList,
-    Register(NodeId),
-    SendMessage {
-        from: NodeId,
-        to: NodeId,
-        message: String,
-    },
+    ClientList, // From client to server.
+    Register(NodeId), // From client to server.
+    SendMessage { from: NodeId, to: NodeId, message: String}, // From client to server.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
-    ClientList(Vec<NodeId>),
-    MessageFrom { from: NodeId, message: String },
-    MessageSent,
+    ClientList(Vec<NodeId>), // From server to client.
+    MessageFrom { from: NodeId, message: String }, // From server to client.
+    ClientNotFound(NodeId), // If you try to send a message to a client, but I can't communicate with it.
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextRequest {
@@ -117,7 +112,8 @@ pub enum TextResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MediaResponse {
     MediaList(Vec<(u64, String)>), // Used only between servers.
-    Media(((u64, String), Vec<u8>)), // Sent back to clients.
+    Media(u64, String, Vec<u8>), // Sent back to clients; media_id, media_name and the media itself;
+    NotFound(u64), // If we didn't find that ID.
 }
 
 /*

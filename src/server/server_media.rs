@@ -1,23 +1,24 @@
-use crate::message::{ChatRequest, ChatResponse, ContentType, EdgeNackType, Message, TypeExchange};
+use crate::message::{ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, TextResponse, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_trait::Server;
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::fs;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{FloodResponse, Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
 use crate::routing::RouteList;
 
-
-pub struct ChatServer {
+pub struct MediaServer {
     server_struct: ServerStruct,
-    registered_clients: HashSet<NodeId>,
+    media_files: HashMap<u64, (String, Vec<u8>)>,
+    next_file_id: u64,
 }
 
-impl NetworkEdge for ChatServer {
+impl NetworkEdge for MediaServer {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         self.server_send_message(message, destination);
     }
@@ -27,34 +28,34 @@ impl NetworkEdge for ChatServer {
     }
 
     fn handle_message(&mut self, message: Message) {
-        
         match message.content {
-            ContentType::ChatRequest(chat_request) => {
-                match chat_request {
-                    ChatRequest::ClientList => {
-                        let resp = ChatResponse::ClientList(self
-                            .registered_clients
+            ContentType::MediaRequest(media_request) => {
+                let source_id = message.source_id;
+                match media_request {
+                    MediaRequest::MediaList => {
+                        let resp = MediaResponse::MediaList(self
+                            .media_files
                             .iter()
-                            .map(|x| *x)
-                            .collect());
-                        let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
-                        self.send_message(msg, message.source_id);
+                            .map(|(x,y)| (*x, y.0.clone()))
+                            .collect()
+                        );
+                        let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaResponse(resp));
+                        self.send_message(msg, source_id);
                     },
-                    ChatRequest::Register(node_id) => {
-                        self.registered_clients.insert(node_id);
-                        self.send_event(ServerEvent::ClientRegistered(self.get_src_id(), node_id));
-                    },
-                    ChatRequest::SendMessage {from, to, message: msg} => {
-                        if self.registered_clients.contains(&to) {
-                            // If I have the client, I send the message.
-                            let resp = ChatResponse::MessageFrom {from, message: msg};
-                            let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
-                            self.send_message(msg, to);
-                        } else {
-                            // Otherwise I notify back.
-                            let resp = ChatResponse::ClientNotFound(to);
-                            let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
-                            self.send_message(msg, from);
+                    MediaRequest::Media(media_id) => {
+                        match self.media_files.get(&media_id) {
+                            Some(entry) => {
+                                let resp = MediaResponse::Media(media_id, entry.0.clone(), entry.1.clone());
+                                let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaResponse(resp));
+                                self.send_message(msg, source_id);
+                            },
+                            None => {
+                                let resp = TextResponse::NotFound(media_id);
+                                // In case we don't have the requested file_id.
+                                let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TextResponse(resp));
+                                self.send_message(msg, source_id);
+                                self.send_event(ServerEvent::MediaNotFound(self.get_src_id(), media_id));
+                            }
                         }
                     }
                 }
@@ -71,17 +72,9 @@ impl NetworkEdge for ChatServer {
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
                     }
-                    TypeExchange::TypeResponse { from, edge_type } => {
-                        match edge_type {
-                            EdgeType::Client(ClientType::ChatClient) => {
-                                self.server_struct.paths.get_mut(&from).unwrap().0 = 1;
-                                // I set it as a usable contact
-                            },
-                            _ => {
-                                self.server_struct.paths.get_mut(&from).unwrap().0 = 2;
-                                // I set it as a not usable contact.
-                            }
-                        }
+                    TypeExchange::TypeResponse { from, edge_type: _edge_type } => {
+                        self.server_struct.paths.get_mut(&from).unwrap().0 = 2;
+                        // I don't care for the type of the server, since I only respond to requests.
                     }
                 }
             }
@@ -135,7 +128,7 @@ impl NetworkEdge for ChatServer {
     }
 }
 
-impl NetworkEdgeErrors for ChatServer {
+impl NetworkEdgeErrors for MediaServer {
     fn check_type(&mut self, id: NodeId) {
         self.server_check_type(id);
     }
@@ -153,19 +146,46 @@ impl NetworkEdgeErrors for ChatServer {
     }
 }
 
-impl Server for ChatServer {
+impl Server for MediaServer {
     fn new(
         node_id: NodeId,
         command_recv: Receiver<ServerCommand>,
         event_send: Sender<ServerEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
-        _files: Vec<String>
+        files: Vec<String>
     ) -> Self {
         let server_struct = ServerStruct::new(node_id, command_recv, event_send, packet_recv, packet_send);
-        ChatServer {
+        let mut starting_id:u64 = 0;
+        let mut media_files = HashMap::new();
+        for e in files.iter() {
+            // I read the file as a string
+            let file_str = fs::read_to_string(e).unwrap();
+
+            // I divide the string to obtain the name of the medias contained in it.
+            let medias_name = divide_text_file(file_str.clone());
+            for e in medias_name.into_iter() {
+                match fs::read(e.clone()){ // I try to read the file as bytes.
+                    Ok(file_data) => {
+                        // I created a unique id that distinguish that media, used by clients to easier computation.
+                        // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
+                        // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
+                        let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
+                                            starting_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
+                        starting_id += 1;
+                        media_files.insert(file_id, (e, file_data));
+                    }
+                    Err(err) => {
+                        // I notify the SC and discard the file.
+                        server_struct.send_event(ServerEvent::FileNotReadable(node_id, e, err.to_string()));
+                    }
+                }
+            }
+        }
+        MediaServer {
             server_struct,
-            registered_clients: HashSet::new(),
+            media_files,
+            next_file_id: starting_id,
         }
     }
 
@@ -181,8 +201,21 @@ impl Server for ChatServer {
                 self.flood();
             }
             ServerCommand::AddFile(file) => {
-                // I notify the sim controller that I shouldn't have received this command.
-                self.send_event(ServerEvent::WrongCommandGiven(self.get_src_id(), ServerCommand::AddFile(file)));
+                match fs::read(file.clone()){ // I try to read the file as bytes.
+                    Ok(file_data) => {
+                        // I created a unique id that distinguish that media, used by clients to easier computation.
+                        // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
+                        // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
+                        let file_id = self.get_src_id() as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
+                                            self.next_file_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
+                        self.next_file_id += 1;
+                        self.media_files.insert(file_id, (file, file_data));
+                    }
+                    Err(err) => {
+                        // I notify the SC and discard the file.
+                        self.send_event(ServerEvent::FileNotReadable(self.get_src_id(), file, err.to_string()));
+                    }
+                }
             }
         }
     }
@@ -225,4 +258,19 @@ impl Server for ChatServer {
     fn get_server_type(&self) -> ServerType {
         ServerType::Content(ContentServerType::Text)
     }
+}
+
+fn divide_text_file(file_str: String) -> Vec<String> {
+    let mut res = Vec::new();
+    let mut tmp_string = String::new();
+    for c in file_str.chars() {
+        if c != '\n' {
+            tmp_string.push(c);
+        } else {
+            // I save the name of the media.
+            res.push(tmp_string);
+            tmp_string = String::new();
+        }
+    }
+    res
 }
