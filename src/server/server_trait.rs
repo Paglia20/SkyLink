@@ -3,6 +3,7 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_type::ServerType;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
+use wg_2024::controller::DroneEvent;
 use wg_2024::network::*;
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::DEBUG_MODE;
@@ -109,7 +110,21 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         }
     }
     
-    fn server_handle_packet(&mut self, packet: Packet, self_id: NodeId) {
+
+    fn server_handle_packet(&mut self, packet: Packet) {
+        if let PacketType::FloodRequest(flood_request) = packet.pack_type.clone(){
+            if self.handle_flood_request(flood_request.clone(), packet) {
+                self.edge_send_flood_response(flood_request);
+            }
+        } else if packet.routing_header.destination().unwrap() != self.get_src_id() {
+            // If it's not his packet, but he has to act as a drone (that never misses)
+            self.route_packet(packet);
+        } else {
+            self.server_handle_packet_to_self(packet, self.get_src_id());
+        }
+    }
+    
+    fn server_handle_packet_to_self(&mut self, packet: Packet, self_id: NodeId) {
         // We can take for granted it is the destination
         match packet.pack_type.clone() {
             PacketType::MsgFragment(fragment) => {
@@ -124,22 +139,28 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.send_ack(packet.clone(), frag_index);
 
                 // If all the frag have arrived recreate message
-                let frags_clone: &Vec<Fragment> = self.get_fragments_hm().get(&(packet.session_id, initiator_id)).unwrap().1.as_ref();
-                if frags_clone.len() == tot_num_frag {
-                    match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                        Ok(message) => {
-                            // If the message is created correctly, we handle it.
-                            self.handle_message(message);
-                        }
-                        Err(e) => {
-                            // If the message can't be created, we can't recover it, so we notify the SC.
-                            self.send_event(ServerEvent::LostMessage(session_id, initiator_id,e));
-                            // This should never happen since all the appropriated checks are done previously.
-                        }
-                    };
+                match self.get_fragments_hm().get(&(packet.session_id, initiator_id)) {
+                    Some((_,frags_clone)) => {
+                        if frags_clone.len() == tot_num_frag {
+                            match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                                Ok(message) => {
+                                    // If the message is created correctly, we handle it.
+                                    self.handle_message(message);
+                                }
+                                Err(e) => {
+                                    // If the message can't be created, we can't recover it, so we notify the SC.
+                                    self.send_event(ServerEvent::LostMessage(session_id, initiator_id, e));
+                                    // This should never happen since all the appropriated checks are done previously.
+                                }
+                            };
 
-                    // We remove the entry from the HashMap.
-                    self.get_fragments_hm().remove(&(packet.session_id, initiator_id));
+                            // We remove the entry from the HashMap.
+                            self.get_fragments_hm().remove(&(packet.session_id, initiator_id));
+                        }
+                    },
+                    None => {
+                        self.send_event(ServerEvent::LostMessage(session_id, initiator_id, "Couldn't find message while receiving fragments".to_string()))
+                    }
                 }
             }
             PacketType::Ack(ack) => {
@@ -151,7 +172,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         // In the case we receive an ACK that's not for one of our fragments, we notify the SC and discard it.
                         self.send_event(ServerEvent::WrongDestination(self.get_src_id(), packet));
                     }
-                    Some((_source,vec)) => {
+                    Some((_source, vec)) => {
                         // I retain all the fragments with fragment index different from the ACK one.
                         vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
@@ -195,8 +216,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 // If everything worked, I try to send.
                 match self.get_packet_sender(&first_dst) {
                     Some(sender) => {
-                        sender.send(packet.clone()).unwrap();
-                        self.send_event(ServerEvent::PacketSent(packet.clone()));
+                        match sender.send(packet.clone()) {
+                            Ok(_) => {
+                                self.send_event(ServerEvent::PacketSent(packet.clone()));
+                            },
+                            Err(_e) => {
+                                // If the send fails, probably my neighbour isn't my neighbour anymore.
+                                self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
+                                self.add_unsent_fragment(fragment, session_id, destination);
+                                self.remove_faulty_connection(first_dst);
+                            }
+                        }
                     }
                     None => {
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
@@ -247,8 +277,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     
         match self.get_packet_sender(&next_id) {
             Some(sender) => {
-                sender.send(packet_ack.clone()).unwrap();
-                self.send_event(ServerEvent::PacketSent(packet_ack));
+                self.send_ack_and_nack(sender.clone(), packet_ack);
             }
             None => {
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), next_id));
@@ -303,7 +332,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
                     }
                     Some(sender) => {
-                        sender.send(packet).unwrap();
+                        self.send_ack_and_nack(sender.clone(), packet);
                     }
                 }
             }
@@ -325,11 +354,21 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
         }
     }
+    fn send_ack_and_nack(&mut self, sender: Sender<Packet>, packet: Packet) {
+        match sender.send(packet.clone()) {
+            Ok(_) => {
+                self.send_event(ServerEvent::PacketSent(packet));
+            },
+            Err(_e) => {
+                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
+            }
+        }
+    }
     fn remove_faulty_connection(&mut self, node: NodeId);
-
     fn handle_command(&mut self, command: ServerCommand);
     fn send_event(&self, event: ServerEvent);
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet);
+    fn handle_flood_request(&mut self, request: FloodRequest, packet: Packet) -> bool;
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool;
     fn positive_feed(&mut self, nodes: Vec<NodeId>);
     fn save_flood_response(&mut self, flood_resp: FloodResponse);

@@ -62,7 +62,7 @@ impl ServerStruct {
 
             if self.packet_send.len() == 1 {
                 // I have to send the flood_response back.
-                return false
+                return true;
             } else {
                 let mut prev = flood_request.initiator_id;
                 if flood_request.path_trace.clone().len() > 1 {
@@ -84,10 +84,10 @@ impl ServerStruct {
                     }
                 }
             }
-            true
+            false
         } else {
             // I have to send the flood_response back.
-            false
+            true
         }
     }
 
