@@ -99,7 +99,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     Err(_) => {
                         // We send back the same errors a drone would.
                         self.send_event(ServerEvent::PacketSendingError(packet.clone()));
-                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                        match packet.pack_type.clone() {
+                            PacketType::MsgFragment(_) => {
+                                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                            },
+                            PacketType::FloodRequest(_) => {
+                                unreachable!()
+                            },
+                            _ => {
+                                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
+                            }
+                        }
                     }
                     Ok(_) => {
                         self.send_event(ServerEvent::PacketSent(packet.clone()));
