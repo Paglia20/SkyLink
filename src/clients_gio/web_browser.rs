@@ -189,6 +189,18 @@ impl NetworkEdge for WebBrowser {
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
                         self.send_event(SendMedia(self.get_src_id(), id, name, media))
                     }
+                    MediaResponse::NotFound(id) => {
+                        //i update the catalogue
+
+
+                        if let Some(vec) = self.catalogue.get_mut(&id){
+                            vec.retain(|node| *node != src);
+                        }
+
+                        //and try to re obtain the same media
+                        self.get_media(id);
+
+                    }
                 }
             },
             ContentType::TextResponse(text_response) => {
@@ -218,12 +230,13 @@ impl NetworkEdge for WebBrowser {
                     TextResponse::Incomplete(incomplete_text) => {
                         self.retry_get_text_file(incomplete_text);
                     }
-                    TextResponse::NotFound(media_id) => {
+                    TextResponse::NotFound(text_id) => {
                         //update catalougue
-                        self.catalogue.entry(media_id).and_modify(|v|
+                        self.available_text_lists.entry(text_id).and_modify(|(v, _)|
                             v.retain(|node_id| *node_id != src));
 
-                        //send client event
+                        //retry to obtain it
+                        self.get_text_file(text_id);
                     }
                 }
             }

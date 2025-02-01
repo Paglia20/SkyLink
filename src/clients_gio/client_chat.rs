@@ -204,6 +204,13 @@ impl NetworkEdge for ChatClient {
                         self.send_event(ReceivedChatText(from, self.comm.node_id, message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
+                    ChatResponse::ClientNotFound(node) => {
+                        //update contact list
+                        let server_src = message.source_id;
+                        if let Some(vec) = self.contact_list.get_mut(&node){
+                            vec.retain(|node| *node != server_src);
+                        }
+                    }
                 }
             }
 
@@ -225,25 +232,17 @@ impl NetworkEdge for ChatClient {
 
                     }
                     TypeExchange::TypeResponse { from, edge_type } => {
-                        if let EdgeType::Server(server_type) = edge_type{
-                            match server_type{
-                                ServerType::Chat => {
-                                    self.comm.network.update_state(from, 1);
-                                    self.send_event(SendDestinations(self.comm.node_id, from));
-                                    },
-                                _ => {
-                                    self.comm.network.update_state(from, 2);
-                                }
+                        match edge_type{
+                            EdgeType::Server(ServerType::Chat) => {
+                                self.comm.network.update_state(from, 1);
+                                self.send_event(SendDestinations(self.comm.node_id, from));
+                            },
+
+                            _ => {
+                                self.comm.network.update_state(from, 2);
                             }
-                        } else {
-                            //if it's a client
-                            self.comm.network.update_state(from, 2);
-
-                            if NO_SERVER_MODE {
-                                self.send_event(SendDestinations(self.comm.node_id, from));}
-                                self.send_event(SendContactsToSC(self.comm.node_id, from));
-
                         }
+
                     }
                 }
             }
