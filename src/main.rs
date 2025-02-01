@@ -25,7 +25,7 @@ fn main() {
 
     match switch {
         Switch::SimDaniel => {
-            if let Some((sim_contr, handles)) = initialize("inputs/input_star.toml") {
+            if let Some((sim_contr, handles)) = initialize("inputs/input_star_with_pdr.toml") {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();

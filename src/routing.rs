@@ -1,248 +1,231 @@
-use std::cell::RefCell;
-use std::cmp::Ordering;
-// use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
+/*
+it's just a proposal:
+the idea behind is to have high efficient access to the graph thanks to the hashmap.
+the hashmap has a key role also because it provides info about the state(as it was before).
+the state follow the following rule:
+(0) - an edge that is still to be resolved.
+(1) - an edge you CAN contact
+(2) - an edge you cannot contact
+
+
+state will be accessed likely only by the egdes, while nodeIndex is for the access to the graph (that is done automatically).
+hence, state checks will still be performed by the edges!
+*/
+
+use petgraph::graph::{NodeIndex};
+use std::collections::HashMap;
+use petgraph::stable_graph::StableUnGraph;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NodeType;
+use petgraph::visit::EdgeRef;
+use wg_2024::packet::NodeType::Drone;
 
-#[derive(Clone, Debug)]
+type State = u8;
+
+#[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
     node_type: NodeType,
-    arrived_packets: u64,
-    dropped_packets: u64,
-    // Every node keeps track of arrived and dropped messages.
-    // This count doesn't consider errors different from the drop.
-}
-#[derive(Clone, Debug)]
-pub struct Nodes {
-    nodes: Vec<Arc<RefCell<Node>>>,
-}
-#[derive(Clone, Debug)]
-pub struct Route {
-    path: Vec<Arc<RefCell<Node>>>,
-}
-
-
-impl Display for Route{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
-        for i in &self.path {
-            s.push_str(format!("{} -", i.borrow().id).as_str());
-        }
-        write!(f, "{}", s)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RouteList {
-    pub routes: Vec<Route>,
+    forward_count: u32,
+    dropped_count: u32,
 }
 
 impl Node {
-    pub fn new(id: NodeId, node_type: NodeType) -> Node {
-        Node{id, arrived_packets: 1, dropped_packets: 0, node_type}
-    }
-    fn get_reliability(&self) -> f64 {
-        (self.arrived_packets as f64)/(self.arrived_packets as f64 + self.dropped_packets as f64)
-    }
-    fn positive_feed(&mut self) {
-        self.arrived_packets += 1;
-    }
-    fn negative_feed(&mut self) {
-        self.dropped_packets += 1;
-    }
-    fn is_drone(&self) -> bool {
-        match self.node_type {
-            NodeType::Drone => true,
-            _ => false,
-        }
+    fn reliability(&self) -> f64 {
+        self.forward_count as f64 / (self.forward_count + self.dropped_count) as f64
     }
 }
 
-impl Nodes {
-    pub fn new() -> Nodes {
-        Nodes{nodes: Vec::new()}
-    }
-
-    // I apply positive feed to all nodes in the received route.
-    // I exclude nodes that are NOT drones, since they can't drop the packets.
-    pub fn positive_feed(&mut self, route: Vec<NodeId>) {
-        for i in route {
-            for j in self.nodes.iter_mut() {
-                if i == j.borrow().id && j.borrow().is_drone() {
-                    j.borrow_mut().positive_feed();
-                }
-            }
-        }
-    }
-    // I apply negative feed to the node that dropped the packet.
-    // I exclude nodes that are NOT drones, since they can't drop the packets.
-    pub fn negative_feed(&mut self, node: NodeId) {
-        for i in self.nodes.iter_mut() {
-            if node == i.borrow().id && i.borrow().is_drone() {
-                i.borrow_mut().negative_feed();
-            }
-        }
-    }
-
-    pub fn remove_faulty_node(&mut self, faulty_node: NodeId) {
-        self.nodes.retain(|node| node.borrow().id != faulty_node);
-        // I only keep the others.
-    }
-}
-/*
-// !!Might still need to use this, since now there are Arcs and RefCells
-impl Debug for Route {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Route")
-            .field("path", &self.get_path_debug())
-            .finish()
-    }
-}*/
-
-//i compare two routes based on their reliability
-// so a > b means route a is more reliable than b
-impl PartialEq<Self> for Route {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_reliability() == other.get_reliability()
-    }
+#[derive(Debug)]
+pub(crate) struct Network {
+    pub graph: StableUnGraph<Node, ()>,
+    node_map: HashMap<NodeId, (State, NodeIndex)>,
 }
 
-impl PartialOrd for Route{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.get_reliability().partial_cmp(&other.get_reliability())
-    }
-}
-
-
-
-impl Route {
-    pub fn new(path: Vec<(NodeId, NodeType)>) -> Route {
-        let path = path.iter().map(|x| {
-            Arc::new(RefCell::new(Node::new(x.0, x.1)))
-        }).collect();
-        Route { path }
-    }
-    // !!Needed if we need the impl Debug
-    /*pub fn get_path_debug(&self) -> String{
-        let mut res = String::new();
-        let _ = self.path.iter()
-            .map(|x| {
-                res.push_str(&x.borrow().id.to_string());
-                res.push_str(" -> ");
-            }).collect();
-        res
-    }*/
-    fn get_reliability(&self) -> f64 {
-        let mut reliability = 0.0;
-        for node in self.path.iter() {
-            reliability += node.borrow().get_reliability();
-        }
-        reliability / (self.path.len() as f64)
-        // By weighting the routes, we consider the drop rates.
-    }
-    pub fn to_source_routing_header(&self) -> SourceRoutingHeader {
-        SourceRoutingHeader {
-            hop_index: 1,
-            hops: self.path
-                .iter()
-                .map(|(node)| node.borrow().id)
-                .collect(),
+impl Network {
+    pub(crate) fn new() -> Self {
+        Self {
+            graph: StableUnGraph::default(),
+            node_map: HashMap::new(),
         }
     }
-    fn contains_node(&self, node_id: &NodeId) -> bool {
-        self.path
-            .iter()
-            .position(|(node)| node.borrow().id == *node_id) != None
-    }
 
-    fn check_for_100_pdr(&self) -> Option<NodeId> {
-        let mut res = None;
-        for node in self.path.iter() {
-            if node.borrow().arrived_packets == 1 && node.borrow().dropped_packets > 100 {
-                res = Some(node.borrow().id);
-            }
-        }
-        res
-    }
+    /// Aggiunge nodi e aggiorna gli archi esistenti
+    pub(crate) fn add_route(&mut self, src: NodeId, nodes: Vec<(NodeId, NodeType)>) {
+        let mut prev_index = None;
 
-    fn is_equal_to_path (&self, nodes: Vec<NodeId>) -> bool {
-        if self.path.len() != nodes.len() {
-            return false;
-        }
-
-        for i in 0..nodes.len() {
-            if let Some(a) = self.path.get(i) {
-                if let Some(b) = nodes.get(i) {
-                    if a.borrow().id != *b {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
+        for (id, node_type) in nodes {
+            let (node_index) = if let Some(&(_, existing_index)) = self.node_map.get(&id) {
+                // Nodo già presente, returniamo solo l'index
+                existing_index
             } else {
-                return false;
-            }
-        }
-        true
-    }
-}
-
-impl RouteList {
-    pub fn new() -> RouteList {
-        RouteList { routes: Vec::new() }
-    }
-    pub fn add_route(&mut self, route: Route) {
-        let vec = route.path.iter().map(|x| x.borrow().id).collect();
-        if !self.contains_route(vec) {
-            self.routes.push(route);
-        }
-    }
-
-    pub fn remove_faulty_node(&mut self, node_id: NodeId) {
-        self.routes = self
-            .routes
-            .clone()
-            .into_iter()
-            .filter(|x| !x.contains_node(&node_id))
-            .collect();
-        // If I made this correct, I only keep stuff that doesn't contain
-        // the node that gives error.
-    }
-
-    pub fn get_fastest_route(&mut self) -> Option<Route> {
-        let mut res = None;
-        let mut reliability: f64 = 0.0;
-        let mut to_remove = Vec::new();
-        for route in self.routes.iter() {
-            if res.is_none() || route.get_reliability() > reliability{
-                res = Some(route.clone());
-                reliability = route.get_reliability();
-            } else if route.get_reliability() < reliability {
-                // Since this is called often, I put a check for nodes with PDR too high
-                match route.check_for_100_pdr() {
-                    None => {},
-                    Some(delete_id) => {
-                        to_remove.push(delete_id);
+                // Nodo nuovo, lo inseriamo
+                let node = Node {
+                    id,
+                    node_type,
+                    forward_count: 1,
+                    dropped_count: 0,
+                };
+                let index = self.graph.add_node(node);
+                let state = match node_type{
+                    Drone => {2u8}
+                    _ => {
+                        if id == src {
+                            2u8
+                        } else {
+                            0u8
+                        }
                     }
+                };
+                self.node_map.insert(id, (state, index));
+                (index)
+            };
+
+            // Colleghiamo i nodi adiacenti
+            if let Some(prev) = prev_index {
+                if !self.graph.contains_edge(prev, node_index) {
+                    self.graph.add_edge(prev, node_index, ());
+                }
+                if !self.graph.contains_edge(node_index, prev) {
+                    self.graph.add_edge(node_index, prev, ());
+                }
+            }
+
+            prev_index = Some(node_index);
+        }
+    }
+
+
+    pub fn get_indexes_from_vec(&self, ids: &Vec<NodeId>) -> Option<Vec<NodeIndex>> {
+        ids.iter()
+            .map(|id| self.node_map.get(id).map(|&(_, idx)| idx))
+            .collect()
+    }
+
+    // Function to calculate the path's weight.
+    pub fn calculate_path_weight (&self, path: &Vec<NodeIndex>) -> f64 {
+         path.iter()
+        .map(|&node_index| self.graph[node_index].reliability())
+        .product()
+    }
+
+
+    ///find the best path to dst from start
+    pub(crate) fn best_path(&self, start: &NodeId, end: &NodeId) -> Option<(Vec<NodeId>, f64)> {
+        let start_index = self.node_map.get(start)?.1;
+        let end_index = self.node_map.get(end)?.1;
+
+
+
+        let mut stack = vec![(start_index, vec![start_index])];
+        let mut max_weight = f64::MIN;
+        let mut best_path_indexes: Option<Vec<NodeIndex>> = None;
+        let mut best_path_length = usize::MAX;
+
+
+        while let Some((current, path)) = stack.pop() {
+            if current == end_index {
+                let weight = self.calculate_path_weight(&path);
+                if weight > max_weight || (weight == max_weight && path.len() < best_path_length) {
+                    max_weight = weight;
+                    best_path_length = path.len();
+                    best_path_indexes = Some(path.clone());
+                }
+                continue;
+            }
+
+            for neighbor in self.graph.neighbors(current) {
+                // Check if this neighbor is already in the current path
+                if !path.contains(&neighbor) {
+                    let mut new_path = path.clone();
+                    new_path.push(neighbor);
+                    stack.push((neighbor, new_path));
                 }
             }
         }
-        for e in to_remove.iter() {
-            self.remove_faulty_node(*e);
-        }
-        res // Will result as None if there are no more routes cut of errors.
+
+
+        // Convert the best path from NodeIndex to NodeId, if it exists.
+        best_path_indexes.map(|indexes| (indexes.into_iter().map(|idx| self.graph[idx].id).collect(), max_weight))
     }
 
-    pub fn contains_route(&self, nodes: Vec<NodeId>) -> bool{
-        for route in self.routes.iter() {
-            if route.is_equal_to_path(nodes.clone()) {
-                return true;
+
+    /// Aggiunge un forward count a tutti i nodi nel percorso
+    pub(crate) fn positive_feedback(&mut self, route: Vec<NodeId>) {
+        for node_id in route {
+            if let Some(&(_, index)) = self.node_map.get(&node_id) {
+                if self.graph[index].node_type == Drone {
+                    self.graph[index].forward_count += 1;
+                }
             }
         }
-
-        false
     }
+
+    /// Aumenta il dropped count per un nodo specifico
+    pub(crate) fn negative_feedback(&mut self, dst: NodeId) {
+        if let Some(&(_, index)) = self.node_map.get(&dst) {
+            if self.graph[index].node_type == Drone {
+                self.graph[index].dropped_count += 1;
+            }
+        }
+    }
+    pub(crate) fn update_state(&mut self, dst: NodeId, new_state: u8) {
+        if let Some((state,_ )) = self.node_map.get_mut(&dst) {
+            *state = new_state;
+        }
+    }
+    pub fn remove_node(&mut self, src: NodeId){
+        if let Some((_, ind)) = self.node_map.remove(&src){
+            for neigh in self.graph.clone().neighbors(ind){
+                self.remove_faulty_connection(src, self.graph[neigh].id);
+            }
+
+            self.graph.remove_node(ind);
+        }
+    }
+
+    pub fn remove_faulty_connection(&mut self, start: NodeId, dst: NodeId) {
+        if let (Some(&(_, index_a)), Some(&(_, index_b))) =
+            (self.node_map.get(&start), self.node_map.get(&dst))
+        {
+            if let Some(edge) = self.graph.find_edge(index_a, index_b) {
+                self.graph.remove_edge(edge);
+            }
+        }
+    }
+
+    pub fn get_srh(&self, start: &NodeId, end: &NodeId) -> Option<SourceRoutingHeader> {
+        if let Some((vec, _)) = self.best_path(start, end){
+            Some(SourceRoutingHeader {
+                hop_index: 1,
+                hops: vec
+            })
+        }else {
+            None
+        }
+    }
+
+    pub fn get_state(&self, dst: &NodeId) -> Option<State>{
+       match self.node_map.get(dst){
+           None => {None}
+           Some(&s) => {
+              Some(s.0)
+           }
+       }
+    }
+    pub fn get_unresolved(&self) -> Vec<NodeId> {
+        self.node_map
+            .iter()
+            .filter_map(|(id, (state, _))| {
+                if *state == 0 {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
 }
+
+
