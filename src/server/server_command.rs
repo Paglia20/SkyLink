@@ -33,4 +33,8 @@ pub enum ServerEvent {
     FilesState(NodeId, Vec<(u64, String)>, Vec<(u64, String)>), // Server id, completed file and files with still missing medias.
     FileNotReadable(NodeId, String, String), // Server ID and file name and error; Used when a '.read' fails.
     MediaNotFound(NodeId, u64),
+    
+    ClientRegistered(NodeId, NodeId), // Server ID and client ID
+    
+    WrongCommandGiven(NodeId, ServerCommand), // Server id and wrong command it received.
 }

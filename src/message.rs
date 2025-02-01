@@ -78,22 +78,17 @@ impl Default for TypeExchange {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatRequest {
-    ClientList,
-    Register(NodeId),
-    SendMessage {
-        from: NodeId,
-        to: NodeId,
-        message: String,
-    },
+    ClientList, // From client to server.
+    Register(NodeId), // From client to server.
+    SendMessage { from: NodeId, to: NodeId, message: String}, // From client to server.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatResponse {
-    ClientList(Vec<NodeId>),
-    MessageFrom { from: NodeId, message: String },
-    MessageSent,
+    ClientList(Vec<NodeId>), // From server to client.
+    MessageFrom { from: NodeId, message: String }, // From server to client.
+    ClientNotFound(NodeId), // If you try to send a message to a client, but I can't communicate with it.
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextRequest {

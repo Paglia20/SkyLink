@@ -12,8 +12,6 @@ use crate::clients_gio::client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
 use crate::routing::RouteList;
 
-type TextFile = (String, HashMap<String, Vec<(u64, NodeId)>>);
-
 pub struct MediaServer {
     server_struct: ServerStruct,
     media_files: HashMap<u64, (String, Vec<u8>)>,
