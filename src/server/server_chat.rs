@@ -5,11 +5,10 @@ use crate::server::server_trait::Server;
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
-use crate::routing::RouteList;
 
 
 pub struct ChatServer {
@@ -74,11 +73,11 @@ impl NetworkEdge for ChatServer {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         match edge_type {
                             EdgeType::Client(ClientType::ChatClient) => {
-                                self.server_struct.paths.get_mut(&from).unwrap().0 = 1;
+                                self.update_node_state(from, 1);
                                 // I set it as a usable contact
                             },
                             _ => {
-                                self.server_struct.paths.get_mut(&from).unwrap().0 = 2;
+                                self.update_node_state(from, 2);
                                 // I set it as a not usable contact.
                             }
                         }
@@ -168,6 +167,9 @@ impl Server for ChatServer {
             registered_clients: HashSet::new(),
         }
     }
+    fn remove_faulty_connection(&mut self, node: NodeId) {
+        self.server_struct.network.remove_faulty_connection(self.get_src_id(), node);
+    }
 
     fn handle_command(&mut self, command: ServerCommand) {
         match command {
@@ -196,7 +198,7 @@ impl Server for ChatServer {
         self.server_struct.handle_nack(nack.clone(), packet)
     }
     fn positive_feed(&mut self, nodes: Vec<NodeId>) {
-        self.server_struct.nodes.positive_feed(nodes);
+        self.server_struct.network.positive_feedback(nodes);
     }
     fn save_flood_response(&mut self, flood_resp: FloodResponse) {
         self.server_struct.save_flood_response(flood_resp);
@@ -207,6 +209,9 @@ impl Server for ChatServer {
     fn send_to_all(&mut self, packet: Packet) {
         self.server_struct.send_to_all(packet);
     }
+    fn update_node_state(&mut self, source_id: NodeId, value: u8) {
+        self.server_struct.network.update_state(source_id, value);
+    }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()
     }
@@ -216,11 +221,17 @@ impl Server for ChatServer {
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)> {
         self.server_struct.get_fragments_hm()
     }
-    fn get_paths(&self) -> HashMap<NodeId, (u8,RouteList)> {
-        self.server_struct.paths.clone()
+    fn get_path_to(&self, destination: NodeId) -> Option<(Vec<NodeId>, f64)> {
+        self.server_struct.network.best_path(&self.get_src_id(), &destination)
     }
     fn get_packet_sender(&self, next_id: &NodeId) -> Option<&Sender<Packet>> {
         self.server_struct.packet_send.get(next_id)
+    }
+    fn get_srh(&self, destination: NodeId) -> Option<SourceRoutingHeader> {
+        self.server_struct.network.get_srh(&self.get_src_id(), &destination)
+    }
+    fn get_node_state(&self, destination: NodeId) -> Option<u8> {
+        self.server_struct.network.get_state(&destination)
     }
     fn get_server_type(&self) -> ServerType {
         ServerType::Content(ContentServerType::Text)

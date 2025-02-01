@@ -8,7 +8,7 @@ the state follow the following rule:
 (2) - an edge you cannot contact
 
 
-state will be accessed likely only by the egdes, while nodeIndex is for the access to the graph (that is done automatically).
+state will be accessed likely only by the edges, while nodeIndex is for the access to the graph (that is done automatically).
 hence, state checks will still be performed by the edges!
 */
 
@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use petgraph::stable_graph::StableUnGraph;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NodeType;
-use petgraph::visit::EdgeRef;
 use wg_2024::packet::NodeType::Drone;
 
 type State = u8;
@@ -50,16 +49,16 @@ impl Network {
         }
     }
 
-    /// Aggiunge nodi e aggiorna gli archi esistenti
+    /// Adds the nodes and updates existent ones.
     pub(crate) fn add_route(&mut self, src: NodeId, nodes: Vec<(NodeId, NodeType)>) {
         let mut prev_index = None;
 
         for (id, node_type) in nodes {
-            let (node_index) = if let Some(&(_, existing_index)) = self.node_map.get(&id) {
-                // Nodo già presente, returniamo solo l'index
+            let node_index = if let Some(&(_, existing_index)) = self.node_map.get(&id) {
+                // If node already present, I return just the index.
                 existing_index
             } else {
-                // Nodo nuovo, lo inseriamo
+                // New node, we add it.
                 let node = Node {
                     id,
                     node_type,
@@ -78,10 +77,10 @@ impl Network {
                     }
                 };
                 self.node_map.insert(id, (state, index));
-                (index)
+                index
             };
 
-            // Colleghiamo i nodi adiacenti
+            // Connect adjacent nodes.
             if let Some(prev) = prev_index {
                 if !self.graph.contains_edge(prev, node_index) {
                     self.graph.add_edge(prev, node_index, ());
@@ -131,15 +130,14 @@ impl Network {
                     best_path_length = path.len();
                     best_path_indexes = Some(path.clone());
                 }
-                continue;
-            }
-
-            for neighbor in self.graph.neighbors(current) {
-                // Check if this neighbor is already in the current path
-                if !path.contains(&neighbor) {
-                    let mut new_path = path.clone();
-                    new_path.push(neighbor);
-                    stack.push((neighbor, new_path));
+            } else {
+                for neighbor in self.graph.neighbors(current) {
+                    // Check if this neighbor is already in the current path
+                    if !path.contains(&neighbor) {
+                        let mut new_path = path.clone();
+                        new_path.push(neighbor);
+                        stack.push((neighbor, new_path));
+                    }
                 }
             }
         }
@@ -150,7 +148,7 @@ impl Network {
     }
 
 
-    /// Aggiunge un forward count a tutti i nodi nel percorso
+    /// Adds a forward count to all nodes in the route.
     pub(crate) fn positive_feedback(&mut self, route: Vec<NodeId>) {
         for node_id in route {
             if let Some(&(_, index)) = self.node_map.get(&node_id) {
@@ -161,7 +159,7 @@ impl Network {
         }
     }
 
-    /// Aumenta il dropped count per un nodo specifico
+    /// Increase dropped count of the indicated node.
     pub(crate) fn negative_feedback(&mut self, dst: NodeId) {
         if let Some(&(_, index)) = self.node_map.get(&dst) {
             if self.graph[index].node_type == Drone {

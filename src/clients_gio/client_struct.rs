@@ -17,17 +17,17 @@ use wg_2024::packet::NackType::ErrorInRouting;
 
 
 pub struct ClientStruct {
-    pub (crate) node_id: NodeId,
-    pub (crate) command_recv: Receiver<ClientCommand>,
-    pub (crate) event_send: Sender<ClientEvent>,
-    pub (crate) packet_recv: Receiver<Packet>,
-    pub (crate) packet_send: HashMap<NodeId, Sender<Packet>>,
+    pub node_id: NodeId,
+    pub command_recv: Receiver<ClientCommand>,
+    pub event_send: Sender<ClientEvent>,
+    pub packet_recv: Receiver<Packet>,
+    pub packet_send: HashMap<NodeId, Sender<Packet>>,
 
-    pub (crate) flood_ids: HashSet<(u64, NodeId)>, // Just like drones
-    pub (crate) used_session_id: HashSet<u64>,     // Do we need this?
-    pub (crate) network: Network,
-    pub (crate) fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
-    pub (crate) unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    pub flood_ids: HashSet<(u64, NodeId)>, // Just like drones
+    pub used_session_id: HashSet<u64>,     // Do we need this?
+    pub network: Network,
+    pub fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
+    pub unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
 impl NetworkEdge for ClientStruct {
@@ -72,7 +72,7 @@ impl NetworkEdge for ClientStruct {
                 if DEBUG_MODE {
                     println!("Tried to send fragment without path to {destination} with {}", self.node_id);
                 }
-                self.send_event(MissingRoute(self.get_src_id(), destination));
+                self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some(srh) => {

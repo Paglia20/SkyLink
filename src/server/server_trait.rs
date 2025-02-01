@@ -7,7 +7,6 @@ use wg_2024::network::*;
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::DEBUG_MODE;
 use crate::message::{ContentType, EdgeNackType, Message, TypeExchange};
-use crate::routing::RouteList;
 
 pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn new(
@@ -57,9 +56,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     }
     
     fn server_is_state_ok(&self, destination: NodeId) -> bool {
-        let out =  match self.get_paths().get(&destination){
-            Some(path) => {
-                path.0 == 1
+        let out =  match self.get_node_state(destination) {
+            Some(state) => {
+                state == 1
             }
             None =>{false}
         };
@@ -182,43 +181,30 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     }
     
     fn server_send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        match self.get_paths().get_mut(&destination) {
+        match self.get_srh(destination) {
             None => {
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
                 self.flood(); // Since I miss the destination, I start a flooding.
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
-            Some((_state, route_list)) => {
-                match route_list.get_fastest_route() {
-                    None => {
-                        // I then check that we have an available route to the destination.
-                        self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
-                        self.flood(); // Since I have a destination, but all routes to it were deleted, I start a flooding.
-                        self.add_unsent_fragment(fragment, session_id, destination);
-                    },
-                    Some(route) => {
-                        let srh = route.to_source_routing_header();
-                        let first_dst = srh.hops[1];
-                        let packet = Packet::new_fragment(srh, session_id, fragment.clone());
+            Some(srh) => {
+                let first_dst = srh.hops[1];
+                let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
-                        // If everything worked, I try to send.
-                        match self.get_packet_sender(&first_dst) {
-                            Some(sender) => {
-                                sender.send(packet.clone()).unwrap();
-                                self.send_event(ServerEvent::PacketSent(packet.clone()));
-                            }
-                            None => {
-                                // If I want to pass for a node that I don't have as a neighbour, I need to remove
-                                // channels who contain it.
-                                self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
-                                self.add_unsent_fragment(fragment, session_id, destination);
-                                for (_, (_state,route)) in self.get_paths().iter_mut() {
-                                    route.remove_faulty_node(destination);
-                                }
-                            }
-                        }
-                    },
+                // If everything worked, I try to send.
+                match self.get_packet_sender(&first_dst) {
+                    Some(sender) => {
+                        sender.send(packet.clone()).unwrap();
+                        self.send_event(ServerEvent::PacketSent(packet.clone()));
+                    }
+                    None => {
+                        // If I want to pass for a node that I don't have as a neighbour, I need to remove
+                        // channels who contain it.
+                        self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
+                        self.add_unsent_fragment(fragment, session_id, destination);
+                        self.remove_faulty_connection(first_dst);
+                    }
                 }
             },
         };
@@ -299,45 +285,37 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             fragment_index: 0,
             nack_type: nack,
         };
-        let shr = match self.get_paths().get_mut(&dst) {
+        match self.get_srh(dst) {
             None => {
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), dst));
-                return;
             }
-            Some((_state, route)) => {
-                if let Some(fastest_route) = route.get_fastest_route(){
-                    fastest_route.to_source_routing_header()
-                }else {
-                    self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
-                    return;
+            Some(srh) => {
+                let first_hop = srh.next_hop().unwrap_or(self.get_src_id());
+
+                let packet = Packet{
+                    routing_header: srh,
+                    session_id: self.get_session_id(),
+                    pack_type: PacketType::Nack(new_nack),
+                };
+
+                match self.get_packet_sender(&first_hop) {
+                    None => {
+                        self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
+                    }
+                    Some(sender) => {
+                        sender.send(packet).unwrap();
+                    }
                 }
             }
         };
-        let first_hop = shr.next_hop().unwrap_or(self.get_src_id());
-
-        let packet = Packet{
-            routing_header: shr,
-            session_id: self.get_session_id(),
-            pack_type: PacketType::Nack(new_nack),
-        };
-
-        match self.get_packet_sender(&first_hop) {
-            None => {
-                self.send_event(ServerEvent::MissingDestination(self.get_src_id(), dst));
-            }
-            Some(sender) => {
-                sender.send(packet).unwrap();
-            }
-        }
+        
     }
     
-    fn handle_edge_nack(&self, nack: EdgeNackType, source_id: NodeId, session_id: u64) {
+    fn handle_edge_nack(&mut self, nack: EdgeNackType, source_id: NodeId, session_id: u64) {
         match nack {
             EdgeNackType::UnexpectedMessage => {
                 // Means that it sent a msg to a dst with a wrong state
-                if let Some((state, _route)) = self.get_paths().get_mut(&source_id) {
-                    *state = 2;
-                }
+                self.update_node_state(source_id, 2);
                 // Since the destination was wrong, the message is discarded.
                 self.send_event(ServerEvent::DiscardedMessage(self.get_src_id(), session_id));
 
@@ -347,6 +325,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
         }
     }
+    fn remove_faulty_connection(&mut self, node: NodeId);
 
     fn handle_command(&mut self, command: ServerCommand);
     fn send_event(&self, event: ServerEvent);
@@ -356,10 +335,13 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn save_flood_response(&mut self, flood_resp: FloodResponse);
     fn can_flood(&mut self) -> bool;
     fn send_to_all(&mut self, packet: Packet);
+    fn update_node_state(&mut self, source_id: NodeId, value: u8);
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;
-    fn get_paths(&self) -> HashMap<NodeId, (u8,RouteList)>;
+    fn get_path_to(&self, destination: NodeId) -> Option<(Vec<NodeId>, f64)>;
     fn get_packet_sender(&self, next_id: &NodeId) -> Option<&Sender<Packet>>;
+    fn get_srh(&self, destination: NodeId) -> Option<SourceRoutingHeader>;
+    fn get_node_state(&self, destination: NodeId) -> Option<u8>;
     fn get_server_type(&self) -> ServerType;
 }
