@@ -250,10 +250,6 @@ impl NetworkEdge for ChatClient {
                         self.send_event(ReceivedChatText(from, self.comm.node_id, message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
-                    ChatResponse::MessageSent => {
-                        // not sure, is just an ack? I don't think we need this (also because if they
-                        // don't have any information I can't know which message are they referring too)
-                    }
                 }
             }
 
