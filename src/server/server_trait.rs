@@ -122,7 +122,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     
 
     fn server_handle_packet(&mut self, packet: Packet) {
-        if let PacketType::FloodRequest(flood_request) = packet.pack_type.clone(){
+        if let PacketType::FloodRequest(mut flood_request) = packet.pack_type.clone(){
+            flood_request
+                .path_trace
+                .push((self.get_src_id(), NodeType::Server));
+            // I first add myself to the path_trace.
             if self.handle_flood_request(flood_request.clone(), packet) {
                 self.edge_send_flood_response(flood_request);
             }

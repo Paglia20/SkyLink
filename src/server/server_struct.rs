@@ -52,10 +52,6 @@ impl ServerStruct {
     }
 
     pub fn handle_flood_request(&mut self, mut flood_request: FloodRequest, packet: Packet) -> bool{
-        flood_request
-            .path_trace
-            .push((self.node_id, NodeType::Server));
-        // I first add myself to the path_trace.
 
         // I try to insert the new flood in the already known ones.
         if self.flood_ids.insert((flood_request.flood_id,flood_request.initiator_id)) {
