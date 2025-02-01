@@ -1,4 +1,5 @@
 use crossbeam_channel::Sender;
+use wg_2024::controller::DroneEvent;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 
@@ -37,4 +38,5 @@ pub enum ServerEvent {
     ClientRegistered(NodeId, NodeId), // Server ID and client ID
     
     WrongCommandGiven(NodeId, ServerCommand), // Server id and wrong command it received.
+    ControllerShortcut(DroneEvent), // In case I have problems sending an ACK or NACK.
 }

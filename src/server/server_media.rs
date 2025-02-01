@@ -7,7 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::fs;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodResponse, Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
 
@@ -23,9 +23,9 @@ impl NetworkEdge for MediaServer {
     }
 
     fn handle_packet(&mut self, packet: Packet) {
-        self.server_handle_packet(packet, self.get_src_id());
+        self.server_handle_packet(packet);
     }
-
+    
     fn handle_message(&mut self, message: Message) {
         match message.content {
             ContentType::MediaRequest(media_request) => {
@@ -169,29 +169,37 @@ impl Server for MediaServer {
         let server_struct = ServerStruct::new(node_id, command_recv, event_send, packet_recv, packet_send);
         let mut starting_id:u64 = 0;
         let mut media_files = HashMap::new();
-        for e in files.iter() {
+        for e in files.into_iter() {
             // I read the file as a string
-            let file_str = fs::read_to_string(e).unwrap();
-
-            // I divide the string to obtain the name of the medias contained in it.
-            let medias_name = divide_text_file(file_str.clone());
-            for e in medias_name.into_iter() {
-                match fs::read(e.clone()){ // I try to read the file as bytes.
-                    Ok(file_data) => {
-                        // I created a unique id that distinguish that media, used by clients to easier computation.
-                        // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
-                        // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
-                        let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
-                                            starting_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
-                        starting_id += 1;
-                        media_files.insert(file_id, (e, file_data));
+            match fs::read_to_string(e.clone()) {
+                Ok(file_str) =>{
+                    // I divide the string to obtain the name of the medias contained in it.
+                    let medias_name = divide_text_file(file_str.clone());
+                    for s in medias_name.into_iter() {
+                        match fs::read(s.clone()){ // I try to read the file as bytes.
+                            Ok(file_data) => {
+                                // I created a unique id that distinguish that media, used by clients to easier computation.
+                                // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
+                                // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
+                                let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
+                                    starting_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
+                                starting_id += 1;
+                                media_files.insert(file_id, (s, file_data));
+                            }
+                            Err(err) => {
+                                // I notify the SC and discard the file.
+                                server_struct.send_event(ServerEvent::FileNotReadable(node_id, s, err.to_string()));
+                            }
+                        }
                     }
-                    Err(err) => {
-                        // I notify the SC and discard the file.
-                        server_struct.send_event(ServerEvent::FileNotReadable(node_id, e, err.to_string()));
-                    }
+                },
+                Err(err) => {
+                    // I notify the SC and discard the file.
+                    server_struct.send_event(ServerEvent::FileNotReadable(node_id, e, err.to_string()));
                 }
             }
+
+            
         }
         MediaServer {
             server_struct,
@@ -202,7 +210,6 @@ impl Server for MediaServer {
     fn remove_faulty_connection(&mut self, node: NodeId) {
         self.server_struct.network.remove_faulty_connection(self.get_src_id(), node);
     }
-
     fn handle_command(&mut self, command: ServerCommand) {
         match command {
             ServerCommand::RemoveSender(node_id) => {
@@ -233,11 +240,15 @@ impl Server for MediaServer {
             }
         }
     }
+
     fn send_event(&self, new_nack: ServerEvent) {
         self.server_struct.send_event(new_nack);
     }
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet) {
         self.server_struct.handle_fragment(fragment, packet);
+    }
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool {
+        self.server_struct.handle_flood_request(flood_request.clone(), packet)
     }
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)

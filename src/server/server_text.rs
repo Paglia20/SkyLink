@@ -7,7 +7,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
 use std::fs;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodResponse, Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
 use crate::clients_gio::client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
 
@@ -25,7 +25,7 @@ impl NetworkEdge for TextServer {
     }
 
     fn handle_packet(&mut self, packet: Packet) {
-        self.server_handle_packet(packet, self.get_src_id());
+        self.server_handle_packet(packet);
     }
 
     fn handle_message(&mut self, message: Message) {
@@ -252,8 +252,6 @@ impl Server for TextServer {
                     server_struct.send_event(ServerEvent::FileNotReadable(node_id, e, err.to_string()));
                 }
             }
-
-            
         }
         TextServer {
             server_struct,
@@ -264,7 +262,6 @@ impl Server for TextServer {
     fn remove_faulty_connection(&mut self, node: NodeId) {
         self.server_struct.network.remove_faulty_connection(self.get_src_id(), node);
     }
-
     fn handle_command(&mut self, command: ServerCommand) {
         match command {
             ServerCommand::RemoveSender(node_id) => {
@@ -299,11 +296,15 @@ impl Server for TextServer {
             }
         }
     }
+
     fn send_event(&self, new_nack: ServerEvent) {
         self.server_struct.send_event(new_nack);
     }
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet) {
         self.server_struct.handle_fragment(fragment, packet);
+    }
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool {
+        self.server_struct.handle_flood_request(flood_request.clone(), packet)
     }
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)
