@@ -1,4 +1,4 @@
-use crate::routing::{Nodes, Route, RouteList};
+use crate::routing::Network;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -14,9 +14,8 @@ pub struct ServerStruct {
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
     pub flood_ids: HashSet<(u64, NodeId)>, // Used to recognize flooding from other nodes.
 
-    pub paths: HashMap<NodeId, (u8, RouteList)>, // These NodeId are servers and clients, the u8 indicate if it's a media_server (1),
-                                                // if it's not (2), or if yet to be checked (0)
-    pub nodes: Nodes, // Map of all Nodes, to apply checks on the PDRs.
+    pub network: Network, 
+    
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
     pub unsent_fragments: (u8, UnsentFragments),
     // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
@@ -43,8 +42,7 @@ impl ServerStruct {
             packet_recv,
             packet_send,
             flood_ids: HashSet::new(),
-            paths: HashMap::new(),
-            nodes: Nodes::new(),
+            network: Network::new(),
             fragments: HashMap::new(),
             unsent_fragments: (0, HashMap::new()),
             next_flood_id: 0,
@@ -131,35 +129,26 @@ impl ServerStruct {
             NackType::UnexpectedRecipient(wrong_node) => {
                 // UnexpectedRecipient means that the hops vector in the message was faulty.
                 // I remove all the routes with that destination, since they're probably result of a faulty flooding.
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(wrong_node);
-                }
-                self.nodes.remove_faulty_node(wrong_node);
+                self.network.remove_node(wrong_node);
                 true
             },
             NackType::ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone.
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(wrong_node);
-                }
-                self.nodes.remove_faulty_node(wrong_node);
+                self.network.remove_node(wrong_node);
                 true
             },
             NackType::DestinationIsDrone => {
-                let wrong_node = packet.routing_header.hops.last().unwrap();
-                for (_, (_state,route)) in self.paths.iter_mut() {
-                    route.remove_faulty_node(*wrong_node);
-                }
-                self.nodes.remove_faulty_node(*wrong_node);
+                let wrong_node = *packet.routing_header.hops.last().unwrap();
+                
                 // Since the destination was a drone, the message was faulty,
                 // so I remove the destination and consider the message as lost.
-                self.paths.remove(wrong_node);
+                self.network.remove_node(wrong_node);
                 false
             },
             NackType::Dropped => {
                 // Who dropped will be source of the NACK
                 let dropper = packet.routing_header.source().unwrap();
-                self.nodes.negative_feed(dropper);
+                self.network.negative_feedback(dropper);
 
                 // I just send it again
                 true
@@ -168,28 +157,7 @@ impl ServerStruct {
     }
     
     pub fn save_flood_response(&mut self, flood_response: FloodResponse) {
-        let mut current_path = Vec::new();
-        for (node_id, node_type) in flood_response.path_trace {
-
-            current_path.push((node_id, node_type));
-
-            if (node_type == NodeType::Server || node_type == NodeType::Client) && node_id != self.node_id {
-                // If the key it's already present, it just won't be inserted;
-                self.paths.insert(node_id, (0,RouteList::new()));
-                
-                // Clone the current path for the server and insert it into the route list
-                match self.paths.get_mut(&node_id) {
-                    None => {
-                        unreachable!()
-                        // Already checked if present, shouldn't be possible to not have the entry.
-                    }
-                    Some((_state,route_list)) => {
-                        // There's a check inside add_route that doesn't add a route if it's already inside the list.
-                        route_list.add_route(Route::new(current_path.clone()));
-                    }
-                }
-            }
-        }
+        self.network.add_route(self.node_id, flood_response.path_trace.clone());
     }
     
     pub fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
