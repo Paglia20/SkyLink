@@ -21,6 +21,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     ) -> Self;
 
     fn run(&mut self) {
+        self.flood();
         loop {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
