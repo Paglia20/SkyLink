@@ -220,17 +220,15 @@ impl NetworkEdgeErrors for ClientStruct {
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
-        let out =  match self.network.get_state(&node_id) {
+        let out =  match self.network.get_state(&node_id){
             Some(s) => {
-                println!("State of {} is {:?}", node_id, s);
-                s == 1
+               s == 1
             }
             None =>{false}
         };
         if !out {
             if DEBUG_MODE{
-                println!("dst state was not ok");
-            }
+                println!("dst state was not ok");}
 
             //send nack?
         }
