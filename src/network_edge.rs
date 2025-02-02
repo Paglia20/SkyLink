@@ -45,7 +45,7 @@ pub trait NetworkEdge {
         for key in 0..keys_cap {
             if let Some(values) = to_content.get(&key) {
                 for u8_value in values {
-                    vec_cont.push(u8_value.clone());
+                    vec_cont.push(*u8_value);
                     // We add the fragment to the vec that will be converted to content.
                 }
             }

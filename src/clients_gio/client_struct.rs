@@ -368,7 +368,8 @@ impl ClientStruct {
         }
         // I then empty the HashMap to not have any duplicate.as
         self.unsent_fragments.1 = HashMap::new();
-        self.unsent_fragments.0 = 0; for (fragment, identifier) in to_process {
+        self.unsent_fragments.0 = 0;
+        for (fragment, identifier) in to_process {
             self.send_fragment(fragment.clone(), identifier.2, identifier.0);
         }
     }

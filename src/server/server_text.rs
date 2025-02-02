@@ -21,7 +21,7 @@ pub struct TextServer {
 
 impl NetworkEdge for TextServer {
     fn send_message(&mut self, message: Message, destination: NodeId) {
-        self.server_send_message(message, destination);
+        self.server_send_message(message, destination, self.get_src_id());
     }
 
     fn handle_packet(&mut self, packet: Packet) {
@@ -123,7 +123,7 @@ impl NetworkEdge for TextServer {
                 match exchange {
                     TypeExchange::TypeRequest { from } => {
                         let type_resp = TypeExchange::TypeResponse {
-                            edge_type: EdgeType::Server(ServerType::Content(ContentServerType::Text)),
+                            edge_type: EdgeType::Server(self.get_server_type()),
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
@@ -164,9 +164,7 @@ impl NetworkEdge for TextServer {
 
     }
 
-    fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        self.server_send_fragment(fragment, destination, session_id);
-    }
+    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
@@ -176,9 +174,7 @@ impl NetworkEdge for TextServer {
         self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
     }
 
-    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
-        self.server_send_ack(packet, fragment_index);
-    }
+    fn send_ack(&mut self, _: Packet, _: u64) {}
 
     fn flood(&mut self) {
         self.start_flood();
@@ -296,7 +292,6 @@ impl Server for TextServer {
             }
         }
     }
-
     fn send_event(&self, new_nack: ServerEvent) {
         self.server_struct.send_event(new_nack);
     }
@@ -309,6 +304,7 @@ impl Server for TextServer {
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)
     }
+
     fn positive_feed(&mut self, nodes: Vec<NodeId>) {
         self.server_struct.network.positive_feedback(nodes);
     }
@@ -324,6 +320,12 @@ impl Server for TextServer {
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
         self.server_struct.network.update_state(source_id, value);
     }
+    fn check_to_resend_fragments(&mut self) -> bool {
+        self.server_struct.check_to_resend_fragments()
+    }
+    fn reset_unsent_fragments(&mut self) {
+        self.server_struct.reset_unsent_fragments();
+    }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()
     }
@@ -333,9 +335,6 @@ impl Server for TextServer {
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)> {
         self.server_struct.get_fragments_hm()
     }
-    fn get_path_to(&self, destination: NodeId) -> Option<(Vec<NodeId>, f64)> {
-        self.server_struct.network.best_path(&self.get_src_id(), &destination)
-    }
     fn get_packet_sender(&self, next_id: &NodeId) -> Option<&Sender<Packet>> {
         self.server_struct.packet_send.get(next_id)
     }
@@ -344,6 +343,12 @@ impl Server for TextServer {
     }
     fn get_node_state(&self, destination: NodeId) -> Option<u8> {
         self.server_struct.network.get_state(&destination)
+    }
+    fn get_unresolved(&self) -> Vec<NodeId> {
+        self.server_struct.network.get_unresolved()
+    }
+    fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))> {
+        self.server_struct.get_fragment_to_process()
     }
     fn get_server_type(&self) -> ServerType {
         ServerType::Content(ContentServerType::Text)
