@@ -699,7 +699,6 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        value.notify = false;
                     }
                 }
             });
@@ -917,6 +916,7 @@ impl MyApp {
 
                                                     if ui.button("Show Chats").clicked(){
                                                         node.node_window_scenes = ShowContents;
+                                                        node.notify = false;
                                                         node.content = None;
                                                         node.input_text = "".to_string(); //reset input text
 
@@ -1027,6 +1027,9 @@ impl MyApp {
                                                                         // Handle Enter key press
                                                                         self.sim_contr.msg_another_client(node.id, dst, node.input_text.clone());
                                                                         node.input_text = "".to_string(); //reset input text
+                                                                    }
+                                                                    if ui.button("Close Chat").clicked() {
+                                                                        node.content = None;
                                                                     }
                                                                 }
                                                             }
