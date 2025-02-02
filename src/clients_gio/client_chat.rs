@@ -234,6 +234,8 @@ impl NetworkEdge for ChatClient {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         match edge_type{
                             EdgeType::Server(ServerType::Chat) => {
+                                println!("type res chat arrived in {} of {from}", self.comm.node_id);
+
                                 self.comm.network.update_state(from, 1);
                                 self.send_event(SendDestinations(self.comm.node_id, from));
                             },
