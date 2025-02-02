@@ -63,7 +63,7 @@ impl NetworkEdge for MediaServer {
                 match exchange {
                     TypeExchange::TypeRequest { from } => {
                         let type_resp = TypeExchange::TypeResponse {
-                            edge_type: EdgeType::Client(ClientType::ChatClient),
+                            edge_type: EdgeType::Server(ServerType::Content(ContentServerType::Media)),
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
