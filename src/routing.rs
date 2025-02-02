@@ -18,6 +18,7 @@ use petgraph::stable_graph::StableUnGraph;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NodeType;
 use wg_2024::packet::NodeType::Drone;
+use crate::DEBUG_MODE;
 
 type State = u8;
 
@@ -222,6 +223,27 @@ impl Network {
                 }
             })
             .collect()
+    }
+
+
+    pub (crate) fn get_optimal_dest (&mut self, start: &NodeId, v: &Vec<NodeId>) -> Option<NodeId> {
+        let mut out: Option<NodeId> = None;
+        let mut weight = f64::MAX;
+        for i in v {
+            if let Some((r, r_weight)) = self.best_path(start, i){
+                if weight > r_weight{
+                    if !r.is_empty(){
+                        out = Some(r[r.len() - 1]);
+                        weight = r_weight;
+                    }
+                }
+            }
+        }
+
+        if DEBUG_MODE{
+            println!("{:?} is your best destination for this", out);
+        }
+        out
     }
 
 }
