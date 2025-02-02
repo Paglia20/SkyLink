@@ -215,7 +215,7 @@ impl NetworkEdgeErrors for ClientStruct {
         self.send_message(Message::new(self.node_id, s_id, exc), id);
 
         if DEBUG_MODE {
-            println!("sent check from {}", self.node_id);
+            println!("sent check from {} to {id}", self.node_id);
         }
     }
 

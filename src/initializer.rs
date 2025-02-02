@@ -14,6 +14,9 @@ use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::web_browser::WebBrowser;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
+use crate::server::server_trait::*;
+
+use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::sim_daniel::NodeNature::*;
@@ -200,8 +203,15 @@ fn create_servers(servers: Vec<config::Server>,
             network_graph.entry(server.id).and_modify(|x|x.0 = ChatServer);
 
             handles.push(thread::spawn(move || {
-                //create chat server
-
+                let mut chat_server = ChatServer::new(
+                    server.id,
+                    contr_recv,
+                    node_event_send,
+                    server_recv,
+                    server_send,
+                    Vec::new(),
+                );
+                chat_server.run();
 
             }));
             chat_servers = true;
