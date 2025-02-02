@@ -1,3 +1,4 @@
+use crate::AUTOMATIC_FLOOD;
 use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_type::ServerType;
@@ -21,7 +22,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     ) -> Self;
 
     fn run(&mut self) {
-        self.flood();
+        if AUTOMATIC_FLOOD {
+            self.flood();
+        }
         loop {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
