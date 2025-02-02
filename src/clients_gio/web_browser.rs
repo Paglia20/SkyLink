@@ -490,7 +490,7 @@ impl WebBrowser{
     }
 
     fn retry_get_text_file(&mut self, text_file_id: u64) {
-        let wait_time: u32 = (u16::MAX as u32) * 2_32;
+        let wait_time: u32 = (u16::MAX as u32) * 2u32;
         for _ in 0..wait_time {
 
         }

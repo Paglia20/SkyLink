@@ -31,16 +31,15 @@ impl NetworkEdge for ChatServer {
             ContentType::ChatRequest(chat_request) => {
                 match chat_request {
                     ChatRequest::ClientList => {
-                        let resp = ChatResponse::ClientList(self
-                            .registered_clients
-                            .iter().copied()
-                            .collect::<Vec<NodeId>>());
-                        let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
-                        self.send_message(msg, message.source_id);
+                        self.send_chat_list(message.source_id);
                     },
                     ChatRequest::Register(node_id) => {
                         self.registered_clients.insert(node_id);
                         self.send_event(ServerEvent::ClientRegistered(self.get_src_id(), node_id));
+                        // I update the ChatList in all registered clients.
+                        for id in self.registered_clients.clone().iter() {
+                            self.send_chat_list(*id);
+                        }
                     },
                     ChatRequest::SendMessage {from, to, message: msg} => {
                         if self.registered_clients.contains(&to) {
@@ -242,5 +241,19 @@ impl Server for ChatServer {
     }
     fn get_server_type(&self) -> ServerType {
         ServerType::Chat
+    }
+}
+
+impl ChatServer {
+    fn send_chat_list(&mut self, destination: NodeId) {
+        // I send the list of every client except the one that asked for it.
+        let resp = ChatResponse::ClientList(self
+            .registered_clients
+            .iter()
+            .copied()
+            .filter(|id| *id != destination)
+            .collect::<Vec<NodeId>>());
+        let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
+        self.send_message(msg, destination);
     }
 }
