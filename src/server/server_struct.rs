@@ -3,8 +3,10 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet};
+use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
 use crate::DEBUG_MODE;
+
+type UnsentFragments = HashMap<(u64, NodeId, NodeId), Vec<Fragment>>;
 
 pub struct ServerStruct {
     pub node_id: NodeId,
@@ -24,8 +26,6 @@ pub struct ServerStruct {
     next_session_id: u64,
     pub flood_counter: u8, // Counter used to avoid flooding too often.
 }
-
-type UnsentFragments = HashMap<(u64, NodeId, NodeId), Vec<Fragment>>;
 
 impl ServerStruct {
     pub fn new(
@@ -51,7 +51,7 @@ impl ServerStruct {
         }
     }
 
-    pub fn handle_flood_request(&mut self, mut flood_request: FloodRequest, packet: Packet) -> bool{
+    pub fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool{
 
         // I try to insert the new flood in the already known ones.
         if self.flood_ids.insert((flood_request.flood_id,flood_request.initiator_id)) {
@@ -178,7 +178,9 @@ impl ServerStruct {
         }
         false
     }
-    
+
+
+    /// TO CHECK
     pub fn send_to_all(&mut self, packet: Packet) {
         self.packet_send.values().for_each(|sender| {
             sender.send(packet.clone()).unwrap()
@@ -199,5 +201,31 @@ impl ServerStruct {
     
     pub fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)> {
         &mut self.fragments
+    }
+
+    pub fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))> {
+        let mut fragment_to_process = Vec::new();
+        // I create a vector from the fragments I still need to process due to errors.
+        let _ =self.unsent_fragments.1
+            .iter()
+            .map(|(identifier, content)| content.iter()
+                .map(|fragment| fragment_to_process.push((fragment.clone(), *identifier)))
+                .collect::<Vec<_>>()
+            )
+            .collect::<Vec<_>>();
+        fragment_to_process
+    }
+    
+    pub fn reset_unsent_fragments(&mut self) {
+        self.unsent_fragments.1 = HashMap::new();
+        self.unsent_fragments.0 = 0;
+    }
+    pub fn check_to_resend_fragments(&mut self) -> bool {
+        if self.unsent_fragments.0 >= 150 {
+            true
+        } else {
+            self.unsent_fragments.0 += 1;
+            false
+        }
     }
 }
