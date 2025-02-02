@@ -78,103 +78,102 @@ impl NetworkEdge for ChatClient {
             } else {
                 self.edge_send_flood_response(flood_request);
             }
+        } else if packet.routing_header.destination().unwrap() != self.comm.node_id {
+            // If it's not his packet, but he has to act as a drone (that never misses)
+
+            self.comm.send_as_drone(packet);
         } else {
-            if packet.routing_header.destination().unwrap() != self.comm.node_id {
-                // If it's not his packet, but he has to act as a drone (that never misses)
-
-                self.comm.send_as_drone(packet);
-            } else {
-                // We can take for granted he is the destination
-                match packet.pack_type.clone() {
-                    MsgFragment(fragment) => {
-                        let tot_num_frag = fragment.total_n_fragments as usize;
-                        let session_id = packet.session_id;
-                        let initiator_id = packet.routing_header.hops[0];
-                        let destination = self.comm.node_id; //he is the destination
-                        let frag_index = fragment.fragment_index;
+            // We can take for granted he is the destination
+            match packet.pack_type.clone() {
+                MsgFragment(fragment) => {
+                    let tot_num_frag = fragment.total_n_fragments as usize;
+                    let session_id = packet.session_id;
+                    let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.comm.node_id; //he is the destination
+                    let frag_index = fragment.fragment_index;
 
 
-                        //add new frag
-                        let entry = self.comm.fragments.entry((session_id, initiator_id, destination)).or_insert((None, vec![]));
-                        entry.1.push(fragment);
+                    //add new frag
+                    let entry = self.comm.fragments.entry((session_id, initiator_id, destination)).or_insert((None, vec![]));
+                    entry.1.push(fragment);
 
 
-                        //for each arrived frag, send back an ack
-                        self.send_ack(packet.clone(), frag_index);
+                    //for each arrived frag, send back an ack
+                    self.send_ack(packet.clone(), frag_index);
 
-                        //notify sc i got a packet
-                        self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                    //notify sc i got a packet
+                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
-                        // If all the frag have arrived recreate message
-                        let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap().1;
-                        if frags_clone.len() == tot_num_frag {
-                            let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                                Ok(mess) => { mess }
-                                Err(e) => {
-                                    if DEBUG_MODE {
-                                        println!("{e} with {}", self.comm.node_id);
-                                    }
-                                    self.send_event(ErrorReassembling(self.get_src_id()));
-                                    return;
+                    // If all the frag have arrived recreate message
+                    let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap().1;
+                    if frags_clone.len() == tot_num_frag {
+                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                            Ok(mess) => { mess }
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{e} with {}", self.comm.node_id);
                                 }
-                            };
-                            //handle message
-                            self.handle_message(message);
+                                self.send_event(ErrorReassembling(self.get_src_id()));
+                                return;
+                            }
+                        };
+                        //handle message
+                        self.handle_message(message);
 
-                            // empty the hashmap
-                            self.comm.fragments.remove(&(packet.session_id, initiator_id, destination));
-                        }
+                        // empty the hashmap
+                        self.comm.fragments.remove(&(packet.session_id, initiator_id, destination));
                     }
-                    Ack(ack) => {
-                        self.send_event(ClientEvent::AckReceived(packet.clone()));
-                        //the ack will have the source that was the destination of the initial packet
-                        //if it's registered then I also want to notify SC, so I send it
-                        let mut registered = None;
-                        //I can write it better
-                        match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
-                            None => {}
-                            Some((cont, vec)) => {
-                                vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+                }
+                Ack(ack) => {
+                    self.send_event(ClientEvent::AckReceived(packet.clone()));
+                    //the ack will have the source that was the destination of the initial packet
+                    //if it's registered then I also want to notify SC, so I send it
+                    let mut registered = None;
+                    //I can write it better
+                    match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
+                        None => {}
+                        Some((cont, vec)) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
-                                //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
-                                if vec.is_empty() {
-                                    if let Some(ChatRequest(Register(node))) = cont{
-                                        self.registered_to.insert(node.clone());
-                                        registered = Some(node.clone());
-                                    }
-                                    self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
+                            //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
+                            if vec.is_empty() {
+                                if let Some(ChatRequest(Register(_node))) = cont{
+                                    let server = packet.routing_header.source().unwrap();
+                                    self.registered_to.insert(server);
+                                    registered = Some(server);
                                 }
+                                self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
                             }
                         }
+                    }
 
-                        if let Some(node) = registered {
-                            self.send_event(RegisterSuccessfully(self.get_src_id(), node));
+                    if let Some(node) = registered {
+                        self.send_event(RegisterSuccessfully(self.get_src_id(), node));
+                    }
+
+                    // I apply the positive feed on all nodes in the path
+                    let nodes = packet.routing_header.hops;
+                    self.comm.network.positive_feedback(nodes);
+                }
+
+                PacketType::Nack(nack) => {
+                    self.send_event(ClientEvent::NackReceived(packet.clone()));
+                    self.comm.handle_nack(nack, packet);
+                }
+                FloodRequest(_) => {
+                    unreachable!()
+                }
+                FloodResponse(flood_resp) => {
+                    // As of rn it "saves" all possible servers and client... we want something else I think...
+                    self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
+
+
+                    if DEBUG_MODE {
+                        if self.comm.node_id == 0 {
+                            println!("0 received - {:?}", flood_resp.path_trace);
                         }
-
-                        // I apply the positive feed on all nodes in the path
-                        let nodes = packet.routing_header.hops;
-                        self.comm.network.positive_feedback(nodes);
-                    }
-
-                    PacketType::Nack(nack) => {
-                        self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        self.comm.handle_nack(nack, packet);
-                    }
-                    FloodRequest(_) => {
-                        unreachable!()
-                    }
-                    FloodResponse(flood_resp) => {
-                        // As of rn it "saves" all possible servers and client... we want something else I think...
-                        self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
-
-
-                        if DEBUG_MODE {
-                            if self.comm.node_id == 0 {
-                                println!("0 received - {:?}", flood_resp.path_trace);
-                            }
-                            else if self.comm.node_id == 9 {
-                                println!("9 received - {:?}", flood_resp.path_trace);
-                            }
+                        else if self.comm.node_id == 9 {
+                            println!("9 received - {:?}", flood_resp.path_trace);
                         }
                     }
                 }
@@ -237,6 +236,8 @@ impl NetworkEdge for ChatClient {
                                 println!("type res chat arrived in {} of {from}", self.comm.node_id);
 
                                 self.comm.network.update_state(from, 1);
+                                
+                                println!("state of {} is {} (Should be 1)", from, self.comm.network.get_state(&from).unwrap());
                                 self.send_event(SendDestinations(self.comm.node_id, from));
                             },
 
@@ -449,9 +450,17 @@ impl ChatClient {
         if let Some(servers) = self.contact_list.get(&id){
 
             //to ensure is also registered to server
-            let available_servers: Vec<NodeId> = servers.clone().into_iter().filter(|x| self.registered_to.contains(x)).collect();
-
-            if let Some(server_id) = self.comm.get_optimal_dest (&available_servers){
+            let available_servers: Vec<NodeId> = servers
+                .clone()
+                .into_iter()
+                .filter(|x| self.registered_to.contains(x))
+                .collect();
+            
+            // To check for available servers (works at the moment).
+            // println!("available servers: {available_servers:?}");
+            
+            /// L'errore è in get_optimal_dest()
+            if let Some(server_id) = self.comm.get_optimal_dest(&available_servers){
                 //decide witch server to contact, for the moment just the first one is okay
 
                 let session = self.get_session_id();
@@ -462,8 +471,11 @@ impl ChatClient {
                 });
 
                 //keep track of the outgoing message in our personal chat
+                /// Leo: FORSE VA CAMBIATO ENTRY(ID) (Not sure tho)!!!!!!
                 self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
 
+                /// Qui stampa il proprio id invece che quello del server / ciò che dovrebbe
+                println!("server_id is {}", server_id);
                 let msg = Message::new(src, session, content);
                 self.comm.send_message(msg, server_id);
             }
