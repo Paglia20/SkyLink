@@ -1,5 +1,4 @@
 use crate::clients_gio::client_command::ClientEvent;
-use crate::event_wrapper::Event;
 use crate::sim_control::{Cause, LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::Cause::Error;
 use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, Media, MediaToResolve, RegisterOrList, TextList};
@@ -329,6 +328,15 @@ impl MyApp {
 
     pub fn manage_server_event(&mut self, server_event:ServerEvent){
         self.sim_contr.add_server_event_to_log(server_event.clone());
+
+        match server_event{
+            ServerEvent::ClientRegistered(src, client) => {
+                self.sim_contr.storage.add_to_registration(src, client);
+            }
+            _ =>{
+
+            }
+        }
     }
 
 
@@ -699,7 +707,6 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        value.notify = false;
                     }
                 }
             });
@@ -917,6 +924,7 @@ impl MyApp {
 
                                                     if ui.button("Show Chats").clicked(){
                                                         node.node_window_scenes = ShowContents;
+                                                        node.notify = false;
                                                         node.content = None;
                                                         node.input_text = "".to_string(); //reset input text
 
@@ -1028,6 +1036,9 @@ impl MyApp {
                                                                         self.sim_contr.msg_another_client(node.id, dst, node.input_text.clone());
                                                                         node.input_text = "".to_string(); //reset input text
                                                                     }
+                                                                    if ui.button("Close Chat").clicked() {
+                                                                        node.content = None;
+                                                                    }
                                                                 }
                                                             }
 
@@ -1043,7 +1054,7 @@ impl MyApp {
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
-                                                                ui.label( RichText::new(format!("My Servers are: "))
+                                                                ui.label( RichText::new("My Servers are: ".to_string())
                                                                               .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
                                                                               .color(Color32::GRAY),);
                                                                 ui.separator();
@@ -1448,7 +1459,7 @@ impl MyApp {
                                                     }
 
                                                     if ui.button("See Content").clicked(){
-                                                        node.node_window_scenes = ShowDestinations;
+                                                        node.node_window_scenes = ShowContents;
                                                     }
 
 
@@ -1503,9 +1514,7 @@ impl MyApp {
                                                             ui.horizontal(|ui| {
                                                                 ui.label("Remove Channel to:");
                                                                 ui.add(egui::DragValue::new(&mut self.sender_id));
-
-                                                            }
-                                                            );
+                                                            });
 
                                                             if ui.button("Confirm").clicked() {
                                                                 self.sim_contr.remove_senders(node.id, self.sender_id);
@@ -1517,10 +1526,30 @@ impl MyApp {
                                                             }
                                                         }
                                                         ShowContents => {
-                                                            todo!()
-                                                        }
-                                                        ShowDestinations => {
-                                                            todo!()
+                                                            if NodeNature::ChatServer == node.node_type{
+                                                               if let Some(register_clients) = self.sim_contr.storage.registrations.get(&node.id){
+                                                                   ui.label(RichText::new("List of Registered Clients:".to_string())
+                                                                                 .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                                 .color(Color32::WHITE));
+                                                                   ui.separator();
+
+                                                                   for i in register_clients {
+                                                                       let s = format!("Client {}", i);
+                                                                       ui.label(s);
+                                                                   }
+                                                               } else {
+                                                                   ui.label(RichText::new("No Registered Clients:".to_string())
+                                                                       .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                       .color(Color32::WHITE));
+                                                               }
+                                                            } else if NodeNature::TextServer == node.node_type {
+                                                                todo!()
+                                                            }
+                                                            else {
+                                                                todo!()
+                                                            }
+
+
                                                         }
                                                         _ => {}
                                                     }
