@@ -34,8 +34,11 @@ impl NetworkEdge for ChatServer {
                         self.send_chat_list(message.source_id);
                     },
                     ChatRequest::Register(node_id) => {
-                        self.registered_clients.insert(node_id);
-                        self.send_event(ServerEvent::ClientRegistered(self.get_src_id(), node_id));
+                        if self.registered_clients.insert(node_id) {
+                            self.send_event(ServerEvent::ClientRegistered(self.get_src_id(), node_id));
+                        } else {
+                            self.send_event(ServerEvent::ClientAlreadyRegistered(self.get_src_id(), node_id));
+                        }
                         // I update the ChatList in all registered clients.
                         for id in self.registered_clients.clone().iter() {
                             self.send_chat_list(*id);
