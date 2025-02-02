@@ -139,6 +139,7 @@ impl ServerStruct {
                 // Since the destination was a drone, the message was faulty,
                 // so I remove the destination and consider the message as lost.
                 self.network.remove_node(wrong_node);
+                self.send_event(ServerEvent::DroneInsideDestination(self.node_id, wrong_node));
                 false
             },
             NackType::Dropped => {

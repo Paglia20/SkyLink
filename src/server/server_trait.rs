@@ -95,8 +95,8 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
         } else {
             // The message is dropped.
-            let new_nack = ServerEvent::WrongDestinationType(self.get_src_id(), destination);
-            self.send_event(new_nack);
+            let event = ServerEvent::WrongDestinationType(self.get_src_id(), destination);
+            self.send_event(event);
         }
     }
     

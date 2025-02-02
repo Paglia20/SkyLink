@@ -25,7 +25,7 @@ pub enum ServerEvent {
     LostMessage(u64, NodeId, String), // session_id, NodeId of initiator and error String.
     LostFragment(u64, NodeId, u64), // session_id, NodeId and fragment_index.
     DiscardedMessage(NodeId, u64), // Server NodeId and session_id.
-    DroneInsideDestination(NodeId, NodeId), // Received when a destination is removed because it's a drone; First NodeID is the server one.
+    DroneInsideDestination(NodeId, NodeId), // Received when a destination is removed because it's a drone; Server id and drone id.
     WrongDestinationType(NodeId, NodeId), // First NodeId thinks that second NodeId is of wrong type.
     WrongDestination(NodeId, Packet), // Server id and packet sent to wrong dst. Used for ACKs or NACKs that might create an error loop if resolved normally.
     
@@ -36,6 +36,7 @@ pub enum ServerEvent {
     MediaNotFound(NodeId, u64),
     
     ClientRegistered(NodeId, NodeId), // Server ID and client ID
+    ClientAlreadyRegistered(NodeId, NodeId), // Server ID and client ID
     
     WrongCommandGiven(NodeId, ServerCommand), // Server id and wrong command it received.
     ControllerShortcut(DroneEvent), // In case I have problems sending an ACK or NACK.
