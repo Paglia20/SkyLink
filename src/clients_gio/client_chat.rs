@@ -459,8 +459,7 @@ impl ChatClient {
             // To check for available servers (works at the moment).
             // println!("available servers: {available_servers:?}");
             
-            /// L'errore è in get_optimal_dest()
-            if let Some(server_id) = self.comm.get_optimal_dest(&available_servers){
+            if let Some(server_id) = self.comm.network.get_optimal_dest(&self.get_src_id(), &available_servers){
                 //decide witch server to contact, for the moment just the first one is okay
 
                 let session = self.get_session_id();

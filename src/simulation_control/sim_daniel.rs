@@ -17,7 +17,9 @@ use wg_2024::packet::{NodeType};
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use egui_plot::{Bar, BarChart, Plot};
+use wg_2024::controller::DroneEvent;
 use crate::DEBUG_MODE;
+use crate::server::server_command::ServerEvent;
 
 #[derive(Clone)]
 pub struct MyNodes {
@@ -28,7 +30,8 @@ pub struct MyNodes {
     node_window_scenes: NodeWindowScene,
     content: Option<ContentIdentifier>,
     input_text: String,
-    texture: Option<TextureHandle>
+    texture: Option<TextureHandle>,
+    notify: bool,
 }
 
 
@@ -138,6 +141,7 @@ impl MyApp {
                 content: None,
                 input_text: "".to_string(),
                 texture: None,
+                notify: false,
             });
             checked.push(false);
             selected_nodes.push(false);
@@ -162,14 +166,14 @@ impl MyApp {
         let id_to_data: HashMap<_, _> = self
             .nodes
             .iter()
-            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone(), x.input_text.clone(), x.texture.clone()))})
+            .map(|x| {(x.id, (x.selected, x.node_window_scenes.clone(), x.content.clone(), x.input_text.clone(), x.texture.clone(), x.notify))})
             .collect();
 
         // Clear and rebuild nodes
         self.nodes.clear();
         let network_graph = self.sim_contr.network_graph.clone();
         for (node_id, (node_type, connections)) in network_graph {
-            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None, "".to_string(), None));
+            let data = id_to_data.get(&node_id).cloned().unwrap_or((false,Start, None, "".to_string(), None, false));
 
             self.nodes.push(MyNodes {
                 id: node_id,
@@ -180,6 +184,7 @@ impl MyApp {
                 content: data.2,
                 input_text: data.3,
                 texture: data.4,
+                notify: data.5,
             });
         }
     }
@@ -209,113 +214,124 @@ impl MyApp {
     pub fn find_node_type(&self, id: &NodeId) -> Option<NodeType> {
         self.sim_contr.network_graph.get(id).map(|(node_type, _)| node_type.simple_type())
     }
-    pub fn manage_event(&mut self, event: Event) {
-        match event{
-            Event::Drone(drone_event) => {
-                self.sim_contr.add_drone_event_to_log(drone_event.clone());
-                match drone_event {
-                    PacketDropped(packet) => {
-                        let dropper = packet.routing_header.current_hop().unwrap();
-                        //println!("packet dropped by {dropper}"); debug printing
-                        let e = self.sim_contr.storage.dropped_packets.entry(dropper).or_insert(vec![]);
-                        e.push(packet);
-                    }
-                    ControllerShortcut(packet) => {
-                        match packet.clone().pack_type {
-                            MsgFragment(_) => {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Error,
-                                    packet.routing_header.hops[packet.routing_header.hop_index],
-                                    "Shortcut used for unusual packet type: fragment".to_string()))
-                            }
-                            FloodRequest(_) => {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Error,
-                                    packet.routing_header.hops[packet.routing_header.hop_index],
-                                    "Shortcut used for unusual packet type: flood request".to_string()))
-                            }
-                            _ => {
-                                let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
 
-                                let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
-                                    None => {
-                                        self.sim_contr.log.push_back(LogEntry::new(
-                                            Error,
-                                            next_id,
-                                            format!("error in sending packet to {} through shortcut (packet not present)", next_id),
-                                        ));
-                                        return;
-                                    },
-                                    Some(sender) => {
-                                        sender
-                                    }
-                                };
-
-                                let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
-                                if n_type.simple_type() == Drone {
-                                    self.sim_contr.log.push_back(LogEntry::new(
-                                        Error,
-                                        next_id,
-                                        format!("error in sending packet to {} through shortcut (final destination is drone)", next_id),
-                                    ));
-                                    return;
-                                }
-
-                                match sender.try_send(packet){
-                                    Ok(_) => {
-                                        self.sim_contr.log.push_back(LogEntry::new(
-                                            Cause::Sent,
-                                            next_id,
-                                            format!("shortcut redirected successfully to {} through shortcut ", next_id),
-                                        ));
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Event::Server(server_event) => {
-                self.sim_contr.add_server_event_to_log(server_event.clone());
-            }
-            Event::Client(client_event) => {
-                self.sim_contr.add_client_event_to_log(client_event.clone());
-
-                match client_event {
-                    ClientEvent::SendContactsToSC(src, dst) => {
-                        self.sim_contr.storage.add_contacts(src, dst);
-                    }
-                    ClientEvent::SendDestinations(src, dst) => {
-                        self.sim_contr.storage.add_destination(src, dst);
-                    }
-                    ClientEvent::ReceivedChatText(src, dst, str) => {
-                        self.sim_contr.storage.add_chat_text(src, dst, str);
-                    }
-                    ClientEvent::SendTextList(src, text_id, name) => {
-                        self.sim_contr.storage.add_text_list(src, text_id, name);
-                    }
-                    ClientEvent::SendCatalogue(src, media_id, media_name) => {
-                        self.sim_contr.storage.add_to_catalogue(src, media_id, media_name);
-                    }
-                    ClientEvent::SendMedia(src, media_id, str, media) => {
-                        self.sim_contr.storage.add_to_medias(src, media_id, str, media);
-                    }
-                    ClientEvent::RegisterSuccessfully(src, dst) => {
-                        self.sim_contr.storage.add_to_registration(src, dst);
-                    }
-                    ClientEvent::MissingTextList(src, list) => {
-                        self.sim_contr.storage.missing_txt_list(src, list);
-                    }
-                    ClientEvent::MissingDestForMedia(src, media) => {
-                        self.sim_contr.storage.missing_media(src, media);
-                    }
-                    _ => {/* degli altri niente */}
-                }
+    pub fn turn_on_notification(&mut self, id: NodeId){
+        for x in self.nodes.iter_mut() {
+            if x.id == id{
+                x.notify = true;
             }
         }
     }
+
+    pub fn manage_drone_event(&mut self, drone_event:DroneEvent){
+        self.sim_contr.add_drone_event_to_log(drone_event.clone());
+        match drone_event {
+            PacketDropped(packet) => {
+                let dropper = packet.routing_header.current_hop().unwrap();
+                //println!("packet dropped by {dropper}"); debug printing
+                let e = self.sim_contr.storage.dropped_packets.entry(dropper).or_insert(vec![]);
+                e.push(packet);
+            }
+            ControllerShortcut(packet) => {
+                match packet.clone().pack_type {
+                    MsgFragment(_) => {
+                        self.sim_contr.log.push_back(LogEntry::new(
+                            Error,
+                            packet.routing_header.hops[packet.routing_header.hop_index],
+                            "Shortcut used for unusual packet type: fragment".to_string()))
+                    }
+                    FloodRequest(_) => {
+                        self.sim_contr.log.push_back(LogEntry::new(
+                            Error,
+                            packet.routing_header.hops[packet.routing_header.hop_index],
+                            "Shortcut used for unusual packet type: flood request".to_string()))
+                    }
+                    _ => {
+                        let next_id = packet.routing_header.hops[packet.routing_header.hops.len() - 1];
+
+                        let sender = match self.sim_contr.all_sender_packets.get(&next_id) {
+                            None => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Error,
+                                    next_id,
+                                    format!("error in sending packet to {} through shortcut (packet not present)", next_id),
+                                ));
+                                return;
+                            },
+                            Some(sender) => {
+                                sender
+                            }
+                        };
+
+                        let (n_type , _) = self.sim_contr.network_graph.get(&next_id).unwrap();
+                        if n_type.simple_type() == Drone {
+                            self.sim_contr.log.push_back(LogEntry::new(
+                                Error,
+                                next_id,
+                                format!("error in sending packet to {} through shortcut (final destination is drone)", next_id),
+                            ));
+                            return;
+                        }
+
+                        match sender.try_send(packet){
+                            Ok(_) => {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Cause::Sent,
+                                    next_id,
+                                    format!("shortcut redirected successfully to {} through shortcut ", next_id),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn manage_client_event(&mut self, client_event:ClientEvent){
+        self.sim_contr.add_client_event_to_log(client_event.clone());
+
+        match client_event {
+            ClientEvent::SendContactsToSC(src, dst) => {
+                self.sim_contr.storage.add_contacts(src, dst);
+            }
+            ClientEvent::SendDestinations(src, dst) => {
+                self.sim_contr.storage.add_destination(src, dst);
+            }
+            ClientEvent::ReceivedChatText(src, dst, str) => {
+                self.turn_on_notification(dst);
+                self.sim_contr.storage.add_chat_text(src, dst, str);
+            }
+            ClientEvent::SendTextList(src, text_id, name) => {
+                self.sim_contr.storage.add_text_list(src, text_id, name);
+            }
+            ClientEvent::SendCatalogue(src, media_id, media_name) => {
+                self.sim_contr.storage.add_to_catalogue(src, media_id, media_name);
+            }
+            ClientEvent::SendMedia(src, media_id, str, media) => {
+                // self.turn_on_notification(src);
+                self.sim_contr.storage.add_to_medias(src, media_id, str, media);
+            }
+            ClientEvent::RegisterSuccessfully(src, dst) => {
+                self.sim_contr.storage.add_to_registration(src, dst);
+            }
+            ClientEvent::MissingTextList(src, list) => {
+                self.sim_contr.storage.missing_txt_list(src, list);
+            }
+            ClientEvent::MissingDestForMedia(src, media) => {
+                self.sim_contr.storage.missing_media(src, media);
+            }
+            _ => {/* degli altri niente */}
+        }
+    }
+
+    pub fn manage_server_event(&mut self, server_event:ServerEvent){
+        self.sim_contr.add_server_event_to_log(server_event.clone());
+    }
+
+
 
     pub fn render_bottom_panel(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
@@ -375,6 +391,11 @@ impl MyApp {
 
                         // for testing
                         if DEBUG_MODE {
+
+                            if ui.button("test notification for 0!").clicked() {
+                                self.turn_on_notification(0);
+                            }
+
                             if ui.button("test log!").clicked() {
                                 self.sim_contr.log.push_back(LogEntry::new(
                                     Cause::Sent,
@@ -659,6 +680,11 @@ impl MyApp {
                             ),
                            circle_color, // Colore (modifica per trasparenza o effetti)
                         ));
+
+                        if value.notify {
+                            let top_right = rect.right_top();
+                            painter.circle_filled(top_right, 7.0, Color32::YELLOW);
+                        }
                     }
 
                     // Disegna il testo
@@ -673,6 +699,7 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
+                        value.notify = false;
                     }
                 }
             });
@@ -1515,25 +1542,21 @@ impl MyApp {
     pub fn update_event_receivers(&mut self) {
         match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
-                //manage event
-
-                self.manage_event(Event::Drone(event));
+                self.manage_drone_event(event);
             }
             _ => {}
         }
 
         match self.sim_contr.client_event_recv.try_recv() {
             Ok(event) => {
-                //manage event
-                self.manage_event(Event::Client(event));
+                self.manage_client_event(event);
             }
             _ => {}
         }
 
         match self.sim_contr.server_event_recv.try_recv() {
             Ok(event) => {
-                //manage event
-                self.manage_event(Event::Server(event));
+                self.manage_server_event(event);
             }
             _ => {}
         }

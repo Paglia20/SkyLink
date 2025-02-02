@@ -475,7 +475,7 @@ impl WebBrowser{
         if let Some(map) = self.available_text_lists.get(&text_file_id) {
             let dests = map.0.clone();
             if !dests.is_empty() {
-                if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+                if let Some(dst) = self.comm.network.get_optimal_dest(&self.get_src_id(), &dests) {
                     let content = ContentType::TextRequest(TextFile(text_file_id));
                     let msg = Message::new(src, session, content);
                     self.comm.send_message(msg, dst);
@@ -503,7 +503,7 @@ impl WebBrowser{
 
         if let Some(dests) = self.catalogue.get(&cont_id) {
             if !dests.is_empty() {
-                if let Some(dst) = self.comm.get_optimal_dest(&dests) {
+                if let Some(dst) = self.comm.network.get_optimal_dest(&self.get_src_id(), &dests) {
                     let content = ContentType::MediaRequest(Media(cont_id));
                     let msg = Message::new(src, session, content);
                     self.comm.send_message(msg, dst);
