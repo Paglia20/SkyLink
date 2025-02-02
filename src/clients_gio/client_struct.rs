@@ -303,15 +303,20 @@ impl ClientStruct {
     //sta fn la metterei in networking
     pub (crate) fn get_optimal_dest (&mut self, v: &Vec<NodeId>) -> Option<NodeId> {
         let mut out: Option<NodeId> = None;
-        let mut weight = f64::MIN;
+        let mut weight = f64::MAX;
         for i in v {
             if let Some((r, r_weight)) = self.network.best_path(&self.node_id, i){
-                if weight < r_weight{
+                if weight > r_weight{
                     if !r.is_empty(){
-                        out = Some(r[0]);
+                        out = Some(r[r.len() - 1]);
+                        weight = r_weight;
                     }
                 }
             }
+        }
+
+        if DEBUG_MODE{
+            println!("server {:?} is your best destination for this chat", out);
         }
         out
     }

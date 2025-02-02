@@ -6,7 +6,6 @@ use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, Media, Medi
 use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowAuxiliaryLists, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
 use crate::test::test_bench::create_packet;
-use crate::DEBUG_MODE;
 use eframe::egui;
 use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
@@ -14,11 +13,11 @@ use std::collections::{HashMap, HashSet};
 use std::vec;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType, Packet};
+use wg_2024::packet::{NodeType};
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use egui_plot::{Bar, BarChart, Plot};
-
+use crate::DEBUG_MODE;
 
 #[derive(Clone)]
 pub struct MyNodes {
@@ -375,57 +374,60 @@ impl MyApp {
                         }
 
                         // for testing
-                        if ui.button("test log!").clicked() {
-                            self.sim_contr.log.push_back(LogEntry::new(
-                                Cause::Sent,
-                                fastrand::u8(0..10),
-                                "ciao".to_string(),
-                            ));
-                        }
-                        if ui.button("test (graphically) chat with 0 and 11!").clicked() {
-                            /* questo andrà cambiato appena leo avrà fatto il server,
-                             è solo per vedere se ci piace il font delle chat */
+                        if DEBUG_MODE {
+                            if ui.button("test log!").clicked() {
+                                self.sim_contr.log.push_back(LogEntry::new(
+                                    Cause::Sent,
+                                    fastrand::u8(0..10),
+                                    "ciao".to_string(),
+                                ));
+                            }
+                            if ui.button("test (graphically) chat with 0 and 11!").clicked() {
+                                /* questo andrà cambiato appena leo avrà fatto il server,
+                                 è solo per vedere se ci piace il font delle chat */
 
-                            self.sim_contr.storage.add_chat_text(0, 11, "diomerda".to_string());
-                            self.sim_contr.storage.add_chat_text(11, 0, "a te!".to_string());
-                            self.sim_contr.storage.add_chat_text(11, 0, "spero tu stia bene!".to_string());
-                            self.sim_contr.storage.add_chat_text(0, 11, "si sto bene!".to_string());
-                        }
+                                self.sim_contr.storage.add_chat_text(0, 11, "diomerda".to_string());
+                                self.sim_contr.storage.add_chat_text(11, 0, "a te!".to_string());
+                                self.sim_contr.storage.add_chat_text(11, 0, "spero tu stia bene!".to_string());
+                                self.sim_contr.storage.add_chat_text(0, 11, "si sto bene!".to_string());
+                            }
 
-                        if ui.button("test (graphically) media with 12").clicked() {
-                            /* questo andrà cambiato appena leo avrà fatto il server,
-                             è solo per vedere se ci piace il font delle media */
-                            let v = include_bytes!("../test/esempio.png").to_vec();
+                            if ui.button("test (graphically) media with 12").clicked() {
+                                /* questo andrà cambiato appena leo avrà fatto il server,
+                                 è solo per vedere se ci piace il font delle media */
+                                let v = include_bytes!("../test/esempio.png").to_vec();
 
-                            self.sim_contr.storage.add_to_medias(12, 20020, "esempio.png".to_string(), v);
-                        }
-
-                        if ui.button("Test Drop with 5").clicked() {
-                            self.sim_contr.set_pdr(5, 100.0);
-
-                            let msg = create_packet(vec![0,1,8,5,2]);
-                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
-                        }
-
-                        if ui.button("Test sending packet").clicked() {
-                            let msg = create_packet(vec![0,1,8,5,2]);
-                            self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
-                        }
-
-                        if ui.button("Test flooding with 0").clicked() {
-                            self.sim_contr.flood_with(0);
-                        }
+                                self.sim_contr.storage.add_to_medias(12, 20020, "esempio.png".to_string(), v);
+                            }
 
 
-                        if ui.button("Test Shortcut").clicked() {
-                            let msg = create_packet(vec![0, 1, 8]);
-                            let cs_shortcut = ControllerShortcut(msg);
-                            match self.sim_contr.channel_for_drone.try_send(cs_shortcut) {
-                                Ok(_) => {
-                                    println!("sent through shortcut")
-                                }
-                                Err(_) => {
-                                    println!("error through shortcut");
+                            if ui.button("Test Drop with 5").clicked() {
+                                self.sim_contr.set_pdr(5, 100.0);
+
+                                let msg = create_packet(vec![0, 1, 8, 5, 2]);
+                                self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
+                            }
+
+                            if ui.button("Test sending packet").clicked() {
+                                let msg = create_packet(vec![0, 1, 8, 5, 2]);
+                                self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
+                            }
+
+                            if ui.button("Test flooding with 0").clicked() {
+                                self.sim_contr.flood_with(0);
+                            }
+
+
+                            if ui.button("Test Shortcut").clicked() {
+                                let msg = create_packet(vec![0, 1, 8]);
+                                let cs_shortcut = ControllerShortcut(msg);
+                                match self.sim_contr.channel_for_drone.try_send(cs_shortcut) {
+                                    Ok(_) => {
+                                        println!("sent through shortcut")
+                                    }
+                                    Err(_) => {
+                                        println!("error through shortcut");
+                                    }
                                 }
                             }
                         }
@@ -671,9 +673,6 @@ impl MyApp {
                     // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
-                        if DEBUG_MODE {
-                            println!("selected node: {:?}", value.id);
-                        }
                     }
                 }
             });
@@ -1386,8 +1385,8 @@ impl MyApp {
                                                                     ui.label(RichText::new(format!("{}", s))
                                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
                                                                                  .color(Color32::YELLOW),);
+                                                                    ui.separator();
                                                                 }
-                                                                ui.separator();
                                                             }
                                                         });
                                                 });
