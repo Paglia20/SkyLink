@@ -194,9 +194,12 @@ impl Server for MediaServer {
                     server_struct.send_event(ServerEvent::FileNotReadable(node_id, e, err.to_string()));
                 }
             }
-
-            
         }
+        server_struct.send_event(ServerEvent::MediaState(node_id, media_files
+            .iter()
+            .map(|(x,(y,_))| (*x, y.clone()))
+            .collect()
+        ));
         MediaServer {
             server_struct,
             media_files,
