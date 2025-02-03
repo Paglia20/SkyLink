@@ -231,12 +231,26 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
-            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE todo!()
+            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
+            // todo!() daniel
             ServerEvent::LostFragment(session_id, node_id, fragment_index) => {}
             ServerEvent::WrongDestinationType(my_node_id, wrong_node_id) => {}
-            _ => {
-                // Some of them are missing, we shouldn't have _ => here !!
-            }
+            ServerEvent::MissingDestination(_, _) => {}
+            ServerEvent::MissingRoute(_, _) => {}
+            ServerEvent::LostMessage(_, _, _) => {}
+            ServerEvent::DiscardedMessage(_, _) => {}
+            ServerEvent::DroneInsideDestination(_, _) => {}
+            ServerEvent::WrongDestination(_, _) => {}
+            ServerEvent::FileNotFound(_, _) => {}
+            ServerEvent::IncompleteFile(_, _) => {}
+            ServerEvent::FilesState(_, _, _) => {}
+            ServerEvent::FileNotReadable(_, _, _) => {}
+            ServerEvent::MediaNotFound(_, _) => {}
+            ServerEvent::MediaState(_, _) => {}
+            ServerEvent::ClientRegistered(_, _) => {}
+            ServerEvent::ClientAlreadyRegistered(_, _) => {}
+            ServerEvent::WrongCommandGiven(_, _) => {}
+            ServerEvent::ControllerShortcut(_) => {}
         }
     }
 
@@ -286,7 +300,6 @@ impl SimulationControl {
 
 
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
-        println!("-");
         let new_id = self.generate_id();
         //aggiorna network graph
         self.network_graph.insert(new_id, (NodeNature::Drone, HashSet::from_iter(connections.clone().into_iter())));
@@ -463,25 +476,26 @@ impl SimulationControl {
                 return;},
 
             Some(n_type) => {
-                match n_type {
-                    Client => {
-                        if let Some(sender) = self.client_command_senders.get(&node_id) {
-                                if let Err(_e) = sender.send(ClientCommand::Flood) {
-                                    println!("error flooding");
-                                } else {
-                                    println!("flooded successfully");
-                                }
+                if Client == n_type{
+                    if let Some(sender) = self.client_command_senders.get(&node_id) {
+                        if let Err(_e) = sender.send(ClientCommand::Flood) {
+                            if DEBUG_MODE {
+                                println!("error flooding");
+                            }
+                        } else {
+                            if DEBUG_MODE {
+                                println!("flooded successfully");
+                            }
+                        }
 
-                        }
-                        else {
-                            self.log.push_back(LogEntry::new(
-                                Cause::Managing,
-                                node_id,
-                                format!("error flooding"),
-                            ));
-                        }
                     }
-                    _ => {todo!("server??")},
+                    else {
+                        self.log.push_back(LogEntry::new(
+                            Cause::Managing,
+                            node_id,
+                            "error flooding".to_string(),
+                        ));
+                    }
                 }
             }
         }
@@ -1045,7 +1059,7 @@ impl SimulationControl {
                 }
             }
         }
-        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
+        if let Some((_, ids)) = self.network_graph.get_mut(&id) {
             ids.insert(id_to_add);
         }
 
@@ -1127,6 +1141,27 @@ ui.label(RichText::new(format!("Connected to: {}", connections))
 
 
 
+/*
+COSE CHE DANIEL DEVI FARE, in entrambi i file:
+
+Cose importanti:
+sistemare il to-do daniel che ti ho lasciato sui server log
+ridurre i duplicate code per quanto riesci, e in generale tutti i warning che trovi
+testare tutto quello che trovi e scrivere i comportamenti anomali
+
+Cose belle:
+aggiungere il nostro logo sotto i bottoni a sinistra
+mettere a posto le labels
+modificare la notifica (tipo a intermittenza spaccherebbe ma ci ho provato e non si riesce)
+
+
+
+Cose Noiose (solo se hai voglia):
+mettere a posto le cause dei log
+
+
+
+*/
 
 
 
