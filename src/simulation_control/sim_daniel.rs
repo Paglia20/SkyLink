@@ -336,6 +336,9 @@ impl MyApp {
             ServerEvent::FilesState(src, completed, uncompleted) =>{
                 self.sim_contr.storage.add_server_files(src, completed, uncompleted);
             }
+            ServerEvent::MediaState(src, medias) =>{
+                self.sim_contr.storage.add_server_medias(src, medias);
+            }
             _ =>{
 
             }
@@ -1461,12 +1464,21 @@ impl MyApp {
                                                         node.node_window_scenes = RemoveSender;
                                                     }
 
-                                                    if ui.button("See Content").clicked(){
+                                                    let content = match node.node_type{
+                                                        NodeNature::ChatServer => {"Registered Clients"}
+                                                        NodeNature::TextServer => {"Text Lists"}
+                                                        NodeNature::MediaServer => {"Media Possessed"}
+                                                        _ =>{
+                                                            unreachable!()
+                                                        }
+                                                    };
+
+                                                    if ui.button(format!("See {}", content)).clicked(){
                                                         node.node_window_scenes = ShowContents;
                                                     }
 
 
-                                                    if ui.button("Chiudi").clicked() {
+                                                    if ui.button("Close").clicked() {
                                                         node.content = None;
                                                         node.selected = false; // Close the window
                                                     }
@@ -1544,6 +1556,8 @@ impl MyApp {
                                                                    ui.label(RichText::new("No Registered Clients:".to_string())
                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
                                                                        .color(Color32::WHITE));
+                                                                   ui.separator();
+
                                                                }
                                                             } else if NodeNature::TextServer == node.node_type {
                                                                 if let Some(lists) = self.sim_contr.storage.text_lists.get(&node.id){
@@ -1563,11 +1577,28 @@ impl MyApp {
                                                                     ui.label(RichText::new("No Text Lists Available".to_string())
                                                                         .font(FontId::new(12.0, egui::FontFamily::Monospace))
                                                                         .color(Color32::WHITE));
+                                                                    ui.separator();
+
                                                                 }
                                                             }
                                                             else {
-                                                                //media servers
-                                                                todo!()
+                                                                if let Some(list) = self.sim_contr.storage.medias.get(&node.id){
+                                                                    ui.label(RichText::new("List of Media Possessed:".to_string())
+                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::WHITE));
+                                                                    ui.separator();
+
+                                                                    for (id, name, _) in list {
+                                                                        let s = format!("Media {} - {}", id, name);
+                                                                        ui.label(s);
+                                                                    }
+                                                                } else {
+                                                                    ui.label(RichText::new("No Media Possessed".to_string())
+                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::WHITE));
+                                                                    ui.separator();
+
+                                                                }
                                                             }
                                                         }
                                                         _ => {}

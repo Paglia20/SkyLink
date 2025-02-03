@@ -134,4 +134,10 @@ impl SimulationStorage{
         }
     }
 
+    pub(crate) fn add_server_medias(&mut self, src: NodeId, medias: Vec<(u64, String)>){
+        for (id, name) in medias {
+            self.add_to_medias(src, id, name, vec![]);
+        }
+    }
+
 }
