@@ -333,6 +333,9 @@ impl MyApp {
             ServerEvent::ClientRegistered(src, client) => {
                 self.sim_contr.storage.add_to_registration(src, client);
             }
+            ServerEvent::FilesState(src, completed, uncompleted) =>{
+                self.sim_contr.storage.add_server_files(src, completed, uncompleted);
+            }
             _ =>{
 
             }
@@ -1543,13 +1546,29 @@ impl MyApp {
                                                                        .color(Color32::WHITE));
                                                                }
                                                             } else if NodeNature::TextServer == node.node_type {
-                                                                todo!()
+                                                                if let Some(lists) = self.sim_contr.storage.text_lists.get(&node.id){
+                                                                    ui.label(RichText::new("List of Text List Available:".to_string())
+                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::WHITE));
+                                                                    ui.label(RichText::new("(some may be uncompleted)".to_string())
+                                                                        .font(FontId::new(10.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::WHITE));
+                                                                    ui.separator();
+
+                                                                    for i in lists {
+                                                                        let s = format!("Text {} - {}", i.0, i.1);
+                                                                        ui.label(s);
+                                                                    }
+                                                                } else {
+                                                                    ui.label(RichText::new("No Text Lists Available".to_string())
+                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::WHITE));
+                                                                }
                                                             }
                                                             else {
+                                                                //media servers
                                                                 todo!()
                                                             }
-
-
                                                         }
                                                         _ => {}
                                                     }

@@ -21,6 +21,9 @@ pub struct SimulationStorage {
     pub medias: HashMap<NodeId, Vec<(u64, String, Vec<u8>)>>,
 
 }
+
+
+
 impl SimulationStorage{
     pub fn new() -> SimulationStorage{
         SimulationStorage{
@@ -119,6 +122,15 @@ impl SimulationStorage{
     pub(crate) fn missing_txt_list(&mut self, p0: NodeId, p1: u64) {
         if let Some(medias) = self.text_lists.get_mut(&p0){
             medias.retain(|n| n.0 != p1);
+        }
+    }
+
+    pub(crate) fn add_server_files(&mut self, p0: NodeId, completed: Vec<(u64, String)>, uncompleted: Vec<(u64, String)>) {
+        for (id, name) in completed {
+            self.add_text_list(p0, id, name);
+        }
+        for (id, name) in uncompleted {
+            self.add_text_list(p0, id, name);
         }
     }
 
