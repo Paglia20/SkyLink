@@ -261,7 +261,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             PacketType::Nack(nack) => {
                 if self.handle_nack(nack.clone(), packet.clone()) {
-                    self.send_fragment_after_nack(packet, nack);
+                    self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
                 }
             }
             PacketType::FloodRequest(_) => {
@@ -294,6 +294,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 }
             }
         }
+        
+        // I need to create these copies of the results because in the match self is borrowed mutually,
+        // so I can't call the necessary functions.
         if let Some(fragment) = tmp_frg {
             self.server_send_single_fragment(fragment.clone(), *packet.routing_header.hops.first().unwrap(), packet.session_id);
         }

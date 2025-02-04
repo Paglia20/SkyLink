@@ -7,6 +7,7 @@ use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Pac
 use crate::DEBUG_MODE;
 
 type UnsentFragments = HashMap<(u64, NodeId, NodeId), Vec<Fragment>>;
+// The second NodeId is the destination, the u8 is a counter to avoid sending too much stuff.
 
 pub struct ServerStruct {
     pub node_id: NodeId,
@@ -20,7 +21,6 @@ pub struct ServerStruct {
     
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
     pub unsent_fragments: (u8, UnsentFragments),
-    // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 
     next_flood_id: u64,
     next_session_id: u64,
@@ -126,11 +126,13 @@ impl ServerStruct {
                 // UnexpectedRecipient means that the hops vector in the message was faulty.
                 // I remove all the routes with that destination, since they're probably result of a faulty flooding.
                 self.network.remove_node(wrong_node);
+                // I send the fragments again.
                 true
             },
             NackType::ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone.
                 self.network.remove_node(wrong_node);
+                // I send the fragments again.
                 true
             },
             NackType::DestinationIsDrone => {
@@ -140,14 +142,21 @@ impl ServerStruct {
                 // so I remove the destination and consider the message as lost.
                 self.network.remove_node(wrong_node);
                 self.send_event(ServerEvent::DroneInsideDestination(self.node_id, wrong_node));
+                
+                // I remove the message since it's faulty.
+                self.fragments.remove(&(packet.session_id, self.node_id));
+                self.unsent_fragments.1.remove(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap()));
+                self.send_event(ServerEvent::LostMessage(packet.session_id, self.node_id, "Destination of the message was a drone".to_string()));
+                
+                // I don't need to resend the fragments, since I'll never have a destination.
                 false
             },
             NackType::Dropped => {
-                // Who dropped will be source of the NACK
+                // Who dropped will be source of the NACK, so I apply a negative feedback on it to try to compute a sort of PDR.
                 let dropper = packet.routing_header.source().unwrap();
                 self.network.negative_feedback(dropper);
 
-                // I just send it again
+                // I just send it again.
                 true
             }
         }
