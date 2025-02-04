@@ -74,6 +74,7 @@ impl NetworkEdge for ClientStruct {
                 }
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
+                self.flood();
             }
             Some(srh) => {
                 let first_dst = srh.hops[1];

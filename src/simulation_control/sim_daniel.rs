@@ -299,6 +299,9 @@ impl MyApp {
             ClientEvent::SendDestinations(src, dst) => {
                 self.sim_contr.storage.add_destination(src, dst);
             }
+            ClientEvent::MissingDestination(src, dst) => {
+                self.sim_contr.storage.remove_destination(src, dst);
+            }
             ClientEvent::ReceivedChatText(src, dst, str) => {
                 self.turn_on_notification(dst);
                 self.sim_contr.storage.add_chat_text(src, dst, str);
