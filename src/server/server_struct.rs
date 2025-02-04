@@ -173,6 +173,7 @@ impl ServerStruct {
         // I try to check if I have all routes to the nodes I already know, so that if I'm not done;
         // I also have a counter, in case I loose all connection to a node, so that I won't stop to flood forever in that case.
         if self.network.has_all_routes(self.node_id) || self.flood_counter >= 200 {
+            // After this is set to false, I can flood again
             self.is_flooding = false;
             self.flood_counter = 0;
         } else {
