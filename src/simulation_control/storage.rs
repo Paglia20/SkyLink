@@ -6,6 +6,8 @@ use wg_2024::packet::Packet;
 use wg_2024::packet::PacketType::*;
 use crate::server::server_type::ContentServerType::{Media, Text};
 use crate::server::server_type::ServerType;
+use crate::simulation_control::sim_daniel::NodeNature;
+use crate::simulation_control::sim_daniel::NodeNature::*;
 
 pub struct SimulationStorage {
     pub dropped_packets: HashMap<NodeId, Vec<Packet>>, // to display dropped packets
@@ -21,7 +23,6 @@ pub struct SimulationStorage {
     pub medias: HashMap<NodeId, Vec<(u64, String, Vec<u8>)>>,
 
 }
-
 
 
 impl SimulationStorage{

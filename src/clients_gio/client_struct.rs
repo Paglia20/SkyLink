@@ -26,8 +26,8 @@ pub struct ClientStruct {
     pub flood_ids: HashSet<(u64, NodeId)>, // Just like drones
     pub used_session_id: HashSet<u64>,     // Do we need this?
     pub network: Network,
-    pub fragments: HashMap<(u64, NodeId, NodeId), (Option<ContentType>, Vec<Fragment>)>, //(session_id, source, destination) - (copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
-    pub unsent_fragments: (u8, HashMap<(u64, NodeId, NodeId), Vec<(Fragment)>>), // The second NodeId is the destination, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    pub fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>, //(session_id, source) - (destination, copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
+    pub unsent_fragments: (u8, HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>), // The NodeId is the src, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
 }
 
 impl NetworkEdge for ClientStruct {
@@ -70,7 +70,7 @@ impl NetworkEdge for ClientStruct {
         match self.network.get_srh(&self.node_id, &destination){
             None => {
                 if DEBUG_MODE {
-                    println!("Tried to send fragment without path to {destination} with {}", self.node_id);
+                    println!("Tried to send fragment without path to {destination} with {}, so flooded again", self.node_id);
                 }
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
@@ -102,32 +102,33 @@ impl NetworkEdge for ClientStruct {
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         // If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
-        match self.unsent_fragments.1.get_mut(&(session_id, self.node_id, destination)) {
-            Some(fragments) => {
+        match self.unsent_fragments.1.get_mut(&(session_id, self.node_id)) {
+            Some((_, fragments)) => {
                 fragments.push(fragment);
             },
             None => {
                 let mut vec = Vec::new();
                 vec.push(fragment);
-                self.unsent_fragments.1.insert((session_id, self.node_id, destination), vec);
+                self.unsent_fragments.1.insert((session_id, self.node_id), (destination, vec));
             }
         }
     }
 
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        match self.fragments.get(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap())) {
+        match self.fragments.get(&(packet.session_id, self.node_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
                 self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
+                self.flood();
             },
-            Some((_, fragments)) => {
+            Some((dst,_, fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
                         self.send_event(ClientEvent::LostFragment(packet.session_id, self.node_id, nack.fragment_index));
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
-                        self.send_fragment(fragment.clone(), *packet.routing_header.hops.get(0).unwrap(), packet.session_id);
+                        self.send_fragment(fragment.clone(), *dst, packet.session_id);
                     }
                 }
             }
@@ -337,7 +338,7 @@ impl ClientStruct {
     pub fn client_send_fragment(&mut self, message: Message, destination: NodeId){
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
-        self.fragments.insert((session_id, self.node_id, destination), (Some(message.content), frags.clone()));
+        self.fragments.insert((session_id, self.node_id), (destination, Some(message.content), frags.clone()));
         // I also save the fragments in the memory, in case I have to send them again.
 
 
@@ -351,15 +352,15 @@ impl ClientStruct {
         // I create a temporary copy of the fragments that needs to be processed.
         let mut to_process = Vec::new();
         for (identifier, content) in self.unsent_fragments.1.iter() {
-            for fragment in content.iter() {
-                to_process.push((fragment.clone(), identifier.clone()));
+            for fragment in content.1.iter() {
+                to_process.push((fragment.clone(), identifier.clone(), content.0));
             }
         }
         // I then empty the HashMap to not have any duplicate.as
         self.unsent_fragments.1 = HashMap::new();
         self.unsent_fragments.0 = 0;
-        for (fragment, identifier) in to_process {
-            self.send_fragment(fragment.clone(), identifier.2, identifier.0);
+        for (fragment, identifier, dst) in to_process {
+            self.send_fragment(fragment.clone(), dst, identifier.0);
         }
     }
 

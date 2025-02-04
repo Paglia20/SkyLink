@@ -103,8 +103,8 @@ impl NetworkEdge for WebBrowser {
                         let destination = self.comm.node_id; //he is the destination
                         let frag_index = fragment.fragment_index;
                         //add new frag
-                        let entry = self.comm.fragments.entry((session_id, initiator_id, destination)).or_insert((None, vec![]));
-                        entry.1.push(fragment);
+                        let entry = self.comm.fragments.entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                        entry.2.push(fragment);
 
 
                         //for each arrived frag, send back an ack
@@ -114,7 +114,7 @@ impl NetworkEdge for WebBrowser {
                         self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
                         // If all the frag have arrived recreate message
-                        let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id, destination)).unwrap().1;
+                        let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id)).unwrap().2;
                         if frags_clone.len() == tot_num_frag {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Ok(mess) => { mess }
@@ -130,21 +130,21 @@ impl NetworkEdge for WebBrowser {
                             self.handle_message(message);
 
                             // empty the hashmap
-                            self.comm.fragments.remove(&(packet.session_id, initiator_id, destination));
+                            self.comm.fragments.remove(&(packet.session_id, initiator_id));
                         }
                     }
                     Ack(ack) => {
                         self.send_event(ClientEvent::AckReceived(packet.clone()));
 
                         //the ack will have the source that was the destination of the initial packet
-                        match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap())) {
+                        match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id)) {
                             None => {}
-                            Some((_, vec)) => {
+                            Some((_, _, vec)) => {
                                 vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
                                 //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
                                 if vec.is_empty() {
-                                    self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id, packet.routing_header.source().unwrap()));
+                                    self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id));
                                 }
                             }
                         }
