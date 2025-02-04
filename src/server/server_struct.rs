@@ -3,7 +3,7 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet};
 use crate::DEBUG_MODE;
 
 type UnsentFragments = HashMap<(u64, NodeId, NodeId), Vec<Fragment>>;
@@ -20,11 +20,13 @@ pub struct ServerStruct {
     pub network: Network, 
     
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
-    pub unsent_fragments: (u8, UnsentFragments),
+    pub unsent_fragments: UnsentFragments,
 
     next_flood_id: u64,
     next_session_id: u64,
-    pub flood_counter: u8, // Counter used to avoid flooding too often.
+    is_flooding: bool,
+    flood_counter: u8,
+    
 }
 
 impl ServerStruct {
@@ -44,9 +46,10 @@ impl ServerStruct {
             flood_ids: HashSet::new(),
             network: Network::new(),
             fragments: HashMap::new(),
-            unsent_fragments: (0, HashMap::new()),
+            unsent_fragments: HashMap::new(),
             next_flood_id: 0,
             next_session_id: 0,
+            is_flooding: false,
             flood_counter: 0,
         }
     }
@@ -72,11 +75,13 @@ impl ServerStruct {
                 for (key, _) in self.packet_send.iter() {
                     if *key != prev {
                         //I send the flooding to everyone except the node I received it from.
-                        if self.packet_send.get(key).unwrap().send(packet.clone()).is_ok() {
-                            self.send_event(ServerEvent::PacketSent(packet.clone()));
-                            //If the message was sent, I also notify the sim controller.
+                        if let Some(sender) = self.packet_send.get(key) {
+                            if sender.send(packet.clone()).is_ok() {
+                                self.send_event(ServerEvent::PacketSent(packet.clone()));
+                                //If the message was sent, I also notify the sim controller.
+                            }
+                            //There's no else, since I don't care about nodes which can't be reached.
                         }
-                        //There's no else, since I don't care of nodes which can't be reached.
                     }
                 }
             }
@@ -145,7 +150,7 @@ impl ServerStruct {
                 
                 // I remove the message since it's faulty.
                 self.fragments.remove(&(packet.session_id, self.node_id));
-                self.unsent_fragments.1.remove(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap()));
+                self.unsent_fragments.remove(&(packet.session_id, self.node_id, packet.routing_header.destination().unwrap()));
                 self.send_event(ServerEvent::LostMessage(packet.session_id, self.node_id, "Destination of the message was a drone".to_string()));
                 
                 // I don't need to resend the fragments, since I'll never have a destination.
@@ -162,16 +167,43 @@ impl ServerStruct {
         }
     }
     
-    pub fn save_flood_response(&mut self, flood_response: FloodResponse) {
+    pub fn save_flood_response(&mut self, flood_response: FloodResponse) -> bool{
         self.network.add_route(self.node_id, flood_response.path_trace.clone());
+
+        // I try to check if I have all routes to the nodes I already know, so that if I'm not done;
+        // I also have a counter, in case I loose all connection to a node, so that I won't stop to flood forever in that case.
+        if self.network.has_all_routes(self.node_id) || self.flood_counter >= 200 {
+            self.is_flooding = false;
+            self.flood_counter = 0;
+        } else {
+            self.flood_counter += 1;
+        }
+
+        // I'll ask for the TypeExchange only if it's a client or a server, and I don't know the state yet.
+        match flood_response.path_trace.last().unwrap().1 {
+            NodeType::Drone => {
+                false
+            },
+            _ => {
+                match self.network.get_state(&flood_response.path_trace[0].0) {
+                    Some(state) => {
+                        state == 0
+                    },
+                    None => {
+                        true
+                    }
+                }
+            }
+        }
+        
     }
     
     pub fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         // If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
-        match self.unsent_fragments.1.get_mut(&(session_id, self.node_id, destination)) {
+        match self.unsent_fragments.get_mut(&(session_id, self.node_id, destination)) {
             None => {
                 let vec = vec![fragment];
-                self.unsent_fragments.1.insert((session_id, self.node_id, destination), vec);
+                self.unsent_fragments.insert((session_id, self.node_id, destination), vec);
             }
             Some(fragments) => {
                 fragments.push(fragment);
@@ -179,21 +211,10 @@ impl ServerStruct {
         }
     }
     
-    pub fn can_flood(&mut self) -> bool {
-        if self.flood_counter == 0 {
-            self.flood_counter += 1;
-            return true;
-        } else if self.flood_counter == 10 {
-            self.flood_counter = 0;
-        }
-        false
-    }
-
-
-    /// TO CHECK
     pub fn send_to_all(&mut self, packet: Packet) {
         self.packet_send.values().for_each(|sender| {
-            sender.send(packet.clone()).unwrap()
+            // I don't care if the message isn't sent, since if it won't result in the flooding_responses that connection won't be used anyway.
+            let _ = sender.send(packet.clone());
         });
     }
 
@@ -216,7 +237,7 @@ impl ServerStruct {
     pub fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))> {
         let mut fragment_to_process = Vec::new();
         // I create a vector from the fragments I still need to process due to errors.
-        let _ =self.unsent_fragments.1
+        let _ =self.unsent_fragments
             .iter()
             .map(|(identifier, content)| content.iter()
                 .map(|fragment| fragment_to_process.push((fragment.clone(), *identifier)))
@@ -227,15 +248,24 @@ impl ServerStruct {
     }
     
     pub fn reset_unsent_fragments(&mut self) {
-        self.unsent_fragments.1 = HashMap::new();
-        self.unsent_fragments.0 = 0;
+        self.unsent_fragments = HashMap::new();
     }
     pub fn check_to_resend_fragments(&mut self) -> bool {
-        if self.unsent_fragments.0 >= 150 {
-            true
+        !self.unsent_fragments.is_empty()
+        /*if self.unsent_fragments.0 >= 200  {
+            self.unsent_fragments.0 = 0;
+            // I don't want to flood if I don't have any fragment to send.
+            !self.unsent_fragments.1.is_empty()
         } else {
             self.unsent_fragments.0 += 1;
             false
-        }
+        }*/
+    }
+    pub fn can_flood(&mut self) -> bool {
+        !self.is_flooding
+    }
+    
+    pub fn starting_to_flood(&mut self) {
+        self.is_flooding = true;
     }
 }
