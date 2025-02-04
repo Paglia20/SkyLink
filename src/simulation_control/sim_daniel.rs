@@ -1013,6 +1013,7 @@ impl MyApp {
                                                             }
                                                         },
                                                         ShowContents => {
+                                                            node.notify = false;
                                                             let node_contacts = match self.sim_contr.storage.contacts.get(&node.id){
                                                                 Some(contacts) => contacts.clone(),
                                                                 None => HashSet::new()

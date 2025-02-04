@@ -70,7 +70,7 @@ impl NetworkEdge for ClientStruct {
         match self.network.get_srh(&self.node_id, &destination){
             None => {
                 if DEBUG_MODE {
-                    println!("Tried to send fragment without path to {destination} with {}", self.node_id);
+                    println!("Tried to send fragment without path to {destination} with {}, so flooded again", self.node_id);
                 }
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
@@ -119,6 +119,16 @@ impl NetworkEdge for ClientStruct {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
                 self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
+                self.flood();
+                ///for leo: the problem seams that after an error in routing or unexpected rec, you come inside this function and try to access frags, but with the wrong parameters!
+                /// packet.destinations is == to self.node_id, because packet is not the lost one, but the one that is giving you the nack (directed to yourself).
+                /// to fix this we need to find the destination of the lost packet, but we cannot do it from the nack since are produced by the drones cutting of the routing header.
+                ///
+                /// the only solution i have in mind is to change the hashmap fragments in only the session_id key, so that the u64 is enough to identify the frags we want to send again.
+                /// why is fragments a triple as key? can we change it in just the session id or would it create conflicts between messages?
+                /// maybe is enough a session id-self.node_id touple to prevent any conflict (and that wouldn't be a problem)
+
+
             },
             Some((_, fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
