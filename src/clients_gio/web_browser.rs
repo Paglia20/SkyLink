@@ -191,8 +191,6 @@ impl NetworkEdge for WebBrowser {
                     }
                     MediaResponse::NotFound(id) => {
                         //i update the catalogue
-
-
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
                         }

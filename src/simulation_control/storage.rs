@@ -63,6 +63,12 @@ impl SimulationStorage{
             }
         }
     }
+    pub fn remove_destination(&mut self, src: NodeId, dst: NodeId){
+        if let Some(dsts) = self.destinations.get_mut(&src){
+            dsts.retain(|x| *x!=dst);
+        }
+    }
+
     pub fn add_chat_text(&mut self, src: NodeId, dst: NodeId, str: String){
         let new_text = (src, str);
         //first add to src chats the message he is sending
