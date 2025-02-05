@@ -96,14 +96,14 @@ impl Network {
     }
 
 
-    pub fn get_indexes_from_vec(&self, ids: &Vec<NodeId>) -> Option<Vec<NodeIndex>> {
+    pub fn get_indexes_from_vec(&self, ids: Vec<NodeId>) -> Option<Vec<NodeIndex>> {
         ids.iter()
             .map(|id| self.node_map.get(id).map(|&(_, idx)| idx))
             .collect()
     }
 
     // Function to calculate the path's weight.
-    pub fn calculate_path_weight (&self, path: &Vec<NodeIndex>) -> f64 {
+    pub fn calculate_path_weight (&self, path: Vec<NodeIndex>) -> f64 {
          path.iter()
         .map(|&node_index| self.graph[node_index].reliability())
         .product()
@@ -125,7 +125,7 @@ impl Network {
 
         while let Some((current, path)) = stack.pop() {
             if current == end_index {
-                let weight = self.calculate_path_weight(&path);
+                let weight = self.calculate_path_weight(path.clone());
                 if weight > max_weight || (weight == max_weight && path.len() < best_path_length) {
                     max_weight = weight;
                     best_path_length = path.len();
@@ -205,12 +205,7 @@ impl Network {
     }
 
     pub fn get_state(&self, dst: &NodeId) -> Option<State>{
-       match self.node_map.get(dst){
-           None => {None}
-           Some(&s) => {
-              Some(s.0)
-           }
-       }
+       self.node_map.get(dst).map(|&s| s.0)
     }
     pub fn get_unresolved(&self) -> Vec<NodeId> {
         self.node_map
@@ -231,11 +226,9 @@ impl Network {
         let mut weight = f64::MAX;
         for i in v {
             if let Some((r, r_weight)) = self.best_path(start, i){
-                if weight > r_weight{
-                    if !r.is_empty(){
-                        out = Some(r[r.len() - 1]);
-                        weight = r_weight;
-                    }
+                if weight > r_weight && !r.is_empty() {
+                    out = Some(r[r.len() - 1]);
+                    weight = r_weight;
                 }
             }
         }
@@ -244,6 +237,17 @@ impl Network {
             println!("{:?} is your best destination for this", out);
         }
         out
+    }
+    
+    pub fn has_all_routes(&self, source_id: NodeId) -> bool {
+        let mut res = true;
+        for (id,_) in self.node_map.iter() {
+            match self.best_path(&source_id, id) {
+                Some((_,_)) => {},
+                None => res = false,
+            }
+        }
+        res
     }
 
 }
