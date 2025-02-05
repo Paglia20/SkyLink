@@ -37,13 +37,13 @@ impl Node {
 }
 
 #[derive(Debug)]
-pub(crate) struct Network {
+pub struct Network {
     pub graph: StableUnGraph<Node, ()>,
     node_map: HashMap<NodeId, (State, NodeIndex)>,
 }
 
 impl Network {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             graph: StableUnGraph::default(),
             node_map: HashMap::new(),
@@ -51,34 +51,37 @@ impl Network {
     }
 
     /// Adds the nodes and updates existent ones.
-    pub(crate) fn add_route(&mut self, src: NodeId, nodes: Vec<(NodeId, NodeType)>) {
+    pub fn add_route(&mut self, src: NodeId, nodes: Vec<(NodeId, NodeType)>) {
         let mut prev_index = None;
 
         for (id, node_type) in nodes {
-            let node_index = if let Some(&(_, existing_index)) = self.node_map.get(&id) {
-                // If node already present, I return just the index.
-                existing_index
-            } else {
-                // New node, we add it.
-                let node = Node {
-                    id,
-                    node_type,
-                    forward_count: 1,
-                    dropped_count: 0,
-                };
-                let index = self.graph.add_node(node);
-                let state = match node_type{
-                    Drone => {2u8}
-                    _ => {
-                        if id == src {
-                            2u8
-                        } else {
-                            0u8
+            let node_index = match self.node_map.get(&id) {
+                Some(&(_, existing_index)) => {
+                    // If node already present, I return just the index.
+                    existing_index
+                },
+                None => {
+                    // New node, we add it.
+                    let node = Node {
+                        id,
+                        node_type,
+                        forward_count: 1,
+                        dropped_count: 0,
+                    };
+                    let index = self.graph.add_node(node);
+                    let state = match node_type{
+                        Drone => {2u8}
+                        _ => {
+                            if id == src {
+                                2u8
+                            } else {
+                                0u8
+                            }
                         }
-                    }
-                };
-                self.node_map.insert(id, (state, index));
-                index
+                    };
+                    self.node_map.insert(id, (state, index));
+                    index
+                }
             };
 
             // Connect adjacent nodes.
@@ -111,7 +114,7 @@ impl Network {
 
 
     ///find the best path to dst from start
-    pub(crate) fn best_path(&self, start: &NodeId, end: &NodeId) -> Option<(Vec<NodeId>, f64)> {
+    pub fn best_path(&self, start: &NodeId, end: &NodeId) -> Option<(Vec<NodeId>, f64)> {
         let start_index = self.node_map.get(start)?.1;
         let end_index = self.node_map.get(end)?.1;
 
@@ -150,7 +153,7 @@ impl Network {
 
 
     /// Adds a forward count to all nodes in the route.
-    pub(crate) fn positive_feedback(&mut self, route: Vec<NodeId>) {
+    pub fn positive_feedback(&mut self, route: Vec<NodeId>) {
         for node_id in route {
             if let Some(&(_, index)) = self.node_map.get(&node_id) {
                 if self.graph[index].node_type == Drone {
@@ -161,14 +164,14 @@ impl Network {
     }
 
     /// Increase dropped count of the indicated node.
-    pub(crate) fn negative_feedback(&mut self, dst: NodeId) {
+    pub fn negative_feedback(&mut self, dst: NodeId) {
         if let Some(&(_, index)) = self.node_map.get(&dst) {
             if self.graph[index].node_type == Drone {
                 self.graph[index].dropped_count += 1;
             }
         }
     }
-    pub(crate) fn update_state(&mut self, dst: NodeId, new_state: u8) {
+    pub fn update_state(&mut self, dst: NodeId, new_state: u8) {
         if let Some((state,_ )) = self.node_map.get_mut(&dst) {
             *state = new_state;
         }
@@ -207,6 +210,7 @@ impl Network {
     pub fn get_state(&self, dst: &NodeId) -> Option<State>{
        self.node_map.get(dst).map(|&s| s.0)
     }
+    
     pub fn get_unresolved(&self) -> Vec<NodeId> {
         self.node_map
             .iter()
@@ -219,9 +223,8 @@ impl Network {
             })
             .collect()
     }
-
-
-    pub (crate) fn get_optimal_dest (&mut self, start: &NodeId, v: &Vec<NodeId>) -> Option<NodeId> {
+    
+    pub fn get_optimal_dest (&mut self, start: &NodeId, v: &Vec<NodeId>) -> Option<NodeId> {
         let mut out: Option<NodeId> = None;
         let mut weight = f64::MAX;
         for i in v {
@@ -249,7 +252,6 @@ impl Network {
         }
         res
     }
-
 }
 
 
