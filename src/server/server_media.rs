@@ -107,9 +107,7 @@ impl NetworkEdge for MediaServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
-    }
+    fn send_fragment_after_nack(&mut self, _: Packet, _: Nack) {}
 
     fn send_ack(&mut self, _: Packet, _: u64) {}
 
@@ -251,16 +249,13 @@ impl Server for MediaServer {
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)
     }
-
     fn positive_feed(&mut self, nodes: Vec<NodeId>) {
         self.server_struct.network.positive_feedback(nodes);
     }
-    fn save_flood_response(&mut self, flood_resp: FloodResponse) {
-        self.server_struct.save_flood_response(flood_resp);
+    fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool {
+        self.server_struct.save_flood_response(flood_resp)
     }
-    fn can_flood(&mut self) -> bool {
-        self.server_struct.can_flood()
-    }
+
     fn send_to_all(&mut self, packet: Packet) {
         self.server_struct.send_to_all(packet);
     }
@@ -272,6 +267,12 @@ impl Server for MediaServer {
     }
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
+    }
+    fn can_flood(&mut self) -> bool {
+        self.server_struct.can_flood()
+    }
+    fn starting_to_flood(&mut self) {
+        self.server_struct.starting_to_flood();
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()
