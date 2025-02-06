@@ -10,21 +10,18 @@ use lockheedrustin_drone::LockheedRustin;
 use rolling_drone::RollingDrone;
 use rust_do_it::RustDoIt;
 use rustastic_drone::RustasticDrone;
-use rusty_drones::RustyDrone;
 use wg_2024::config;
 use wg_2024::config::Config;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use wg_2024_rust::drone::RustDrone;
 use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::web_browser::WebBrowser;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::server::server_trait::*;
-
 use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_daniel::NodeNature;
@@ -175,7 +172,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         1 => {
             thread::spawn(move || {
-                let mut drone = RustyDrone::new(
+                let mut drone = rusty_drones::RustyDrone::new(
                     drone_id,
                     node_event_send,
                     contr_recv,
@@ -214,7 +211,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         4 => {
             thread::spawn(move || {
-                let mut drone = RustDrone::new(
+                let mut drone = wg_2024_rust::drone::RustDrone::new(
                     drone_id,
                     node_event_send,
                     contr_recv,
