@@ -168,7 +168,24 @@ impl ServerStruct {
     }
     
     pub fn save_flood_response(&mut self, flood_response: FloodResponse) -> bool{
-        self.network.add_route(self.node_id, flood_response.path_trace.clone());
+        let mut res = false;
+        // I'll ask for the TypeExchange only if it's a client or a server, and I don't know the state yet.
+        match flood_response.path_trace.first().unwrap().1 {
+            NodeType::Drone => {},
+            _ => {
+                // I check if I know it rather than the state, because if I was to receive many flood_response,
+                // I would send that many TypeRequest back to the node.
+                match self.network.get_srh(&self.node_id, &flood_response.path_trace.first().unwrap().0) {
+                    Some(_) => {},
+                    None => {
+                        res = true
+                    }
+                }
+            }
+        }
+
+
+        self.network.add_route(self.node_id, flood_response.path_trace);
 
         // I try to check if I have all routes to the nodes I already know, so that if I'm not done;
         // I also have a counter, in case I loose all connection to a node, so that I won't stop to flood forever in that case.
@@ -180,23 +197,7 @@ impl ServerStruct {
             self.flood_counter += 1;
         }
 
-        // I'll ask for the TypeExchange only if it's a client or a server, and I don't know the state yet.
-        match flood_response.path_trace.last().unwrap().1 {
-            NodeType::Drone => {
-                false
-            },
-            _ => {
-                match self.network.get_state(&flood_response.path_trace[0].0) {
-                    Some(state) => {
-                        state == 0
-                    },
-                    None => {
-                        true
-                    }
-                }
-            }
-        }
-        
+        res
     }
     
     pub fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
@@ -220,15 +221,13 @@ impl ServerStruct {
     }
 
     pub fn get_flood_id(&mut self) -> u64 {
-        let res = self.next_flood_id;
         self.next_flood_id += 1;
-        res
+        self.next_flood_id-1
     }
 
     pub fn get_session_id(&mut self) -> u64 {
-        let res = self.next_session_id;
         self.next_session_id += 1;
-        res
+        self.next_session_id-1
     }
     
     pub fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)> {

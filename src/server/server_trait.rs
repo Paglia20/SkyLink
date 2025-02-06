@@ -98,6 +98,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn server_send_single_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         match self.get_srh(destination) {
             None => {
+                /// REMOVE
                 println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
@@ -105,6 +106,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some(srh) => {
+                /// REMOVE
                 println!("Server {} has a path to {}", self.get_src_id(), destination);
                 let first_dst = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
@@ -418,7 +420,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn process_unsent_periodically(&mut self){
         // I create a temporary copy of the fragments that needs to be processed.
         let to_process = self.get_fragment_to_process();
-        println!("To process {:?}", to_process);
         
         // I then empty the HashMap to not have any duplicate.
         self.reset_unsent_fragments();

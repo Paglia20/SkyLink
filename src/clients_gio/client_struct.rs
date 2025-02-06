@@ -85,6 +85,8 @@ impl NetworkEdge for ClientStruct {
                 }
             }
             Some(srh) => {
+                /// REMOVE
+                // println!("Client {} has a path to {}", self.get_src_id(), destination);
                 let first_dst = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
