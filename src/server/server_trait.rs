@@ -37,9 +37,12 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     }
                 }
                 default => {
-                    // If I have some unchecked nodes I try to check them.
-                    for i in self.get_unresolved() {
-                        self.server_check_type(i)
+                    // I use the same check as the flood, to apply some kind of congestion control.
+                    if self.can_flood() {
+                            // If I have some unchecked nodes I try to check them.
+                        for i in self.get_unresolved() {
+                            self.server_check_type(i)
+                        }
                     }
                     
                     // I check a counter, so that I don't try to send all the fragments every loop.
