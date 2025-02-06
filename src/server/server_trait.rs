@@ -4,7 +4,6 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_type::ServerType;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::HashMap;
-use std::thread::sleep;
 use wg_2024::controller::DroneEvent;
 use wg_2024::network::*;
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
@@ -38,21 +37,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     }
                 }
                 default => {
-                     sleep(std::time::Duration::from_millis(10));
-                    // Wait a moment before going on.
+                    // If I have some unchecked nodes I try to check them.
+                    for i in self.get_unresolved() {
+                        self.server_check_type(i)
+                    }
+                    
+                    // I check a counter, so that I don't try to send all the fragments every loop.
+                    if self.check_to_resend_fragments() {
+                        // If I have some unsent fragment, I check periodically.
+                        self.process_unsent_periodically();
+                    }
                 }
-            }
-            
-            // I check a counter, so that I don't try to send all the fragments every loop.
-            if self.check_to_resend_fragments() {
-                
-                // If I have some unchecked nodes I try to check them.
-                for i in self.get_unresolved() {
-                    self.server_check_type(i)
-                }
-                
-                // If I have some unsent fragment, I check periodically.
-                self.process_unsent_periodically();
             }
         }
     }
@@ -103,12 +98,14 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn server_send_single_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         match self.get_srh(destination) {
             None => {
+                println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
                 self.flood(); // Since I miss the destination, I start a flooding.
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some(srh) => {
+                println!("Server {} has a path to {}", self.get_src_id(), destination);
                 let first_dst = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
@@ -128,6 +125,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         }
                     }
                     None => {
+                        println!("Server {} isn't connected with {}", self.get_src_id(), first_dst);
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
@@ -142,37 +140,43 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn route_packet(&mut self, mut packet: Packet) {
         // If we're not the destination of a packet, we act like a drone wit 0 PDR.
         packet.routing_header.hop_index += 1;
-        let next_id = packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap();
+        
         // I obtain the id for the next hop.
-
-        match self.get_packet_sender(next_id) {
-            None => {
-                // In case I don't have the neighbour, I send a Nack back.
-                self.send_event(ServerEvent::MissingRoute(self.get_src_id(), *next_id));
-                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
-            }
-            Some(sender) => {
-                match sender.try_send(packet.clone()) {
-                    Err(_) => {
-                        // We send back the same errors a drone would.
-                        self.send_event(ServerEvent::PacketSendingError(packet.clone()));
-                        match packet.pack_type.clone() {
-                            PacketType::MsgFragment(_) => {
-                                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
-                            },
-                            PacketType::FloodRequest(_) => {
-                                unreachable!()
-                            },
-                            _ => {
-                                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
+        match packet.routing_header.hops.get(packet.routing_header.hop_index) {
+            Some(next_id) => {
+                match self.get_packet_sender(next_id) {
+                    None => {
+                        // In case I don't have the neighbour, I send a Nack back.
+                        self.send_event(ServerEvent::MissingRoute(self.get_src_id(), *next_id));
+                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                    }
+                    Some(sender) => {
+                        match sender.try_send(packet.clone()) {
+                            Err(_) => {
+                                // We send back the same errors a drone would.
+                                self.send_event(ServerEvent::PacketSendingError(packet.clone()));
+                                match packet.pack_type.clone() {
+                                    PacketType::MsgFragment(_) => {
+                                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                                    },
+                                    PacketType::FloodRequest(_) => {
+                                        unreachable!()
+                                    },
+                                    _ => {
+                                        self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
+                                    }
+                                }
+                            }
+                            Ok(_) => {
+                                self.send_event(ServerEvent::PacketSent(packet.clone()));
+                                // If the message was sent, I also notify the sim controller.
                             }
                         }
                     }
-                    Ok(_) => {
-                        self.send_event(ServerEvent::PacketSent(packet.clone()));
-                        // If the message was sent, I also notify the sim controller.
-                    }
                 }
+            },
+            None => {
+                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::UnexpectedRecipient(self.get_src_id()));
             }
         }
     }
@@ -261,20 +265,24 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             PacketType::Nack(nack) => {
                 if self.handle_nack(nack.clone(), packet.clone()) {
-                    self.send_fragment_after_nack(packet, nack);
+                    self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
                 }
             }
             PacketType::FloodRequest(_) => {
                 unreachable!() // We already managed them earlier.
             }
             PacketType::FloodResponse(flood_resp) => {
-                self.save_flood_response(flood_resp);
+                if self.save_flood_response(flood_resp) {
+                    let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
+                    self.send_message(msg, packet.routing_header.source().unwrap());
+                }
             }
         }
     }
     
     fn server_send_fragment_after_nack(&mut self, packet: Packet, nack: Nack, self_id: NodeId) {
         let mut tmp_frg = None;
+        let mut tmp_dst = 0;
         let mut event = None;
         match self.get_fragments_hm().get(&(packet.session_id, self_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore.
@@ -282,7 +290,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 let err=  String::from("Failed to find message again after NACK");
                 event = Some(ServerEvent::LostMessage(packet.session_id, self_id, err));
             },
-            Some((_,fragments)) => {
+            Some((destination,fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
                         event = Some(ServerEvent::LostFragment(packet.session_id, self_id, nack.fragment_index));
@@ -290,12 +298,16 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
                         tmp_frg = Some(fragment.clone());
+                        tmp_dst = *destination;
                     }
                 }
             }
         }
+        
+        // I need to create these copies of the results because in the match self is borrowed mutually,
+        // so I can't call the necessary functions.
         if let Some(fragment) = tmp_frg {
-            self.server_send_single_fragment(fragment.clone(), *packet.routing_header.hops.first().unwrap(), packet.session_id);
+            self.server_send_single_fragment(fragment.clone(), tmp_dst, packet.session_id);
         }
         if let Some(event) = event {
             self.send_event(event);
@@ -330,8 +342,10 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     }
     
     fn start_flood(&mut self) {
-        // I use a counter to avoid flooding the network too often.
         if self.can_flood() {
+            // I tell my data structure that I'm flooding, to avoid starting too many floods.
+            self.starting_to_flood();
+            
             let flood_request = FloodRequest{
                 flood_id: self.get_flood_id(),
                 initiator_id: self.get_src_id(),
@@ -401,9 +415,12 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn process_unsent_periodically(&mut self){
         // I create a temporary copy of the fragments that needs to be processed.
         let to_process = self.get_fragment_to_process();
+        println!("To process {:?}", to_process);
         
         // I then empty the HashMap to not have any duplicate.
         self.reset_unsent_fragments();
+        
+        self.flood();
         for (fragment, identifier) in to_process {
             self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
         }
@@ -416,12 +433,13 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn handle_flood_request(&mut self, request: FloodRequest, packet: Packet) -> bool;
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool;
     fn positive_feed(&mut self, nodes: Vec<NodeId>);
-    fn save_flood_response(&mut self, flood_resp: FloodResponse);
-    fn can_flood(&mut self) -> bool;
+    fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool;
     fn send_to_all(&mut self, packet: Packet);
     fn update_node_state(&mut self, source_id: NodeId, value: u8);
     fn check_to_resend_fragments(&mut self) -> bool;
     fn reset_unsent_fragments(&mut self);
+    fn can_flood(&mut self) -> bool;
+    fn starting_to_flood(&mut self);
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;
