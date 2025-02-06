@@ -12,6 +12,8 @@ pub fn id_hop_match_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Pa
                 packet,
                 NackType::UnexpectedRecipient(drone.get_id()),
             )),
+            PacketType::FloodRequest(_) => unreachable!(),
+            // In case the packet wasn't a message I send it back as it is to pass through the SC shortcut.
             _ => Err(packet),
         }
     }
@@ -26,6 +28,7 @@ pub fn final_destination_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(
                 packet,
                 NackType::DestinationIsDrone,
             )),
+            PacketType::FloodRequest(_) => unreachable!(),
             _ => Err(packet),
         }
     }
@@ -41,6 +44,7 @@ pub fn is_next_hop_check(drone: &SkyLinkDrone, packet: Packet) -> Result<(), Pac
                 packet,
                 NackType::ErrorInRouting(*next_hop)),
             ),
+            PacketType::FloodRequest(_) => unreachable!(),
             _ => Err(packet),
         }
     }
