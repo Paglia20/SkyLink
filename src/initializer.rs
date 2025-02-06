@@ -4,11 +4,20 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
+use fungi_drone::FungiDrone;
+use getdroned::GetDroned;
+use lockheedrustin_drone::LockheedRustin;
+use rolling_drone::RollingDrone;
+use rust_do_it::RustDoIt;
+use rustastic_drone::RustasticDrone;
+use rusty_drones::RustyDrone;
 use wg_2024::config;
 use wg_2024::config::Config;
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType, Packet};
+use wg_2024::packet::Packet;
+use wg_2024_rust::drone::RustDrone;
 use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::web_browser::WebBrowser;
@@ -66,6 +75,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             network_graph.insert(drone.id, (NodeNature::Drone, HashSet::from_iter(drone.connected_node_ids.clone())));
         }
 
+        let mut drone_chooser = 0;
         for drone in config.drone.into_iter() {
             //Adding the sender to this drone to the senders of the Sim Contr.
             let (contr_send, contr_recv) = unbounded();
@@ -95,8 +105,13 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
 
                 drone.run();
             }));
-            //This will probably need to be changed based on the
-            //implementation of other groups drones in our network.
+            // handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+
+            if drone_chooser >= 9 {
+                drone_chooser = 0;
+            } else {
+                drone_chooser += 1;
+            }
         }
 
 
@@ -141,6 +156,141 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
 fn parse_config(file: &str) -> config::Config {
     let file_str = fs::read_to_string(file).unwrap();
     toml::from_str(&file_str).unwrap()
+}
+
+fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<DroneEvent>, contr_recv: Receiver<DroneCommand>, drone_recv: Receiver<Packet>, drone_send: HashMap<NodeId, Sender<Packet>>, pdr: f32) -> JoinHandle<()>{
+    match drone_chooser {
+        0 => {
+            thread::spawn(move || {
+                let mut drone = FungiDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        1 => {
+            thread::spawn(move || {
+                let mut drone = RustyDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        2 => {
+            thread::spawn(move || {
+                let mut drone = RustasticDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        3 => {
+            thread::spawn(move || {
+                let mut drone = RustDoIt::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        4 => {
+            thread::spawn(move || {
+                let mut drone = RustDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        5 => {
+            thread::spawn(move || {
+                let mut drone = LockheedRustin::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        6 => {
+            thread::spawn(move || {
+                let mut drone = GetDroned::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        7 => {
+            thread::spawn(move || {
+                let mut drone = RollingDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        8 => {
+            thread::spawn(move || {
+                let mut drone = d_r_o_n_e_drone::MyDrone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        },
+        _ => {
+            thread::spawn(move || {
+                let mut drone = dr_ones::Drone::new(
+                    drone_id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    pdr,
+                );
+                drone.run();
+            })
+        }
+    }
 }
 
 fn create_servers(servers: Vec<config::Server>,
@@ -353,11 +503,6 @@ fn check_edges(conf: &Config) -> bool{
     }
     true
 }
-
-
-
-
-
 
 
 fn check_bidirectional(conf: &Config) -> bool{
