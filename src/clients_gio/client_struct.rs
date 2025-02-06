@@ -70,7 +70,7 @@ impl NetworkEdge for ClientStruct {
         match self.network.get_srh(&self.node_id, &destination){
             None => {
                 if DEBUG_MODE {
-                    println!("Tried to send fragment without path to {destination} with {}, so flooded again", self.node_id);
+                    println!("Tried to send fragment {session_id} without path to {destination} with {}, so flooded again", self.node_id);
                 }
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
@@ -120,6 +120,9 @@ impl NetworkEdge for ClientStruct {
             None => {
                 self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
                 self.flood();
+                if DEBUG_MODE{
+                    println!("lost message, hence flooded again to ensure a correct knowledge of topology!")
+                }
             },
             Some((dst,_, fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {

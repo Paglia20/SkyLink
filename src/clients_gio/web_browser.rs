@@ -248,11 +248,6 @@ impl NetworkEdge for WebBrowser {
                         };
                         let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
-                        if let None = self.comm.network.best_path(&self.get_src_id(), &from){
-                            println!("i don't have a path with {} to {from}", self.comm.node_id);
-                            self.flood();
-                        }
-
                         self.send_message(message, from);
 
                     }
