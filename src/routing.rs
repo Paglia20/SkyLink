@@ -25,7 +25,7 @@ type State = u8;
 #[derive(Debug, Clone)]
 pub struct Node {
     id: NodeId,
-    node_type: NodeType,
+    node_type: Option<NodeType>,
     forward_count: u32,
     dropped_count: u32,
 }
@@ -58,13 +58,14 @@ impl Network {
             let node_index = match self.node_map.get(&id) {
                 Some(&(_, existing_index)) => {
                     // If node already present, I return just the index.
+                    self.graph[existing_index].node_type = Some(node_type);
                     existing_index
                 },
                 None => {
                     // New node, we add it.
                     let node = Node {
                         id,
-                        node_type,
+                        node_type: Some(node_type),
                         forward_count: 1,
                         dropped_count: 0,
                     };
@@ -156,7 +157,7 @@ impl Network {
     pub fn positive_feedback(&mut self, route: Vec<NodeId>) {
         for node_id in route {
             if let Some(&(_, index)) = self.node_map.get(&node_id) {
-                if self.graph[index].node_type == Drone {
+                if self.graph[index].node_type == Some(Drone) {
                     self.graph[index].forward_count += 1;
                 }
             }
@@ -166,7 +167,7 @@ impl Network {
     /// Increase dropped count of the indicated node.
     pub fn negative_feedback(&mut self, dst: NodeId) {
         if let Some(&(_, index)) = self.node_map.get(&dst) {
-            if self.graph[index].node_type == Drone {
+            if self.graph[index].node_type == Some(Drone) {
                 self.graph[index].dropped_count += 1;
             }
         }
@@ -260,6 +261,26 @@ impl Network {
             }
         }
         res
+    }
+
+    pub fn add_destination_without_path(&mut self, dst_id: NodeId) {
+        match self.node_map.get(&dst_id) {
+            Some(&(_, existing_index)) => {
+                // If node already present, I don't need to do anything.
+            },
+            None => {
+                // New node, we add it.
+                let node = Node {
+                    id,
+                    node_type: None,
+                    forward_count: 1,
+                    dropped_count: 0,
+                };
+                let index = self.graph.add_node(node);
+                // The state is unknown.
+                self.node_map.insert(dst_id, (0u8, index));
+            }
+        }
     }
 }
 

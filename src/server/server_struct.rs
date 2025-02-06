@@ -270,4 +270,8 @@ impl ServerStruct {
         println!("how many times?");
         self.is_flooding = true;
     }
+
+    pub fn add_destination_without_path(&mut self, destination: NodeId) {
+        self.network.add_destination_without_path(destination);
+    }
 }
