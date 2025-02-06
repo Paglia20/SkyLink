@@ -4,6 +4,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
+use std::cmp::max;
 use fungi_drone::FungiDrone;
 use getdroned::GetDroned;
 use lockheedrustin_drone::LockheedRustin;
@@ -16,7 +17,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::{ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
+use crate::{server, ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
 use crate::clients_gio::client_chat::ChatClient;
 use crate::clients_gio::web_browser::WebBrowser;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
@@ -111,7 +112,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             }
         }
 
-
+        /// STILL NEED TO INSERT FILES VECTOR
         // I create the servers in an external function, that'll add them to the 'handles' vector.
         let (chat_servers, media_servers) = create_servers(config.server.clone(),
                                                            &mut handles,
@@ -119,7 +120,8 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
                                                            &server_event_send,
                                                            &packet_senders,
                                                            &mut packet_receivers,
-                                                           &mut network_graph
+                                                           &mut network_graph,
+                                                           Vec::new()
         );
         create_clients(config.client.clone(),
                        &mut handles,
@@ -296,11 +298,40 @@ fn create_servers(servers: Vec<config::Server>,
                   server_event_send: &Sender<ServerEvent>,
                   packet_senders: &HashMap<NodeId, Sender<Packet>>,
                   packet_receivers: &mut HashMap<NodeId, Receiver<Packet>>,
-                  network_graph: &mut HashMap<NodeId, (NodeNature, HashSet<NodeId>)>) -> (bool, bool) {
+                  network_graph: &mut HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
+                  files: Vec<String>) -> (bool, bool) {
 
     let length = servers.len();
     let mut chooser = 0;
     let (mut chat_servers, mut media_servers) = (false, false);
+
+    // I simulate how the choosing later would go, to understand how to divide the files.
+    let mut text_count = 0;
+    let mut media_count = 0;
+    let mut test_chooser = 0;
+    for _ in 0..length {
+        if length >= 2 && test_chooser == 0 {
+            text_count += 1;
+            test_chooser += 1;
+        } else if length >= 2 && test_chooser == 1 {
+            media_count += 1;
+            test_chooser += 1;
+        } else {
+            test_chooser = 0;
+        }
+    }
+
+    // If I don't have media-text servers, I set it to 0.
+    let files_per_server = if length > 2 {
+        length / max(text_count, media_count)
+    } else {
+        0
+    };
+    if files_per_server < 1 && media_count > 0 && text_count > 0 {
+        panic!("Files per server must be > 1");
+    }
+    // I create an offset for each couple of content servers.
+    let mut file_chooser = 0;
 
     for server in servers.into_iter() {
         // Adding the sender to this server to the senders of the Sim Contr.
@@ -321,6 +352,12 @@ fn create_servers(servers: Vec<config::Server>,
             .collect();
 
 
+        let mut server_files = Vec::new();
+        for i in 0..files_per_server {
+            server_files.push(files.get(i + file_chooser).unwrap().clone());
+        }
+
+
         // Create the thread of the server,
         // and add it to a Vec to be pushed afterward.
 
@@ -329,22 +366,33 @@ fn create_servers(servers: Vec<config::Server>,
         // - Check a chooser variable, which at each iteration of the for creates a different server type.
         if length >= 2 && chooser == 0 {
             handles.push(thread::spawn(move || {
-
-
-                //create text server
-
+                let mut server = server::server_text::TextServer::new(
+                    server.id,
+                    contr_recv,
+                    node_event_send,
+                    server_recv,
+                    server_send,
+                    server_files
+                );
+                server.run();
             }));
             chooser += 1;
         } else if length >= 2 && chooser == 1 {
             network_graph.entry(server.id).and_modify(|x|x.0 = MediaServer);
 
             handles.push(thread::spawn(move || {
-
-                //create media server
-
-
+                let mut server = server::server_media::MediaServer::new(
+                    server.id,
+                    contr_recv,
+                    node_event_send,
+                    server_recv,
+                    server_send,
+                    server_files
+                );
+                server.run();
             }));
             media_servers = true;
+            file_chooser += files_per_server;
             chooser += 1;
         } else {
             network_graph.entry(server.id).and_modify(|x|x.0 = ChatServer);
@@ -359,7 +407,6 @@ fn create_servers(servers: Vec<config::Server>,
                     Vec::new(),
                 );
                 chat_server.run();
-
             }));
             chat_servers = true;
             chooser = 0;
