@@ -14,6 +14,8 @@ pub enum ServerCommand {
 
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
+    Flooding(NodeId),
+
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),

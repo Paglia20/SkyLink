@@ -162,13 +162,7 @@ impl NetworkEdge for WebBrowser {
                         unreachable!()
                     }
                     FloodResponse(flood_resp) => {
-                        self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
-
-                        if DEBUG_MODE {
-                            if self.comm.node_id == 10 {
-                                println!("10 received - {:?}", flood_resp.path_trace);
-                            }
-                        }
+                        self.comm.save_flood_response(packet);
                     }
                 }
             }
@@ -382,7 +376,7 @@ impl ClientTrait for WebBrowser {
 
 
             // I check a counter, so that I don't try to send all the fragments every loop.
-            if self.comm.unsent_fragments.0 >= 150 {
+            if self.comm.unsent_fragments.0 >= 100 {
                 //if I have some unchecked nodes I try to check them
 
                 self.comm.periodic_check_type();

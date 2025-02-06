@@ -89,7 +89,7 @@ pub enum Scene {
     InitialScene,
     ManageAdd,
     ManageCrash,
-    ManageDrop,
+    Statistics,
 }
 
 #[derive(Clone, Debug)]
@@ -293,6 +293,9 @@ impl MyApp {
         self.sim_contr.add_client_event_to_log(client_event.clone());
 
         match client_event {
+            ClientEvent::Flooding(src) => {
+                self.sim_contr.storage.node_flooding(src);
+            }
             ClientEvent::SendContactsToSC(src, dst) => {
                 self.sim_contr.storage.add_contacts(src, dst);
             }
@@ -333,6 +336,9 @@ impl MyApp {
         self.sim_contr.add_server_event_to_log(server_event.clone());
 
         match server_event{
+            ServerEvent::Flooding(src) => {
+                self.sim_contr.storage.node_flooding(src);
+            }
             ServerEvent::ClientRegistered(src, client) => {
                 self.sim_contr.storage.add_to_registration(src, client);
             }
@@ -402,8 +408,8 @@ impl MyApp {
                         if ui.button("remove Drone!").clicked() {
                             self.side_panel_scenes = ManageCrash;
                         }
-                        if ui.button("Manage Drop!").clicked() {
-                            self.side_panel_scenes = ManageDrop;
+                        if ui.button("Statistics").clicked() {
+                            self.side_panel_scenes = Statistics;
                         }
 
                         // for testing
@@ -435,7 +441,7 @@ impl MyApp {
                                  è solo per vedere se ci piace il font delle media */
                                 let v = include_bytes!("../test/esempio.png").to_vec();
 
-                                self.sim_contr.storage.add_to_medias(12, 20020, "esempio.png".to_string(), v);
+                                self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "esempio.png".to_string(), v);
                             }
 
 
@@ -520,23 +526,25 @@ impl MyApp {
                             self.side_panel_scenes = InitialScene;
                         }
                     }
-                    ManageDrop => {
+                    Statistics => {
+                        //drop stats
 
-                        let max_value = self.sim_contr.storage.dropped_packets.values().map(|vec| vec.len() as f64).fold(0.0, f64::max);
+                        let max_value_drop = self.sim_contr.storage.dropped_packets.values().map(|vec| vec.len() as f64).fold(0.0, f64::max);
 
-                        if max_value > 0.0 {
+                        if max_value_drop > 0.0 {
                             ui.heading("Packet Droppers Histogram");
                             let bars: Vec<Bar> = self.sim_contr.storage.dropped_packets
                                 .iter()
                                 .map(|(&id, vec)| {
                                     let length = vec.len() as f64;
-                                    Bar::new(id as f64, length / max_value * 10.0).width(0.8) // Normalizzazione
+                                    Bar::new(id as f64, length / max_value_drop * 10.0)
+                                        .width(0.8) // Normalizzazione
                                 })
                                 .collect();
 
                             let chart = BarChart::new(bars).name("Normalised lenght");
 
-                            Plot::new("Histogram")
+                            Plot::new("Histogram Drop")
                                 .view_aspect(2.0)
                                 .show(ui, |plot_ui| {
                                     plot_ui.bar_chart(chart);
@@ -576,6 +584,41 @@ impl MyApp {
                         } else {
                             ui.label("No packet dropped so far");
                         }
+
+
+                        //flooding stats
+
+                        let max_value_flood = self.sim_contr.storage.how_many_flood.values().map(|flood| *flood as f64).fold(0.0, f64::max);
+
+                        if max_value_flood > 0.0 {
+                            ui.heading("Packet Flooding Histogram Flood");
+                            let bars: Vec<Bar> = self.sim_contr.storage.how_many_flood
+                                .iter()
+                                .map(|(&id, vec)| {
+                                    let length = *vec as f64;
+                                    Bar::new(id as f64, length / max_value_drop * 10.0)
+                                        .width(0.8) // Normalizzazione
+                                        .fill(Color32::BLUE)
+
+                                })
+                                .collect();
+
+                            let chart = BarChart::new(bars).name("Normalised lenght");
+
+                            Plot::new("Histogram Flood")
+                                .view_aspect(2.0)
+                                .show(ui, |plot_ui| {
+                                    plot_ui.bar_chart(chart);
+                                });
+
+                            for (i, floods) in &self.sim_contr.storage.how_many_flood {
+                                ui.label(format!("{} flooded {} times", i, floods));
+                            }
+
+                        }else {
+                            ui.label("No Floods so far");
+                        }
+
 
                         if ui.button("Close").clicked() {
                             self.side_panel_scenes = InitialScene; // Close the alert
@@ -1682,6 +1725,7 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
     // Decodifica l'immagine usando il crate `image`
     let decoded_image = image::load_from_memory(&image_data).ok()?;
     let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
+    let (width, height) = rgba_image.dimensions(); // Get the actual dimensions
 
     // Crea una texture da RGBA bytes
     let pixels: Vec<Color32> = rgba_image
@@ -1690,13 +1734,14 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
         .collect();
 
     let texture = egui::ColorImage {
-        size: [50usize, 50usize],
+        size: [width as usize, height as usize], // Use the actual image size
         pixels,
     };
 
     // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
+
 
 
 

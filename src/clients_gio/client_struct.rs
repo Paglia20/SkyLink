@@ -12,10 +12,10 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, Ack};
 use wg_2024::packet::NackType::ErrorInRouting;
-//here the common struct of both the clients, important: some functions are left unreachable since will be called ad hoc by each client.
-//attention, also all function that call handle packet and handle message are unreachable obv
 
 
+///common struct of both the clients,
+///important: some functions are left unreachable since will be called ad hoc by each client.
 pub struct ClientStruct {
     pub node_id: NodeId,
     pub command_recv: Receiver<ClientCommand>,
@@ -28,9 +28,13 @@ pub struct ClientStruct {
     pub network: Network,
     pub fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>, //(session_id, source) - (destination, copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
     pub unsent_fragments: (u8, HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>), // The NodeId is the src, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+    pub is_flooding: bool,
+    pub flood_count: u64,
 }
 
 impl NetworkEdge for ClientStruct {
+
+    ///To send any message, depending on the content, different checks has to be applied
     fn send_message(&mut self, message: Message, destination: NodeId) {
         match message.clone().content{
             ContentType::TypeExchange(_exc) =>{
@@ -59,6 +63,7 @@ impl NetworkEdge for ClientStruct {
         unreachable!()
     }
 
+    ///To send any fragment of message
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         if destination == self.node_id {
             if DEBUG_MODE {
@@ -70,11 +75,14 @@ impl NetworkEdge for ClientStruct {
         match self.network.get_srh(&self.node_id, &destination){
             None => {
                 if DEBUG_MODE {
-                    println!("Tried to send fragment {session_id} without path to {destination} with {}, so flooded again", self.node_id);
+                    println!("Tried to send fragment {session_id} without path to {destination} with {}, so may have flooded again", self.node_id);
                 }
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
-                self.flood();
+
+                if !self.is_flooding {
+                    self.flood();
+                }
             }
             Some(srh) => {
                 let first_dst = srh.hops[1];
@@ -119,7 +127,10 @@ impl NetworkEdge for ClientStruct {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
                 self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
-                self.flood();
+
+                if !self.is_flooding {
+                    self.flood();
+                }
                 if DEBUG_MODE{
                     println!("lost message, hence flooded again to ensure a correct knowledge of topology!")
                 }
@@ -157,7 +168,14 @@ impl NetworkEdge for ClientStruct {
     }
 
     fn flood(&mut self) {
+        self.is_flooding = true;
         self.send_event(ClientEvent::Flooding(self.node_id));
+
+        if self.node_id == 0{
+            println!("flooding with 0");
+
+        }
+
 
         let flood_request = wg_2024::packet::FloodRequest {
             flood_id: self.get_flood_id(),
@@ -277,7 +295,7 @@ impl NetworkEdgeErrors for ClientStruct {
 
 impl ClientTrait for ClientStruct {
     fn new(node_id: NodeId, command_recv: Receiver<ClientCommand>, event_send: Sender<ClientEvent>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
-        Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), network: Network::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()) }
+        Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), network: Network::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()), is_flooding: false, flood_count: 0 }
     }
 
     fn run(&mut self) {
@@ -400,14 +418,29 @@ impl ClientStruct {
             EdgeNackType::UnexpectedMessage => {
                 //vuol dire che ha mandato un message al dst con state sbagliato.
                 self.network.update_state(src, 2);
-
                 //e il messaggio viene scartato credo
+            }
+        }
+    }
+    pub fn save_flood_response(&mut self, pack: Packet ){
+        if let FloodResponse(flood_resp) = pack.pack_type {
+            self.network.add_route(self.node_id, flood_resp.path_trace.clone());
+
+            // I have all routes to the nodes I already know, or flood_counter is sgravato, you are again able to flood
+            if self.network.has_all_routes(self.node_id) || self.flood_count >= 200 {
+                // Now I can flood again
+                self.is_flooding = false;
+                self.flood_count = 0;
 
                 if DEBUG_MODE{
-                    println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.node_id, src)
+                    println!("now {} can flood again", self.node_id)
                 }
-
+            } else {
+                self.flood_count += 1;
             }
+
+            //if i don't have the type yet check it
+            self.periodic_check_type();
         }
     }
 }

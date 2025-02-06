@@ -267,6 +267,7 @@ impl ServerStruct {
     }
     
     pub fn starting_to_flood(&mut self) {
+        println!("how many times?");
         self.is_flooding = true;
     }
 }

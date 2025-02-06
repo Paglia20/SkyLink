@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use wg_2024::controller::DroneEvent;
 use wg_2024::network::*;
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use crate::clients_gio::client_command::ClientEvent;
 use crate::DEBUG_MODE;
 use crate::message::{ContentType, EdgeNackType, Message, TypeExchange};
 
@@ -351,6 +352,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 initiator_id: self.get_src_id(),
                 path_trace: vec![(self.get_src_id(), NodeType::Server)],
             };
+
+            self.send_event(ServerEvent::Flooding(self.get_src_id()));
+
             let packet = Packet::new_flood_request(SourceRoutingHeader::default(), self.get_session_id(), flood_request);
             self.send_to_all(packet);
         }
