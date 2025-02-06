@@ -271,7 +271,7 @@ impl Network {
             None => {
                 // New node, we add it.
                 let node = Node {
-                    id,
+                    id: dst_id,
                     node_type: None,
                     forward_count: 1,
                     dropped_count: 0,
