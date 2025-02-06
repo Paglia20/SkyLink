@@ -281,7 +281,7 @@ impl SkyLinkDrone {
         id_hop_match_check(&self, packet.clone())?;
         //Increase the index, if it makes sense to do it (he is not the destination)
         if packet.routing_header.hop_index +1 < packet.routing_header.hops.len(){
-        packet.routing_header.hop_index += 1;}
+            packet.routing_header.hop_index += 1;}
         //Check if we're a final destination.
         final_destination_check(&self, packet.clone())?;
         //Check if the packet is dropped (only when msg_fragment).
