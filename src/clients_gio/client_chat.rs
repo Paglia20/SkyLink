@@ -41,8 +41,6 @@ impl NetworkEdge for ChatClient {
             flood_request
                 .path_trace
                 .push((self.comm.node_id, NodeType::Client));
-
-
             if self.comm.flood_ids.insert((
                 flood_request.flood_id.clone(),
                 flood_request.initiator_id.clone(),
@@ -163,19 +161,8 @@ impl NetworkEdge for ChatClient {
                 FloodRequest(_) => {
                     unreachable!()
                 }
-                FloodResponse(flood_resp) => {
-                    // As of rn it "saves" all possible servers and client... we want something else I think...
-                    self.comm.network.add_route(self.comm.node_id, flood_resp.path_trace.clone());
-
-
-                    if DEBUG_MODE {
-                        if self.comm.node_id == 0 {
-                            println!("0 received - {:?}", flood_resp.path_trace);
-                        }
-                        else if self.comm.node_id == 9 {
-                            println!("9 received - {:?}", flood_resp.path_trace);
-                        }
-                    }
+                FloodResponse(_) => {
+                    self.comm.save_flood_response(packet);
                 }
             }
         }
@@ -222,10 +209,6 @@ impl NetworkEdge for ChatClient {
                         };
                         let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
-                        if let None = self.comm.network.best_path(&self.get_src_id(), &from){
-                            println!("i don't have a path with {} to {from}", self.comm.node_id);
-                            self.flood();
-                        }
 
                         self.send_message(message, from);
 
@@ -352,21 +335,11 @@ impl ClientTrait for ChatClient {
                 }
             }
             // I check a counter, so that I don't try to send all the fragments every loop.
-            if self.comm.unsent_fragments.0 >= 150 {
+            if self.comm.unsent_fragments.0 >= 100 {
                 //if I have some unchecked nodes I try to check them
                 self.comm.periodic_check_type();
 
                 self.comm.process_unsent_periodically();
-
-                //uncomment to check flood periodically
-
-                // let mut path_printable = String::new();
-                // self.paths.clone().iter_mut().for_each(|(dst, (state, path))| {
-                //     let destination = format!("Node {}, State: {}, path: *not now* \n", dst, state);
-                //     path_printable.push_str(destination.as_str());
-                // });
-                // println!("{} has paths: {:?}",self.node_id, path_printable);
-
             } else {
                 self.comm.unsent_fragments.0 += 1;
             }

@@ -22,6 +22,7 @@ pub struct SimulationStorage {
     pub catalogues: HashMap<NodeId, Vec<u64>>,
     pub medias: HashMap<NodeId, Vec<(u64, String, Vec<u8>)>>,
 
+    pub how_many_flood: HashMap<NodeId, u64>
 }
 
 
@@ -36,6 +37,7 @@ impl SimulationStorage{
             text_lists: Default::default(),
             catalogues: Default::default(),
             medias: Default::default(),
+            how_many_flood: Default::default(),
         }
     }
 
@@ -145,6 +147,9 @@ impl SimulationStorage{
         for (id, name) in medias {
             self.add_to_medias(src, id, name, vec![]);
         }
+    }
+    pub(crate) fn node_flooding(&mut self, p0: NodeId) {
+        *self.how_many_flood.entry(p0).or_insert(0) += 1;
     }
 
 }

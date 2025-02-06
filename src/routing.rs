@@ -243,11 +243,20 @@ impl Network {
     }
     
     pub fn has_all_routes(&self, source_id: NodeId) -> bool {
+        if self.node_map.is_empty(){
+            return false;
+        }
+
         let mut res = true;
-        for (id,_) in self.node_map.iter() {
-            match self.best_path(&source_id, id) {
-                Some((_,_)) => {},
-                None => res = false,
+        for (id,(state, _)) in self.node_map.iter() {
+            if *state != 0 {
+                match self.best_path(&source_id, id) {
+                    Some((_, _)) => {},
+                    None => res = false,
+                }
+            }
+            else {
+                res = false;
             }
         }
         res

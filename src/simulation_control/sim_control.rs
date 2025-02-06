@@ -251,6 +251,7 @@ impl SimulationControl {
             ServerEvent::ClientAlreadyRegistered(_, _) => {}
             ServerEvent::WrongCommandGiven(_, _) => {}
             ServerEvent::ControllerShortcut(_) => {}
+            ServerEvent::Flooding(_) => {}
         }
     }
 
