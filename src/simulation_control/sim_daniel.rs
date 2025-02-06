@@ -583,6 +583,23 @@ impl MyApp {
                         }
                     }
                 }
+
+                let texture = load_texture(ctx,"src/simulation_control/texture_pngs/SkyLinkLogo.png");
+                    // obtain available space
+                    let available_size = ui.available_size();
+
+                    let size = texture.size_vec2();
+                    let aspect_ratio = size.x / size.y;
+                    let new_size = if available_size.x / available_size.y > aspect_ratio {
+                        egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                    } else {
+                        egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                    };
+
+                    ui.add_space(120.0);
+                    //immagine scalata
+                    ui.image((texture.id(), new_size));
+
             });
     }
 
@@ -734,15 +751,7 @@ impl MyApp {
                         .show(ctx, |ui| {
                             match node.node_window_scenes {
                                 Start => {
-                                    let mut connections= String::new();
-                                    let mut first = true;
-                                    for connection in node.connections.clone() {
-                                        if !first {
-                                            connections.push_str(", ");
-                                        }
-                                        first = false;
-                                        connections.push_str(&connection.to_string());
-                                    }
+                                    let connections = MyApp::format_connections(node.clone());
                                     ui.label( RichText::new(format!("Connected to: {}", connections))
                                                   .font(FontId::new(12.0, egui::FontFamily::Monospace))
                                                   .color(Color32::WHITE),);
@@ -772,7 +781,7 @@ impl MyApp {
                                     ui.separator();
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
                                     self.sender_id = 0;
-                                    ui.label( RichText::new(format!("Log:"))
+                                    ui.label( RichText::new("Log:".to_string())
                                                   .font(FontId::new(14.0, egui::FontFamily::Monospace))
                                                   .color(Color32::LIGHT_RED),);
                                     ui.separator();
@@ -902,15 +911,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label(RichText::new(format!("Connected to: {}", connections))
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1165,15 +1166,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label( RichText::new(format!("Connected to: {}", connections))
                                                                   .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1362,7 +1355,7 @@ impl MyApp {
                                                                 ui.separator();
                                                                 for (id) in node_text_lists {
                                                                     if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
-                                                                        self.sim_contr.get_text_file(node.id, id.0);
+                                                                        self.sim_contr.get_text_file_or_media(node.id, id.0);
                                                                         node.content = Some(MediaToResolve)
                                                                     }
                                                                 }
@@ -1373,7 +1366,7 @@ impl MyApp {
 
                                                                         for id in media_available {
                                                                             if ui.button(id.to_string()).clicked() {
-                                                                                self.sim_contr.get_media(node.id, id.clone());
+                                                                                self.sim_contr.get_text_file_or_media(node.id, id.clone());
                                                                                 node.content = None;
                                                                                 node.node_window_scenes = Start; // Close the window
                                                                             }
@@ -1420,7 +1413,7 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
 
-                                                    ui.label(RichText::new(format!("Log:"))
+                                                    ui.label(RichText::new("Log:".to_string())
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
                                                                  .color(Color32::WHITE),);
 
@@ -1443,16 +1436,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label(RichText::new(format!("Connected to: {}", connections))
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1643,6 +1627,19 @@ impl MyApp {
             }
             _ => {}
         }
+    }
+
+    pub fn format_connections(node: MyNodes) -> String {
+        let mut connections = String::new();
+        let mut first = true;
+        for connection in node.connections.clone() {
+            if !first {
+                connections.push_str(", ");
+            }
+            first = false;
+            connections.push_str(&connection.to_string());
+        }
+        connections
     }
 }
 impl eframe::App for MyApp {

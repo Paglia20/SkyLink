@@ -4,8 +4,7 @@ use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDest
 use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::storage::SimulationStorage;
 use crate::skylink_drone::drone::SkyLinkDrone;
-use crate::DEBUG_MODE;
-use crossbeam_channel::{unbounded, Receiver, Sender, TrySendError};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
@@ -17,7 +16,6 @@ use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::{NodeType, Packet, PacketType};
-use crate::server::server_type::ServerType::Chat;
 
 pub struct SimulationControl {
     drone_command_senders: HashMap<NodeId, Sender<DroneCommand>>,
@@ -111,7 +109,7 @@ impl SimulationControl {
                 self.c_process_drone_inside_destination(node_id);
             }
             ClientEvent::SendContactsToSC(src, _dst) => {
-                self.c_process_send_contacts(src, _dst)
+                self.c_process_send_contacts(src)
             }
             ClientEvent::WrongDestinationType(src, node) =>{
                 let new_log = LogEntry{
@@ -166,7 +164,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: Sent,
                     node_id: src,
-                    message: format!("{src} updated his TexsLists! ({id}) ")
+                    message: format!("{src} updated his TextsLists! ({id}) ")
                 };
                 self.log.push_back(new_log);
             }
@@ -258,42 +256,42 @@ impl SimulationControl {
     pub fn msg_another_client(&self, src: NodeId, dst: NodeId, str: String){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::SendMSG(dst, str.clone())).unwrap();
-            if DEBUG_MODE{
+            /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to send str {str} to {}", dst);
-            }
+            }*/
         }
     }
     pub fn register_client_to_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::Register(dst)).unwrap();
-            if DEBUG_MODE{
+            /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to register to {}", dst);
-            }
+            }*/
         }
     }
     pub fn retrive_list_from_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::RetrieveList(dst)).unwrap();
-            if DEBUG_MODE{
+            /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to retrive list from {}", dst);
-            }
+            }*/
         }
     }
 
-    pub fn get_text_file(&self, src: NodeId, text_file_id: u64){
+    pub fn get_text_file_or_media(&self, src: NodeId, text_file_id: u64){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(text_file_id)).unwrap();
-            if DEBUG_MODE{
+            /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to get text file {}",text_file_id);
-            }
+            }*/
         }
     }
     pub fn get_media(&self, src: NodeId, media: u64){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(media)).unwrap();
-            if DEBUG_MODE{
+            /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to get media {}",media);
-            }
+            }*/
         }
     }
 
@@ -364,22 +362,22 @@ impl SimulationControl {
                 // remove the drone from the neighbour's sends
                 let mut vec = self.network_graph.get(&id).unwrap().1.clone();
                     self.drone_command_senders.iter().for_each(|(neigh_id, sender)|{
-                        match sender.try_send(DroneCommand::RemoveSender(id)) {
+                        match sender.try_send(RemoveSender(id)) {
                             Ok(_) => {}
-                            Err(e) => {
-                                if DEBUG_MODE {
+                            Err(_e) => {
+                                /*if DEBUG_MODE {
                                     println!("{neigh_id} is not in network, so he cannot remove {id}");
-                                }
+                                }*/
                             }
                         }
                     });
                     self.client_command_senders.iter().for_each(|(neigh_id, sender)|{
                         match sender.try_send(ClientCommand::RemoveSender(id)) {
                             Ok(_) => {}
-                            Err(e) => {
-                                if DEBUG_MODE {
+                            Err(_e) => {
+                                /*if DEBUG_MODE {
                                     println!("{neigh_id} is not in network, so he cannot remove {id}");
-                                }
+                                }*/
                             }
                         }
                     });
@@ -387,10 +385,10 @@ impl SimulationControl {
                         if vec.contains(neigh_id){
                            match sender.try_send(ServerCommand::RemoveSender(id)) {
                                Ok(_) => {}
-                               Err(e) => {
-                                   if DEBUG_MODE {
+                               Err(_e) => {
+                                   /*if DEBUG_MODE {
                                        println!("{neigh_id} is not in network, so he cannot remove {id}");
-                                   }
+                                   }*/
                                }
                            }
                         }
@@ -418,7 +416,7 @@ impl SimulationControl {
     pub fn remove_senders(&mut self, id: NodeId, id_to_remove: NodeId) {
         if !self.is_node_connected(id, id_to_remove){
             self.log.push_back(LogEntry::new(
-                Cause::Error,
+                Error,
                 id,
                 format!("drone {} is not connected to {}", id_to_remove, id),
             ));
@@ -426,13 +424,13 @@ impl SimulationControl {
             //se non sono connessi non far nulla e returna
         }
 
-        //i created get_type that gets the type of the node from the id,
+        //I created get_type that gets the type of the node from the id,
         // depending on that, you send the correct drone/client/server command
         match self.get_type(id){
             None => {
-                //if it returned None it wasnt saved inside the network, you shouldn't reach this anyway but you never know
+                //if it returned None it wasn't saved inside the network, you shouldn't reach this anyway, but you never know
                 self.log.push_back(LogEntry::new(
-                    Cause::Error,
+                    Error,
                     id,
                     format!("drone {id} is not in network",
                 )));
@@ -446,7 +444,7 @@ impl SimulationControl {
         match self.get_type(id_to_remove){
             None => {
                 self.log.push_back(LogEntry::new(
-                    Cause::Error,
+                    Error,
                     id,
                     format!("drone {id_to_remove} is not in network",
                     )));
@@ -461,7 +459,7 @@ impl SimulationControl {
     pub fn flood_with(&mut self, node_id: NodeId){
         if !self.does_drone_exist(node_id) {
             self.log.push_back(LogEntry::new(
-                Cause::Error,
+                Error,
                 node_id,
                 format!("drone {} does not exist in this network.", node_id),
             ));
@@ -469,7 +467,7 @@ impl SimulationControl {
         }
         match self.get_type(node_id) {
             None => {self.log.push_back(LogEntry::new(
-                Cause::Error,
+                Error,
                 node_id,
                 format!("drone {node_id} is not in network",
                 )));
@@ -477,8 +475,8 @@ impl SimulationControl {
 
             Some(n_type) => {
                 if Client == n_type{
-                    if let Some(sender) = self.client_command_senders.get(&node_id) {
-                        if let Err(_e) = sender.send(ClientCommand::Flood) {
+                    if let Some(_sender) = self.client_command_senders.get(&node_id) {
+                        /*if let Err(_e) = _sender.send(ClientCommand::Flood) {
                             if DEBUG_MODE {
                                 println!("error flooding");
                             }
@@ -486,7 +484,7 @@ impl SimulationControl {
                             if DEBUG_MODE {
                                 println!("flooded successfully");
                             }
-                        }
+                        }*/
 
                     }
                     else {
@@ -505,7 +503,7 @@ impl SimulationControl {
 
         if !self.does_drone_exist(id_to_add) {
             self.log.push_back(LogEntry::new(
-                Cause::Error,
+                Error,
                 id,
                 format!("drone {} does not exist in this network.", id_to_add),
             ));
@@ -515,7 +513,7 @@ impl SimulationControl {
         match self.get_type(id) {
             None => {
                 self.log.push_back(LogEntry::new(
-                    Cause::Error,
+                    Error,
                     id,
                     format!("drone {id} is not in network",
                     )));
@@ -529,7 +527,7 @@ impl SimulationControl {
         match self.get_type(id_to_add) {
             None => {
                 self.log.push_back(LogEntry::new(
-                    Cause::Error,
+                    Error,
                     id_to_add,
                     format!("drone {id_to_add} is not in network",
                     )));
@@ -551,12 +549,12 @@ impl SimulationControl {
 
     pub fn set_pdr(&mut self, id: NodeId, pdr: f32) {
         let mut capped_pdr = pdr;
-        if (pdr >= 100.0){
+        if pdr >= 100.0{
             capped_pdr = 100.0;
             self.log.push_back(LogEntry::new(
                 Cause::Managing,
                 id,
-                format!("Capped pdr to 100"),
+                "Capped pdr to 100".to_string(),
             ));
         }
 
@@ -599,27 +597,8 @@ impl SimulationControl {
 
     // functions to process the adding of client events to log: (denoted with "c_")
     fn c_process_packet_sent(& mut self, packet: Packet){
-        let mut message = String::new();
 
-        match packet.clone().pack_type{
-            PacketType::MsgFragment(fragment) => {
-                message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
-            }
-            PacketType::Ack(ack) => {
-                message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::Nack(nack) => {
-                message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::FloodRequest(rq) => {
-                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
-            }
-            PacketType::FloodResponse(rr) => {
-                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
-            }
-        }
+        let message = self.get_message(packet.clone());
 
         let id_drone = match packet.clone().pack_type{
             PacketType::FloodRequest(flood) => {
@@ -632,25 +611,17 @@ impl SimulationControl {
         };
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
             message
         };
         self.log.push_back(new_log);
     }
     fn c_process_packet_received(& mut self, packet: Packet){
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
             message: format!(
                 "Received fragment {:?} of packet: {}",
@@ -660,17 +631,9 @@ impl SimulationControl {
         self.log.push_back(new_log);
     }
     fn c_process_packet_sending_error(& mut self, packet: Packet){
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
         let new_log = LogEntry {
-            cause: Cause::Error,
+            cause: Error,
             node_id: id_drone,
             message: format!(
                 "Error in sending fragment {:?} of packet: {}",
@@ -762,54 +725,26 @@ impl SimulationControl {
         };
         self.log.push_back(new_log);
     }
-    fn c_process_send_contacts(&mut self, src:NodeId, dst:NodeId){
+    fn c_process_send_contacts(&mut self, src:NodeId){
         let new_log = LogEntry{
             cause: Flood,
             node_id: src,
-            message: format!("Flood infos received.")
+            message: "Flood infos received.".to_string()
         };
         self.log.push_back(new_log);
     }
 
     // functions to process the adding of drone events to log: (denoted with "d_")
     fn d_process_packet_sent(&mut self, packet: Packet){
-        let mut message = String::new();
 
-        match packet.clone().pack_type{
-            PacketType::MsgFragment(fragment) => {
-                message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
-            }
-            PacketType::Ack(ack) => {
-                message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::Nack(nack) => {
-                message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::FloodRequest(rq) => {
-                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
-            }
-            PacketType::FloodResponse(rr) => {
-                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
-            }
-        }
+        let message = self.get_message(packet.clone());
 
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
-            message: message
-
+            message
         };
         self.log.push_back(new_log);
     }
@@ -854,37 +789,10 @@ impl SimulationControl {
 
     // functions to process the adding of server events to log: (denoted with "s_")
     fn s_process_packet_sent(&mut self, packet: Packet){
-        let mut message = String::new();
 
-        match packet.clone().pack_type{
-            PacketType::MsgFragment(fragment) => {
-                message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
-            }
-            PacketType::Ack(ack) => {
-                message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::Nack(nack) => {
-                message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
-            }
-            PacketType::FloodRequest(rq) => {
-                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
-            }
-            PacketType::FloodResponse(rr) => {
-                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(),path)
-            }
-        }
+        let message = self.get_message(packet.clone());
 
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
 
         let new_log = LogEntry {
             cause: Sent,
@@ -894,18 +802,10 @@ impl SimulationControl {
         self.log.push_back(new_log);
     }
     fn s_process_packet_received(&mut self, packet: Packet){
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
 
         let new_log = LogEntry {
-            cause: Cause::Sent,
+            cause: Sent,
             node_id: id_drone,
             message: format!(
                 "Received fragment {:?} of packet: {}",
@@ -915,17 +815,9 @@ impl SimulationControl {
         self.log.push_back(new_log);
     }
     fn s_process_packet_sending_error(&mut self, packet: Packet){
-        let id_drone = match packet.clone().pack_type{
-            PacketType::FloodRequest(flood) => {
-                let (id, _) = flood.path_trace.last().unwrap();
-                *id
-            }
-            _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
-            },
-        };
+        let id_drone = self.get_id_drone(packet.clone());
         let new_log = LogEntry {
-            cause: Cause::Error,
+            cause: Error,
             node_id: id_drone,
             message: format!(
                 "Error in sending fragment {:?} of packet: {}",
@@ -935,22 +827,7 @@ impl SimulationControl {
         self.log.push_back(new_log);
     }
     fn s_process_ack_received(&mut self, packet: Packet){
-        if let Some(ack_id) = packet.routing_header.destination(){
-            match packet.pack_type {
-                PacketType::Ack(ack) => {
-                    let new_log = LogEntry{
-                        cause: AckReceived,
-                        node_id: ack_id,
-                        message: format!(
-                            "Node {:?} received Ack of fragment {}"
-                            , ack_id, ack.fragment_index
-                        )
-                    };
-                    self.log.push_back(new_log);
-                }
-                _ => {}
-            }
-        }
+        self.c_process_ack_received(packet)
     }
     fn s_process_nack_received(&mut self, packet: Packet){
         if let Some(ack_id) = packet.routing_header.destination(){
@@ -969,6 +846,43 @@ impl SimulationControl {
                 _ => {}
             }
         }
+    }
+
+    fn get_id_drone(&mut self, packet: Packet) -> NodeId{
+        let id_drone = match packet.clone().pack_type{
+            PacketType::FloodRequest(flood) => {
+                let (id, _) = flood.path_trace.last().unwrap();
+                *id
+            }
+            _ => *{
+                packet.routing_header.hops.get(packet.routing_header.hop_index - 1).unwrap()
+            },
+        };
+        id_drone
+    }
+
+    fn get_message(&mut self, packet: Packet) -> String{
+        let mut message = String::new();
+        match packet.clone().pack_type{
+            PacketType::MsgFragment(fragment) => {
+                message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
+            }
+            PacketType::Ack(ack) => {
+                message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
+            }
+            PacketType::Nack(nack) => {
+                message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
+            }
+            PacketType::FloodRequest(rq) => {
+                let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
+            }
+            PacketType::FloodResponse(rr) => {
+                let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
+                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
+            }
+        }
+        message
     }
 
     //functions for remove_senders
@@ -1030,9 +944,9 @@ impl SimulationControl {
                             return;
                         }
                     }
-                }else if DEBUG_MODE{
+                }/*else if DEBUG_MODE{
                     println!("error adding drone {} to server {} senders", id_to_add, id);
-                }
+                }*/
             }
             Drone => {
                 if let Some(sender) = self.drone_command_senders.get(&id) {
@@ -1042,9 +956,9 @@ impl SimulationControl {
                             return;
                         }
                     }
-                } else if DEBUG_MODE{
+                }/* else if DEBUG_MODE{
                     println!("error adding drone {} to server {} senders", id_to_add, id);
-                }
+                }*/
             }
             Server => {
                 if let Some(sender) = self.server_command_senders.get(&id) {
@@ -1054,9 +968,9 @@ impl SimulationControl {
                             return;
                         }
                     }
-                } else if DEBUG_MODE{
+                }/* else if DEBUG_MODE{
                     println!("error adding drone {} to server {} senders", id_to_add, id);
-                }
+                }*/
             }
         }
         if let Some((_, ids)) = self.network_graph.get_mut(&id) {
