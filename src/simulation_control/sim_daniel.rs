@@ -440,7 +440,7 @@ impl MyApp {
                             if ui.button("test (graphically) media with 12").clicked() {
                                 /* questo andrà cambiato appena leo avrà fatto il server,
                                  è solo per vedere se ci piace il font delle media */
-                                let v = include_bytes!("../test/esempio.png").to_vec();
+                                let v = include_bytes!("../test/contents_inputs/media_files/esempio.png").to_vec();
 
                                 self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "esempio.png".to_string(), v);
                             }
