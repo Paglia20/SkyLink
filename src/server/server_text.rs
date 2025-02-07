@@ -127,7 +127,7 @@ impl NetworkEdge for TextServer {
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
-                        self.server_struct.add_destination_without_path(from);
+                        self.add_destination_without_path(from);
 
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
@@ -150,6 +150,7 @@ impl NetworkEdge for TextServer {
                                 // I set it as a not usable contact.
                             }
                         }
+                        self.type_checked(from);
                     }
                 }
             }
@@ -308,7 +309,6 @@ impl Server for TextServer {
     fn positive_feed(&mut self, nodes: Vec<NodeId>) {
         self.server_struct.network.positive_feedback(nodes);
     }
-
     fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool {
         self.server_struct.save_flood_response(flood_resp)
     }
@@ -318,6 +318,7 @@ impl Server for TextServer {
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
         self.server_struct.network.update_state(source_id, value);
     }
+
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
@@ -327,9 +328,18 @@ impl Server for TextServer {
     fn can_flood(&mut self) -> bool {
         self.server_struct.can_flood()
     }
-
     fn starting_to_flood(&mut self) {
         self.server_struct.starting_to_flood();
+    }
+    fn can_type_check(&mut self, dst: NodeId) -> bool {
+        self.server_struct.can_type_check(dst)
+    }
+    fn type_checked(&mut self, src: NodeId) {
+        self.server_struct.type_checked(src);
+    }
+
+    fn add_destination_without_path(&mut self, dst: NodeId) {
+        self.server_struct.add_destination_without_path(dst);
     }
 
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
