@@ -118,6 +118,7 @@ pub struct MyApp {
     circle_mode: bool,
     sort: bool,
     dropper: Option<NodeId>,
+    logo: Option<TextureHandle>,
 }
 
 
@@ -145,7 +146,6 @@ impl MyApp {
             checked.push(false);
             selected_nodes.push(false);
         }
-
         let mut app = Self {
             nodes: vec,
             side_panel_scenes: InitialScene,
@@ -156,6 +156,7 @@ impl MyApp {
             circle_mode: true,
             sort: false,
             dropper: None,
+            logo: None,
         };
         app
     }
@@ -476,9 +477,31 @@ impl MyApp {
                             }
                         }
 
-
                         if ui.button("Clear Log").clicked() {
                             self.sim_contr.log.clear();
+                        }
+
+                        //load logo
+                        if self.logo.is_none(){
+                            self.logo = Some(load_texture(ctx,"src/simulation_control/texture_pngs/SkyLinkLogo.png"));
+                        } else {
+                            if let Some(texture) = self.logo.clone() {
+
+                                // obtain available space
+                                let available_size = ui.available_size();
+
+                                let size = texture.size_vec2();
+                                let aspect_ratio = size.x / size.y;
+                                let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                    egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                } else {
+                                    egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                };
+
+                                ui.add_space(120.0);
+                                //immagine scalata
+                                ui.image((texture.id(), new_size));
+                            }
                         }
                     }
                     ManageAdd => {
@@ -626,23 +649,6 @@ impl MyApp {
                         }
                     }
                 }
-
-                let texture = load_texture(ctx,"src/simulation_control/texture_pngs/SkyLinkLogo.png");
-                    // obtain available space
-                    let available_size = ui.available_size();
-
-                    let size = texture.size_vec2();
-                    let aspect_ratio = size.x / size.y;
-                    let new_size = if available_size.x / available_size.y > aspect_ratio {
-                        egui::vec2(available_size.y * aspect_ratio, available_size.y)
-                    } else {
-                        egui::vec2(available_size.x, available_size.x / aspect_ratio)
-                    };
-
-                    ui.add_space(120.0);
-                    //immagine scalata
-                    ui.image((texture.id(), new_size));
-
             });
     }
 
