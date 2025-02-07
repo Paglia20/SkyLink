@@ -102,7 +102,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         match self.get_srh(destination) {
             None => {
                 /// REMOVE
-                println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
+                // println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
                 self.flood(); // Since I miss the destination, I start a flooding.
@@ -278,6 +278,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             PacketType::FloodResponse(flood_resp) => {
                 if self.save_flood_response(flood_resp) {
+                    ///REMOVE, TO CHECK FLOODS
+                    // println!("server 14 sent type request");
+
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
                     self.send_message(msg, packet.routing_header.source().unwrap());
                 }

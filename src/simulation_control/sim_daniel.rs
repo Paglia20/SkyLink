@@ -1084,7 +1084,22 @@ impl MyApp {
                                                                     ui.separator();
                                                                     if let Some(chat) = self.sim_contr.storage.retrieve_chat(node.id, dst){
                                                                         for (id, str) in chat {
-                                                                            ui.label(format!("{id} - {str}"));
+                                                                            // Layout per i messaggi
+                                                                            ui.horizontal(|ui| {
+                                                                                if id == node.id {
+                                                                                    // Messaggio inviato da questo nodo (destro)
+                                                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                                                        ui.group(|ui| {
+                                                                                            ui.label(str);
+                                                                                        });
+                                                                                    });
+                                                                                } else {
+                                                                                    // Messaggio ricevuto da un altro nodo (sinistro)
+                                                                                    ui.group(|ui| {
+                                                                                        ui.label(format!("{id}: {str}"));
+                                                                                    });
+                                                                                }
+                                                                            });
                                                                         }
                                                                     }
                                                                     //send message

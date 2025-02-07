@@ -69,6 +69,10 @@ impl NetworkEdge for ChatServer {
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
                         self.server_struct.add_destination_without_path(from);
 
+                        ///REMOVE
+                        // println!("server 14 sent type response");
+
+
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
                     }
