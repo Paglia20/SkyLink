@@ -83,7 +83,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             let node_event_send = drone_event_send.clone();
 
             //Take the channels necessary to this drone.
-            let drone_recv = packet_receivers.remove(&drone.id).unwrap();
+            let drone_recv = packet_receivers.remove(&drone.id)?;
             let drone_send = drone
                 .connected_node_ids
                 .into_iter()
@@ -112,7 +112,14 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             }
         }
 
-        /// STILL NEED TO INSERT FILES VECTOR
+        // Possible text_files read by servers.
+        let text_files = vec![
+            "../test/contents_inputs/text_files/text_list1.txt".to_string(),
+            "../test/contents_inputs/text_files/text_list2.txt".to_string(),
+            "../test/contents_inputs/text_files/text_list3.txt".to_string(),
+            "../test/contents_inputs/text_files/text_list4.txt".to_string(),
+            "../test/contents_inputs/text_files/text_list5.txt".to_string(),
+        ];
         // I create the servers in an external function, that'll add them to the 'handles' vector.
         let (chat_servers, media_servers) = create_servers(config.server.clone(),
                                                            &mut handles,
@@ -121,7 +128,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
                                                            &packet_senders,
                                                            &mut packet_receivers,
                                                            &mut network_graph,
-                                                           Vec::new()
+                                                           text_files
         );
         create_clients(config.client.clone(),
                        &mut handles,
@@ -134,7 +141,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
                        &mut network_graph,
         );
 
-        let mut sim_contr = SimulationControl::new(
+        let sim_contr = SimulationControl::new(
             drone_command_send,
             client_command_send,
             server_command_send,
@@ -152,7 +159,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
     }
 }
 
-fn parse_config(file: &str) -> config::Config {
+fn parse_config(file: &str) -> Config {
     let file_str = fs::read_to_string(file).unwrap();
     toml::from_str(&file_str).unwrap()
 }
@@ -512,7 +519,7 @@ fn check_edges(conf: &Config) -> bool{
     let all_client_ids: Vec<NodeId> = conf.client.iter().map(|z| z.id).collect();
 
     if !NO_SERVER_MODE {
-        //untill we don't have servers i don't check if they are rightfully connected.
+        // Untill we don't have servers I don't check if they are rightfully connected.
 
         for server in &conf.server {
             if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
@@ -522,7 +529,7 @@ fn check_edges(conf: &Config) -> bool{
                 return false
             }
             for connection in &server.connected_drone_ids {
-                if all_client_ids.contains(&connection) || all_server_ids.contains(&connection) {
+                if all_client_ids.contains(connection) || all_server_ids.contains(connection) {
                     if DEBUG_MODE {
                         println!("server {} is wrongly connected to {connection}", server.id)
                     }
@@ -537,7 +544,7 @@ fn check_edges(conf: &Config) -> bool{
             return false
         }
         for connection in &client.connected_drone_ids {
-            if all_client_ids.contains(&connection) || all_server_ids.contains(&connection)  {
+            if all_client_ids.contains(connection) || all_server_ids.contains(connection)  {
                 if DEBUG_MODE{
                     println!("client {} is wrongly connected to {connection}", client.id)
                 }
@@ -550,35 +557,35 @@ fn check_edges(conf: &Config) -> bool{
 
 
 fn check_bidirectional(conf: &Config) -> bool{
-    // Controlla le connessioni per i droni
+    // Check connections for drones.
     for drone in &conf.drone {
         for &conn in &drone.connected_node_ids {
             let mut valid = false;
-            // Cerca il nodo target in droni
+            // Search the node in drones.
             check_in_drones(conf, drone.id, conn, &mut valid);
-            // Cerca il nodo target in client
+            // Search the target node in clients.
             check_in_clients(conf, drone.id, conn, &mut valid);
 
-            // Cerca il nodo target in server
+            // Search the target node in servers.
             check_in_server(conf, drone.id, conn, &mut valid);
 
-            // Se non troviamo una connessione valida inversa, ritorna false
+            // If we don't find a valid bidirectional connection, we return false.
             if !valid {
                 return false;
             }
         }
     }
 
-    // Controlla le connessioni per i client
+    // Checks client connections.
     for client in &conf.client {
         for &conn in &client.connected_drone_ids {
             let mut valid = false;
-            // Cerca il nodo target in droni
+            // Search target node in drones.
             check_in_drones(conf, client.id, conn, &mut valid);
 
-            //non devi cercarlo nel resto perchè client e server sono connessi solo a droni
+            // We don't need to search it elsewhere becase only drones can be connected to clients.
 
-            // Se non troviamo una connessione valida inversa, ritorna false
+            // If we find a non-bidirectional connection, we return false.
             if !valid {
                 println!("..");
                 return false;
@@ -588,14 +595,14 @@ fn check_bidirectional(conf: &Config) -> bool{
 
 
     if !NO_SERVER_MODE {
-        // Controlla le connessioni per i server
+        // Check Connections for servers.
         for server in &conf.server {
             for &conn in &server.connected_drone_ids {
                 let mut valid = false;
-                // Cerca il nodo target in droni
+                // Search target node in drones.
                 check_in_drones(conf, server.id, conn, &mut valid);
 
-                // Se non troviamo una connessione valida inversa, ritorna false
+                // If we find a non-valid connection, return false.
                 if !valid {
                     return false;
                 }
@@ -612,10 +619,8 @@ fn check_in_drones(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_node_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else {
-                if DEBUG_MODE{
-                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
-                }
+            } else if DEBUG_MODE{
+                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
         }
     }
@@ -627,12 +632,9 @@ fn check_in_clients(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_drone_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else {
-                if DEBUG_MODE{
-                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
-                }
+            } else if DEBUG_MODE{
+                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
-
         }
     }
 }
@@ -643,12 +645,9 @@ fn check_in_server(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_drone_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else {
-                if DEBUG_MODE{
-                    println!("Input File invalid for not double connection between: {} - {}",target.id, src)
-                }
+            } else if DEBUG_MODE{
+                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
         }
     }
 }
-
