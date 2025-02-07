@@ -4,14 +4,14 @@ use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{ContentType, EdgeNackType, Message, TypeExchange};
 use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
-use crate::routing::{Network};
+use crate::routing::Network;
 use crate::DEBUG_MODE;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, Ack};
 use wg_2024::packet::NackType::ErrorInRouting;
+use wg_2024::packet::PacketType::*;
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, FloodRequest};
 
 
 ///common struct of both the clients,
@@ -38,14 +38,14 @@ impl NetworkEdge for ClientStruct {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         match message.clone().content{
             ContentType::TypeExchange(_exc) =>{
-                self.client_send_fragment(message, destination);
+                self.client_send_in_fragments(message, destination);
             },
             ContentType::EdgeNack(_nack) => {
-                self.client_send_fragment(message, destination);
+                self.client_send_in_fragments(message, destination);
             }
             _=>{
                 if self.is_state_ok(destination) {
-                    self.client_send_fragment(message, destination);
+                    self.client_send_in_fragments(message, destination);
                 }
                 else {
                     let new_nack = WrongDestinationType(self.get_src_id(), destination);
@@ -85,8 +85,6 @@ impl NetworkEdge for ClientStruct {
                 }
             }
             Some(srh) => {
-                /// REMOVE
-                // println!("Client {} has a path to {}", self.get_src_id(), destination);
                 let first_dst = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
@@ -110,8 +108,8 @@ impl NetworkEdge for ClientStruct {
 
     }
 
+    ///If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
-        // If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
         match self.unsent_fragments.1.get_mut(&(session_id, self.node_id)) {
             Some((_, fragments)) => {
                 fragments.push(fragment);
@@ -124,6 +122,7 @@ impl NetworkEdge for ClientStruct {
         }
     }
 
+    ///If a fragment resulted in a nack, we try sending it again.
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
         match self.fragments.get(&(packet.session_id, self.node_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
@@ -151,6 +150,7 @@ impl NetworkEdge for ClientStruct {
         }
     }
 
+    ///Produce Ack for the incoming packets
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
         let new_hops: Vec<NodeId> = packet.routing_header.hops.iter().rev().map(|(id)| *id)
             .collect::<Vec<NodeId>>();
@@ -169,15 +169,10 @@ impl NetworkEdge for ClientStruct {
         }
     }
 
+    ///Function used to flood the network
     fn flood(&mut self) {
         self.is_flooding = true;
         self.send_event(ClientEvent::Flooding(self.node_id));
-
-        if self.node_id == 0{
-            println!("flooding with 0");
-
-        }
-
 
         let flood_request = wg_2024::packet::FloodRequest {
             flood_id: self.get_flood_id(),
@@ -190,6 +185,7 @@ impl NetworkEdge for ClientStruct {
         });
     }
 
+    ///Get unique flood ids in incremental order
     fn get_flood_id(&mut self) -> u64 {
         let min = match self.flood_ids.iter().min(){
             Some(min) => (*min).0,
@@ -204,6 +200,7 @@ impl NetworkEdge for ClientStruct {
         value
     }
 
+    ///Get unique session ids in incremental order
     fn get_session_id(&mut self) -> u64 {
         let min = match self.used_session_id.iter().min(){
             Some(min) => *min,
@@ -218,10 +215,12 @@ impl NetworkEdge for ClientStruct {
         value
     }
 
+    ///get the src id (yourself)
     fn get_src_id(&self) -> NodeId {
         self.node_id
     }
 
+    ///Remove a node from the available channels
     fn remove_sender(&mut self, id: NodeId) {
         if self.packet_send.contains_key(&id) {
             if let Some(to_be_dropped) = self.packet_send.remove(&id) {
@@ -233,12 +232,8 @@ impl NetworkEdge for ClientStruct {
 }
 
 impl NetworkEdgeErrors for ClientStruct {
+    ///Resolve a NodeType
     fn check_type(&mut self, id: NodeId) {
-
-        ///remove
-        // println!("client {} sent type request to {id}", self.node_id);
-
-
         let req = TypeExchange::TypeRequest { from: self.node_id };
         let exc = ContentType::TypeExchange(req);
         let s_id = self.get_session_id();
@@ -249,6 +244,7 @@ impl NetworkEdgeErrors for ClientStruct {
         }
     }
 
+    ///Check if node_id is of correct type
     fn is_state_ok(&self, node_id: NodeId) -> bool {
         let out =  match self.network.get_state(&node_id) {
             Some(s) => {
@@ -257,20 +253,18 @@ impl NetworkEdgeErrors for ClientStruct {
             }
             None =>{false}
         };
-        if !out {
-            if DEBUG_MODE{
-                println!("dst state was not ok");
-            }
-
-            //send nack?
+        if !out && DEBUG_MODE{
+            println!("dst state was not ok");
         }
         out
     }
 
+    ///Send an edge nack
     fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
         self.send_message(nack, dst);
     }
 
+    ///Send a drone nack
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
         let new_nack = Nack{
             fragment_index: 0,
@@ -301,10 +295,28 @@ impl NetworkEdgeErrors for ClientStruct {
 }
 
 impl ClientTrait for ClientStruct {
-    fn new(node_id: NodeId, command_recv: Receiver<ClientCommand>, event_send: Sender<ClientEvent>, packet_recv: Receiver<Packet>, packet_send: HashMap<NodeId, Sender<Packet>>) -> Self {
-        Self { node_id, command_recv, event_send, packet_recv, packet_send, flood_ids: HashSet::default(), used_session_id: HashSet::default(), network: Network::new(), fragments: HashMap::default(), unsent_fragments: (0, HashMap::new()), is_flooding: false, flood_count: 0 }
+    fn new(node_id: NodeId,
+           command_recv: Receiver<ClientCommand>,
+           event_send: Sender<ClientEvent>,
+           packet_recv: Receiver<Packet>,
+           packet_send: HashMap<NodeId,
+           Sender<Packet>>) -> Self {
+        Self {
+            node_id,
+            command_recv,
+            event_send,
+            packet_recv,
+            packet_send,
+            flood_ids: HashSet::default(),
+            used_session_id: HashSet::default(),
+            network: Network::new(),
+            fragments: HashMap::default(),
+            unsent_fragments: (0, HashMap::new()),
+            is_flooding: false,
+            flood_count: 0 }
     }
 
+    //unreachable functions
     fn run(&mut self) {
         unreachable!();
     }
@@ -317,7 +329,8 @@ impl ClientTrait for ClientStruct {
         unreachable!()
     }
 
-   fn send_event(&self, ce: ClientEvent) {
+    ///Send Client Event to Simulation Controller
+     fn send_event(&self, ce: ClientEvent) {
         match self.event_send.try_send(ce.clone()){
             Ok(_) => {}
             Err(_err) => {
@@ -326,14 +339,12 @@ impl ClientTrait for ClientStruct {
                 }
             }
         }
-   }
+    }
 }
 
 impl ClientStruct {
-
-
-
-    pub fn send_as_drone(&mut self, mut packet: Packet){
+    ///Send a packet for which we are not the destination, hence acting as a Drone
+    pub fn send_as_drone(&mut self, mut packet: Packet) {
         packet.routing_header.hop_index += 1;
         if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
             match self.packet_send.get(&next_id) {
@@ -357,13 +368,15 @@ impl ClientStruct {
         }
     }
 
-    pub fn periodic_check_type(&mut self){
-        for i in self.network.get_unresolved(){
+    ///Function called periodically to check type for any node for which we still didn't get a type response.
+    pub fn periodic_check_type(&mut self) {
+        for i in self.network.get_unresolved() {
             self.check_type(i)
         }
     }
 
-    pub fn client_send_fragment(&mut self, message: Message, destination: NodeId){
+    ///Function of clients to send entire messages, divided in fragments
+    pub fn client_send_in_fragments(&mut self, message: Message, destination: NodeId) {
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
         self.fragments.insert((session_id, self.node_id), (destination, Some(message.content), frags.clone()));
@@ -376,7 +389,8 @@ impl ClientStruct {
         }
     }
 
-    pub fn process_unsent_periodically(&mut self){
+    ///Function called periodically to process any fragment that has not been sent due to checks failed or congestion problems.
+    pub fn process_unsent_periodically(&mut self) {
         // I create a temporary copy of the fragments that needs to be processed.
         let mut to_process = Vec::new();
         for (identifier, content) in self.unsent_fragments.1.iter() {
@@ -392,7 +406,8 @@ impl ClientStruct {
         }
     }
 
-    pub fn handle_nack(&mut self, nack: Nack, packet: Packet){
+    ///Client Handle for any drone Nack
+    pub fn handle_nack(&mut self, nack: Nack, packet: Packet) {
         match nack.nack_type.clone() {
             NackType::UnexpectedRecipient(wrong_node) => {
                 self.network.remove_node(wrong_node);
@@ -420,7 +435,8 @@ impl ClientStruct {
         }
     }
 
-    pub fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId){
+    ///Client Handle for any Edge Nack
+    pub fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId) {
         match nack {
             EdgeNackType::UnexpectedMessage => {
                 //vuol dire che ha mandato un message al dst con state sbagliato.
@@ -429,7 +445,9 @@ impl ClientStruct {
             }
         }
     }
-    pub fn save_flood_response(&mut self, pack: Packet ){
+
+    ///Handle a flood response adding to the network the information, and updating is_flooding field
+    pub fn save_flood_response(&mut self, pack: Packet) {
         if let FloodResponse(flood_resp) = pack.pack_type {
             self.network.add_route(self.node_id, flood_resp.path_trace.clone());
 
@@ -439,12 +457,52 @@ impl ClientStruct {
                 self.is_flooding = false;
                 self.flood_count = 0;
 
-                if DEBUG_MODE{
+                if DEBUG_MODE {
                     println!("now {} can flood again", self.node_id)
                 }
             } else {
                 self.flood_count += 1;
             }
+        }
+    }
+
+    pub fn handle_flood_request(&mut self, mut packet: Packet) -> bool {
+        if let FloodRequest(flood_request) = packet.pack_type.clone() {
+            if self.flood_ids.insert((
+                flood_request.flood_id.clone(),
+                flood_request.initiator_id.clone(),
+            )) {
+                if self.packet_send.len() == 1 {
+                    false
+                } else {
+                    let mut prev = flood_request.initiator_id.clone();
+                    if flood_request.path_trace.clone().len() > 1 {
+                        prev = flood_request
+                            .path_trace
+                            .get(flood_request.path_trace.len() - 2)
+                            .unwrap()
+                            .0;
+                    }
+
+                    for (key, sender) in self.packet_send.iter() {
+                        //println!("Previous: {}", prev);
+                        if *key != prev {
+                            //I send the flooding to everyone except the node I received it from.
+                            if let Ok(_) =
+                                sender.send(packet.clone())
+                            {
+                                self.send_event(ClientEvent::PacketSent(packet.clone()));
+                                //If the message was sent, I also notify the sim controller.
+                            } //There's no else, since I don't care of nodes which can't be reached.
+                        }
+                    }
+                    true
+                }
+            } else {
+                false
+            }
+        } else {
+           unreachable!();
         }
     }
 }

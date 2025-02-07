@@ -21,77 +21,45 @@ use crate::server::server_type::{ContentServerType, ServerType};
 type ArrivedMedia = (String, Vec<u8>);
 
 pub struct WebBrowser{
-    comm: ClientStruct, //common client duh
+    ///Common Client base
+    client_base: ClientStruct,
 
+    ///Web Browser Spec
+    ///Stored TextLists
     available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
-    catalogue: HashMap<u64, Vec<NodeId>>, //which media server has that id
+
+    ///Web Browser Spec
+    ///Catalogue for each media, which media server has that id (ikea catalogue)
+    catalogue: HashMap<u64, Vec<NodeId>>,
+
+    ///Web Browser Spec
+    ///Stored Content
     arrived_content: HashMap<u64, ArrivedMedia>,
-
-    /*
-    arrived_content: media we retrieved
-
-    catalogue: filled with information got from MediaReference(...), is the fkn catalogue of ikea.
-    NotFound
-
-
-    ATTENTION:
-    the reason we have duplicated code for handle_packet and run is because both would be implemented in the common structure,
-    but both call for the specific handle_message and handle_command, hence cannot be called inside the common struct.
-
-    */
-
-
 }
 
 impl NetworkEdge for WebBrowser {
     fn send_message(&mut self, message: Message, destination: NodeId) {
-        self.comm.send_message(message, destination)
+        self.client_base.send_message(message, destination)
     }
 
+    ///Handle any incoming packet (for web browser)
     fn handle_packet(&mut self, mut packet: Packet) {
         if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
             flood_request
                 .path_trace
-                .push((self.comm.node_id, NodeType::Client));
+                .push((self.client_base.node_id, NodeType::Client));
 
-            if self.comm.flood_ids.insert((
-                flood_request.flood_id.clone(),
-                flood_request.initiator_id.clone(),
-            )) {
-                if self.comm.packet_send.len() == 1 {
-                    self.edge_send_flood_response(flood_request);
-                } else {
-                    let mut prev = flood_request.initiator_id.clone();
-                    if flood_request.path_trace.clone().len() > 1 {
-                        prev = flood_request
-                            .path_trace
-                            .get(flood_request.path_trace.len() - 2)
-                            .unwrap()
-                            .0;
-                    }
-                    //I update the path_trace in the packet.
-                    packet.pack_type = FloodRequest(flood_request);
-                    for (key, _) in self.comm.packet_send.iter() {
-                        //println!("Previous: {}", prev);
-                        //println!("Key: {}", key);
-                        if *key != prev {
-                            //I send the flooding to everyone except the node I received it from.
-                            if let Ok(_) =
-                                self.comm.packet_send.get(key).unwrap().send(packet.clone())
-                            {
-                                self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                //If the message was sent, I also notify the sim controller.
-                            } //There's no else, since I don't care of nodes which can't be reached.
-                        }
-                    }
-                }
-            } else {
+            //I update the path_trace in the packet.
+            packet.pack_type = FloodRequest(flood_request.clone());
+
+            if !self.client_base.handle_flood_request(packet) {
                 self.edge_send_flood_response(flood_request);
             }
-        } else {
-            if packet.routing_header.destination().unwrap() != self.comm.node_id {
+        }
+        else {
+            if packet.routing_header.destination().unwrap() != self.client_base.node_id {
                 // If it's not his packet, but he has to act as a drone (that never misses)
-                self.comm.send_as_drone(packet);
+                self.client_base.send_as_drone(packet);
 
             } else {
                 // We can take for granted he is the destination
@@ -100,10 +68,10 @@ impl NetworkEdge for WebBrowser {
                         let tot_num_frag = fragment.total_n_fragments as usize;
                         let session_id = packet.session_id;
                         let initiator_id = packet.routing_header.hops[0];
-                        let destination = self.comm.node_id; //he is the destination
+                        let destination = self.client_base.node_id; //he is the destination
                         let frag_index = fragment.fragment_index;
                         //add new frag
-                        let entry = self.comm.fragments.entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                        let entry = self.client_base.fragments.entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
                         entry.2.push(fragment);
 
 
@@ -114,61 +82,62 @@ impl NetworkEdge for WebBrowser {
                         self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
                         // If all the frag have arrived recreate message
-                        let frags_clone = &self.comm.fragments.get(&(packet.session_id, initiator_id)).unwrap().2;
+                        let frags_clone = &self.client_base.fragments.get(&(packet.session_id, initiator_id)).unwrap().2;
                         if frags_clone.len() == tot_num_frag {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                                Ok(mess) => { mess }
                                 Err(e) => {
                                     if DEBUG_MODE {
-                                        println!("{e} with {}", self.comm.node_id);
+                                        println!("{e} with {}", self.client_base.node_id);
                                     }
                                     self.send_event(ErrorReassembling(self.get_src_id()));
                                     return;
                                 }
+                                Ok(mess) => { mess }
                             };
                             //handle message
                             self.handle_message(message);
 
                             // empty the hashmap
-                            self.comm.fragments.remove(&(packet.session_id, initiator_id));
+                            self.client_base.fragments.remove(&(packet.session_id, initiator_id));
                         }
                     }
                     Ack(ack) => {
                         self.send_event(ClientEvent::AckReceived(packet.clone()));
 
                         //the ack will have the source that was the destination of the initial packet
-                        match self.comm.fragments.get_mut(&(packet.session_id, self.comm.node_id)) {
+                        match self.client_base.fragments.get_mut(&(packet.session_id, self.client_base.node_id)) {
                             None => {}
                             Some((_, _, vec)) => {
                                 vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
                                 //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
                                 if vec.is_empty() {
-                                    self.comm.fragments.remove_entry(&(packet.session_id, self.comm.node_id));
+                                    self.client_base.fragments.remove_entry(&(packet.session_id, self.client_base.node_id));
                                 }
                             }
                         }
 
                         // I apply the positive feed on all nodes in the path
                         let nodes = packet.routing_header.hops;
-                        self.comm.network.positive_feedback(nodes);
+                        self.client_base.network.positive_feedback(nodes);
                     }
 
                     PacketType::Nack(nack) => {
                         self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        self.comm.handle_nack(nack, packet);
+                        self.client_base.handle_nack(nack, packet);
                     }
                     FloodRequest(_) => {
                         unreachable!()
                     }
                     FloodResponse(_flood_resp) => {
-                        self.comm.save_flood_response(packet);
+                        self.client_base.save_flood_response(packet);
                     }
                 }
             }
         }
     }
 
+    ///Handle any incoming message after reconstruction (for web browser)
     fn handle_message(&mut self,message: Message )  {
         let src = message.source_id;
 
@@ -223,7 +192,7 @@ impl NetworkEdge for WebBrowser {
                         self.retry_get_text_file(incomplete_text);
                     }
                     TextResponse::NotFound(text_id) => {
-                        //update catalougue
+                        //update catalogue
                         self.available_text_lists.entry(text_id).and_modify(|(v, _)|
                             v.retain(|node_id| *node_id != src));
 
@@ -238,9 +207,9 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeRequest { from } => {
                         let type_resp = TypeExchange::TypeResponse {
                             edge_type: EdgeType::Client(ClientType::WebBrowser),
-                            from: self.comm.node_id,
+                            from: self.client_base.node_id,
                         };
-                        let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
+                        let message = Message::new(self.client_base.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
                         self.send_message(message, from);
 
@@ -248,31 +217,31 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         if let EdgeType::Server(server_type) = edge_type{
                             if let ServerType::Content(ty) = server_type{
-                                self.comm.network.update_state(from, 1);
+                                self.client_base.network.update_state(from, 1);
 
                                 if ty == ContentServerType::Text{
                                     //only if it's a text server I will notify the sc that is a dst.
-                                    //this because the sc has to chose for a webclient only the text servers to witch i want to ask the lists.
+                                    //this because the sc has to chose for a webclient only the text servers to witch I want to ask the lists.
                                     //he will manage the media itself with catalog!!
-                                    self.send_event(SendDestinations(self.comm.node_id, from));
+                                    self.send_event(SendDestinations(self.client_base.node_id, from));
                                 }
                             }
                             else {
-                                self.comm.network.update_state(from, 2);
+                                self.client_base.network.update_state(from, 2);
                             }
                         } else {
                             //if it's a client
-                            self.comm.network.update_state(from, 2);
+                            self.client_base.network.update_state(from, 2);
 
                             if NO_SERVER_MODE {
-                                self.send_event(SendDestinations(self.comm.node_id, from));
+                                self.send_event(SendDestinations(self.client_base.node_id, from));
                             }
                         }
                     }
                 }
             }
             ContentType::EdgeNack(nack) => {
-                self.comm.handle_edge_nack(nack, message.source_id);
+                self.client_base.handle_edge_nack(nack, message.source_id);
 
             },
             _ => {
@@ -285,57 +254,57 @@ impl NetworkEdge for WebBrowser {
     }
 
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        self.comm.send_fragment(fragment, destination, session_id)
+        self.client_base.send_fragment(fragment, destination, session_id)
     }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
-        self.comm.add_unsent_fragment(fragment, session_id, destination);
+        self.client_base.add_unsent_fragment(fragment, session_id, destination);
     }
 
     fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        self.comm.send_fragment_after_nack(packet, nack)
+        self.client_base.send_fragment_after_nack(packet, nack)
     }
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
-        self.comm.send_ack(packet, fragment_index);
+        self.client_base.send_ack(packet, fragment_index);
     }
 
     fn flood(&mut self) {
-        self.comm.flood();
+        self.client_base.flood();
     }
 
     fn get_flood_id(&mut self) -> u64 {
-        self.comm.get_flood_id()
+        self.client_base.get_flood_id()
     }
 
     fn get_session_id(&mut self) -> u64 {
-        self.comm.get_session_id()
+        self.client_base.get_session_id()
     }
 
     fn get_src_id(&self) -> NodeId {
-        self.comm.get_src_id()
+        self.client_base.get_src_id()
     }
 
     fn remove_sender(&mut self, id: NodeId) {
-        self.comm.remove_sender(id);
+        self.client_base.remove_sender(id);
     }
 }
 
 impl NetworkEdgeErrors for WebBrowser {
     fn check_type(&mut self, id: NodeId) {
-        self.comm.check_type(id);
+        self.client_base.check_type(id);
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
-        self.comm.is_state_ok(node_id)
+        self.client_base.is_state_ok(node_id)
     }
 
     fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
-        self.comm.send_nack_message(dst, nack);
+        self.client_base.send_nack_message(dst, nack);
     }
 
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.comm.send_drone_nack(dst, nack);
+        self.client_base.send_drone_nack(dst, nack);
     }
 }
 
@@ -348,66 +317,54 @@ impl ClientTrait for WebBrowser {
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         WebBrowser {
-            comm: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             available_text_lists: Default::default(),
             arrived_content: Default::default(),
             catalogue: Default::default(),
         }
     }
 
+    ///Run function of WebBrowser, is equal to the web browser but call for different handles
     fn run(&mut self) {
         loop {
             select_biased! {
-                recv(self.comm.command_recv) -> cmd => {
+                recv(self.client_base.command_recv) -> cmd => {
                     if let Ok(command) = cmd {
                         self.handle_command(command);
                     }
                 }
-                recv(self.comm.packet_recv) -> pkt => {
+                recv(self.client_base.packet_recv) -> pkt => {
                     if let Ok(packet) = pkt {
                         self.handle_packet(packet);
                     }
                 }
                 default => {
-                     sleep(Duration::from_millis(10));
                     // Wait a second before going on.
+                     sleep(Duration::from_millis(11));
                 }
             }
 
-
             // I check a counter, so that I don't try to send all the fragments every loop.
-            if self.comm.unsent_fragments.0 >= 100 {
+            if self.client_base.unsent_fragments.0 >= 100 {
+                self.client_base.process_unsent_periodically();
+
                 //if I have some unchecked nodes I try to check them
-
-                self.comm.periodic_check_type();
-
-
-                self.comm.process_unsent_periodically();
-
-                //uncomment to check flood periodically
-
-                // let mut path_printable = String::new();
-                // self.paths.clone().iter_mut().for_each(|(dst, (state, path))| {
-                //     let destination = format!("Node {}, State: {}, path: *not now* \n", dst, state);
-                //     path_printable.push_str(destination.as_str());
-                // });
-                // println!("{} has paths: {:?}",self.node_id, path_printable);
-
-
-
+                self.client_base.periodic_check_type();
             } else {
-                self.comm.unsent_fragments.0 += 1;
+                self.client_base.unsent_fragments.0 += 1;
             }
         }
     }
 
+
+    ///Handle Web Browser Commands
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::RemoveSender(node_id) => {
                 self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
-                self.comm.packet_send.insert(node_id, sender);
+                self.client_base.packet_send.insert(node_id, sender);
             }
             ClientCommand::Flood =>{
                 self.flood();
@@ -432,40 +389,43 @@ impl ClientTrait for WebBrowser {
         }
     }
 
-
     fn get_client_type(&self) -> ClientType {
         ClientType::WebBrowser
     }
 
     fn send_event(&self, ce: ClientEvent) {
-        self.comm.send_event(ce);
+        self.client_base.send_event(ce);
     }
 }
 
+///Set of functions of our WebBrowser
 impl WebBrowser{
+
+    ///Retrieve a list of Texts from a particular server
     fn get_list(&mut self, id: NodeId) {
-        let src = self.comm.get_src_id();
-        let session = self.comm.get_session_id();
+        let src = self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
         let content = ContentType::TextRequest(TextList);
         let msg = Message::new(src, session, content);
-        self.comm.send_message(msg, id);
+        self.client_base.send_message(msg, id);
 
         if DEBUG_MODE {
             println!("Sent text list request from {src} to server {id}");
         }
     }
 
+    ///Retrieve a text file
     fn get_text_file(&mut self, text_file_id: u64) {
-        let src = self.comm.get_src_id();
-        let session = self.comm.get_session_id();
+        let src = self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
 
         if let Some(map) = self.available_text_lists.get(&text_file_id) {
-            let dests = map.0.clone();
-            if !dests.is_empty() {
-                if let Some(dst) = self.comm.network.get_optimal_dest(&self.get_src_id(), &dests) {
+            let destinations = map.0.clone();
+            if !destinations.is_empty() {
+                if let Some(dst) = self.client_base.network.get_optimal_dest(&self.get_src_id(), &destinations) {
                     let content = ContentType::TextRequest(TextFile(text_file_id));
                     let msg = Message::new(src, session, content);
-                    self.comm.send_message(msg, dst);
+                    self.client_base.send_message(msg, dst);
                     if DEBUG_MODE {
                         println!("Sent text file request from {src} to server {dst}");
                     }
@@ -476,6 +436,7 @@ impl WebBrowser{
         }
     }
 
+    ///Retrieve a text file if it was incomplete
     fn retry_get_text_file(&mut self, text_file_id: u64) {
         let wait_time: u32 = (u16::MAX as u32) * 2u32;
         for _ in 0..wait_time {
@@ -484,16 +445,17 @@ impl WebBrowser{
         self.get_text_file(text_file_id)
     }
 
+    ///Retrieve a media file, consulting catalogue
     fn get_media(&mut self, cont_id: u64) {
-        let src = self.comm.get_src_id();
-        let session = self.comm.get_session_id();
+        let src = self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
 
-        if let Some(dests) = self.catalogue.get(&cont_id) {
-            if !dests.is_empty() {
-                if let Some(dst) = self.comm.network.get_optimal_dest(&self.get_src_id(), &dests) {
+        if let Some(destinations) = self.catalogue.get(&cont_id) {
+            if !destinations.is_empty() {
+                if let Some(dst) = self.client_base.network.get_optimal_dest(&self.get_src_id(), &destinations) {
                     let content = ContentType::MediaRequest(Media(cont_id));
                     let msg = Message::new(src, session, content);
-                    self.comm.send_message(msg, dst);
+                    self.client_base.send_message(msg, dst);
                     if DEBUG_MODE {
                         println!("Sent media request from {src} to server {dst}");
                     }
