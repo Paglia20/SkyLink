@@ -477,15 +477,15 @@ impl SimulationControl {
             Some(n_type) => {
                 if Client == n_type{
                     if let Some(_sender) = self.client_command_senders.get(&node_id) {
-                        /*if let Err(_e) = _sender.send(ClientCommand::Flood) {
-                            if DEBUG_MODE {
+                        if let Err(_e) = _sender.send(ClientCommand::Flood) {
+                            /*if DEBUG_MODE {
                                 println!("error flooding");
-                            }
+                            }*/
                         } else {
-                            if DEBUG_MODE {
+                           /* if DEBUG_MODE {
                                 println!("flooded successfully");
-                            }
-                        }*/
+                            }*/
+                        }
 
                     }
                     else {
