@@ -161,7 +161,7 @@ impl NetworkEdge for WebBrowser {
                     FloodRequest(_) => {
                         unreachable!()
                     }
-                    FloodResponse(flood_resp) => {
+                    FloodResponse(_flood_resp) => {
                         self.comm.save_flood_response(packet);
                     }
                 }

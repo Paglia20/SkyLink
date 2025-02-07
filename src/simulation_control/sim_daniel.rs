@@ -551,7 +551,6 @@ impl MyApp {
                     }
                     Statistics => {
                         //drop stats
-
                         let max_value_drop = self.sim_contr.storage.dropped_packets.values().map(|vec| vec.len() as f64).fold(0.0, f64::max);
 
                         if max_value_drop > 0.0 {
@@ -619,7 +618,7 @@ impl MyApp {
                                 .iter()
                                 .map(|(&id, vec)| {
                                     let length = *vec as f64;
-                                    Bar::new(id as f64, length / max_value_drop * 10.0)
+                                    Bar::new(id as f64, length / max_value_flood * 10.0)
                                         .width(0.8) // Normalizzazione
                                         .fill(Color32::BLUE)
 
