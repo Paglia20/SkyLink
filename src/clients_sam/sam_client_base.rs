@@ -1,14 +1,17 @@
 // sam_client_base.rs
 
-use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
-use crate::message::{Message, ContentType, TypeExchange};
-use super::sam_events::{ClientCommand, ClientEvent, ConnectionState};
+use crate::clients_sam::sam_events::{ClientCommand, ClientEvent, ConnectionState};
+use crate::clients_sam::sam_client_type::ClientType;
 use super::sam_client_trait::Client;
-use super::sam_client_type::ClientType;
+use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
+use crate::message::{Message, ContentType, TypeExchange};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType, FloodRequest};
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{
+    Fragment, Nack, NackType, Packet, PacketType, FloodRequest,
+    NodeType,
+};
 
 const MAX_RETRIES: u32 = 3;
 
@@ -52,6 +55,7 @@ impl SamClientBase {
     fn handle_retry(&mut self, session_id: u64, destination: NodeId) -> bool {
         let entry = self.retry_counts.entry((session_id, destination)).or_insert(0);
         *entry += 1;
+
         if *entry >= MAX_RETRIES {
             self.retry_counts.remove(&(session_id, destination));
             self.send_event(ClientEvent::LostMessage(session_id, destination));
@@ -61,37 +65,58 @@ impl SamClientBase {
         }
     }
 
-    fn process_flood_request(&mut self, mut request: FloodRequest, packet: Packet) {
-        request.path_trace.push((self.node_id, wg_2024::packet::NodeType::Client));
+    fn process_flood_request(&mut self, mut request: FloodRequest, mut packet: Packet) {
+        // Append self to the flood request path trace.
+        request.path_trace.push((self.node_id, NodeType::Client));
 
         if self.flood_ids.insert((request.flood_id, request.initiator_id)) {
+            self.send_event(ClientEvent::Flooding(self.node_id));
+
             if self.packet_send.len() == 1 {
                 let response = wg_2024::packet::FloodResponse {
                     flood_id: request.flood_id,
-                    path_trace: request.path_trace,
+                    path_trace: request.path_trace.clone(),
                 };
-                let resp_packet = Packet::new_flood_response(
-                    wg_2024::network::SourceRoutingHeader::default(),
-                    request.flood_id,
-                    response
-                );
+
+                let mut hops = response
+                    .path_trace
+                    .iter()
+                    .rev()
+                    .map(|(id, _)| *id)
+                    .collect::<Vec<NodeId>>();
+
+                if response.path_trace[0].0 != request.initiator_id {
+                    hops.push(request.initiator_id);
+                }
+
+                let resp_packet = Packet {
+                    pack_type: PacketType::FloodResponse(response),
+                    routing_header: SourceRoutingHeader {
+                        hop_index: 0,
+                        hops,
+                    },
+                    session_id: request.flood_id,
+                };
+
                 if let Some(sender) = self.packet_send.values().next() {
                     if sender.send(resp_packet.clone()).is_ok() {
                         self.send_event(ClientEvent::PacketSent(resp_packet));
                     }
                 }
             } else {
-                let mut prev = request.initiator_id;
-                if request.path_trace.len() > 1 {
-                    prev = request.path_trace[request.path_trace.len() - 2].0;
-                }
+                let prev_id = if request.path_trace.len() > 1 {
+                    request.path_trace[request.path_trace.len() - 2].0
+                } else {
+                    request.initiator_id
+                };
 
-                for (key, sender) in self.packet_send.iter() {
-                    if *key != prev {
-                        let mut new_packet = packet.clone();
-                        new_packet.pack_type = PacketType::FloodRequest(request.clone());
-                        if sender.send(new_packet.clone()).is_ok() {
-                            self.send_event(ClientEvent::PacketSent(new_packet));
+                // Update the packet’s type to FloodRequest with the modified request.
+                packet.pack_type = PacketType::FloodRequest(request);
+
+                for (node_id, sender) in &self.packet_send {
+                    if *node_id != prev_id {
+                        if sender.send(packet.clone()).is_ok() {
+                            self.send_event(ClientEvent::PacketSent(packet.clone()));
                         }
                     }
                 }
@@ -99,31 +124,40 @@ impl SamClientBase {
         }
     }
 
-    fn process_message_fragment(&mut self, fragment: Fragment, packet: Packet) {
-        let session_id = packet.session_id;
-        let source_id = packet.routing_header.hops[0];
-        let destination = self.node_id;
-
-        match self.fragments.entry((session_id, source_id)) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().2.push(fragment.clone());
-
-                if entry.get().2.len() as u64 == fragment.total_n_fragments {
-                    if let Ok(message) = Self::reassemble_message(session_id, source_id, &entry.get().2) {
-                        self.handle_message(message);
-                        entry.remove();
-                    } else {
-                        self.send_event(ClientEvent::ErrorReassembling(self.node_id));
+    fn check_fragment_completion(&mut self, session_id: u64, source_id: NodeId) {
+        if let Some((_, _content_opt, fragments)) = self.fragments.get(&(session_id, source_id)) {
+            if let Some(first_frag) = fragments.first() {
+                if fragments.len() as u64 == first_frag.total_n_fragments {
+                    match Self::reassemble_message(session_id, source_id, fragments) {
+                        Ok(message) => {
+                            self.handle_message(message);
+                            self.fragments.remove(&(session_id, source_id));
+                        }
+                        Err(_) => {
+                            self.send_event(ClientEvent::ErrorReassembling(self.node_id));
+                        }
                     }
                 }
             }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert((destination, None, vec![fragment]));
-            }
         }
+    }
 
-        self.send_ack(packet.clone(), fragment.fragment_index);
-        self.send_event(ClientEvent::PacketReceived(packet));
+    // === Helper functions to fragment and reassemble messages ===
+
+    /// Splits a message into fragments.
+    fn fragment_message(message: &Message) -> Vec<Fragment> {
+        // TODO: Replace this stub with your real message-fragmentation logic.
+        vec![]
+    }
+
+    /// Reassembles fragments back into a complete message.
+    fn reassemble_message(
+        _session_id: u64,
+        _source_id: NodeId,
+        _fragments: &Vec<Fragment>,
+    ) -> Result<Message, ()> {
+        // TODO: Replace this stub with your real fragment-reassembly logic.
+        Err(())
     }
 }
 
@@ -131,7 +165,10 @@ impl NetworkEdge for SamClientBase {
     fn send_message(&mut self, message: Message, destination: NodeId) {
         let session_id = self.get_session_id();
         let fragments = Self::fragment_message(&message);
-        self.fragments.insert((session_id, self.node_id), (destination, Some(message.content), fragments.clone()));
+        self.fragments.insert(
+            (session_id, self.node_id),
+            (destination, Some(message.content), fragments.clone()),
+        );
 
         for fragment in fragments {
             self.send_fragment(fragment, destination, session_id);
@@ -139,11 +176,27 @@ impl NetworkEdge for SamClientBase {
     }
 
     fn handle_packet(&mut self, packet: Packet) {
-        match packet.pack_type {
+        // Clone the packet type to avoid moving out of `packet`
+        let packet_type = packet.pack_type.clone();
+        match packet_type {
             PacketType::MsgFragment(fragment) => {
-                self.process_message_fragment(fragment, packet);
+                let session_id = packet.session_id;
+                let source_id = packet.routing_header.hops[0];
+
+                if let Some((_, _, fragments)) = self.fragments.get_mut(&(session_id, source_id)) {
+                    fragments.push(fragment.clone());
+                } else {
+                    self.fragments.insert(
+                        (session_id, source_id),
+                        (self.node_id, None, vec![fragment.clone()]),
+                    );
+                }
+
+                self.send_ack(packet.clone(), fragment.fragment_index);
+                self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                self.check_fragment_completion(session_id, source_id);
             }
-            PacketType::Ack(_) => {
+            PacketType::Ack(_ack) => {
                 if let Some(source) = packet.routing_header.source() {
                     self.retry_counts.remove(&(packet.session_id, source));
                 }
@@ -161,9 +214,8 @@ impl NetworkEdge for SamClientBase {
                 self.process_flood_request(request, packet);
             }
             PacketType::FloodResponse(response) => {
-                let path_trace = response.path_trace;
-                for (node_id, node_type) in path_trace {
-                    if node_type != wg_2024::packet::NodeType::Drone {
+                for (node_id, node_type) in response.path_trace {
+                    if node_type != NodeType::Drone {
                         self.node_states.insert(node_id, ConnectionState::WaitingForType);
                         self.check_type(node_id);
                     }
@@ -177,11 +229,8 @@ impl NetworkEdge for SamClientBase {
             return;
         }
 
-        let packet = Packet::new_fragment(
-            wg_2024::network::SourceRoutingHeader::new(vec![self.node_id, destination], 0),
-            session_id,
-            fragment
-        );
+        let srh = SourceRoutingHeader::new(vec![self.node_id, destination], 0);
+        let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
         if let Some(sender) = self.packet_send.get(&destination) {
             if sender.send(packet.clone()).is_ok() {
@@ -199,12 +248,17 @@ impl NetworkEdge for SamClientBase {
         if let Some((_, _, fragments)) = self.fragments.get_mut(&(session_id, self.node_id)) {
             fragments.push(fragment);
         } else {
-            self.fragments.insert((session_id, self.node_id), (destination, None, vec![fragment]));
+            self.fragments.insert(
+                (session_id, self.node_id),
+                (destination, None, vec![fragment]),
+            );
         }
     }
 
     fn send_fragment_after_nack(&mut self, packet: Packet, _nack: Nack) {
-        if let Some((destination, _, fragments)) = self.fragments.get(&(packet.session_id, self.node_id)) {
+        if let Some((destination, _, fragments)) =
+            self.fragments.get(&(packet.session_id, self.node_id))
+        {
             for fragment in fragments {
                 self.send_fragment(fragment.clone(), *destination, packet.session_id);
             }
@@ -213,11 +267,8 @@ impl NetworkEdge for SamClientBase {
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
         let source = packet.routing_header.hops[0];
-        let ack_packet = Packet::new_ack(
-            wg_2024::network::SourceRoutingHeader::new(vec![self.node_id, source], 0),
-            packet.session_id,
-            fragment_index
-        );
+        let srh = SourceRoutingHeader::new(vec![self.node_id, source], 0);
+        let ack_packet = Packet::new_ack(srh, packet.session_id, fragment_index);
 
         if let Some(sender) = self.packet_send.get(&source) {
             if sender.send(ack_packet.clone()).is_ok() {
@@ -230,16 +281,16 @@ impl NetworkEdge for SamClientBase {
         self.send_event(ClientEvent::Flooding(self.node_id));
 
         let flood_id = self.get_flood_id();
-        let flood_request = FloodRequest {
+        let request = FloodRequest {
             flood_id,
             initiator_id: self.node_id,
-            path_trace: vec![(self.node_id, wg_2024::packet::NodeType::Client)],
+            path_trace: vec![(self.node_id, NodeType::Client)],
         };
 
         let packet = Packet::new_flood_request(
-            wg_2024::network::SourceRoutingHeader::default(),
+            SourceRoutingHeader::default(),
             flood_id,
-            flood_request
+            request,
         );
 
         for sender in self.packet_send.values() {
@@ -262,7 +313,7 @@ impl NetworkEdge for SamClientBase {
     }
 
     fn handle_message(&mut self, _message: Message) {
-        // Implemented by derived clients
+        // Specialized message handling can be implemented in a derived client.
     }
 }
 
@@ -271,9 +322,7 @@ impl NetworkEdgeErrors for SamClientBase {
         let type_request = Message::new(
             self.node_id,
             self.get_session_id(),
-            ContentType::TypeExchange(TypeExchange::TypeRequest {
-                from: self.node_id,
-            })
+            ContentType::TypeExchange(TypeExchange::TypeRequest { from: self.node_id }),
         );
         self.send_message(type_request, id);
     }
@@ -286,13 +335,14 @@ impl NetworkEdgeErrors for SamClientBase {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        let packet = Packet::new_nack(
-            wg_2024::network::SourceRoutingHeader::new(vec![self.node_id, dst], 0),
-            self.get_session_id(),
-            0,
-            nack
-        );
+    fn send_drone_nack(&mut self, dst: NodeId, nack_type: NackType) {
+        let nack = Nack {
+            fragment_index: 0,
+            nack_type,
+        };
+
+        let srh = SourceRoutingHeader::new(vec![self.node_id, dst], 0);
+        let packet = Packet::new_nack(srh, self.get_session_id(), nack);
 
         if let Some(sender) = self.packet_send.get(&dst) {
             if sender.send(packet.clone()).is_ok() {
@@ -348,7 +398,7 @@ impl Client for SamClientBase {
     }
 
     fn get_client_type(&self) -> ClientType {
-        ClientType::ChatClient
+        ClientType::ChatClient // Or any other appropriate client type.
     }
 
     fn send_event(&self, ce: ClientEvent) {

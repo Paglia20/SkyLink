@@ -10,13 +10,27 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, Packet};
 
+
+// Our own data structures for managing content
+struct TextContent {
+    name: String,
+    media_refs: HashSet<u64>,
+    servers: HashSet<NodeId>,
+}
+
+struct MediaContent {
+    name: String,
+    data: Option<Vec<u8>>,
+    servers: HashSet<NodeId>,
+}
+
 pub struct WebBrowser {
     base: SamClientBase,
-    text_servers: HashMap<NodeId, Vec<(u64, String)>>,         // server -> [(text_id, name)]
-    media_servers: HashMap<NodeId, Vec<(u64, String)>>,        // server -> [(media_id, name)]
-    media_cache: HashMap<u64, (String, Vec<u8>)>,             // media_id -> (name, content)
-    available_texts: HashMap<u64, HashSet<NodeId>>,            // text_id -> servers
-    available_media: HashMap<u64, HashSet<NodeId>>,           // media_id -> servers
+    text_contents: HashMap<u64, TextContent>,      // text_id -> TextContent
+    media_contents: HashMap<u64, MediaContent>,    // media_id -> MediaContent
+    text_servers: HashSet<NodeId>,                // Available text servers
+    media_servers: HashSet<NodeId>,               // Available media servers
+    pending_requests: HashSet<(NodeId, u64)>,     // (server_id, content_id)
 }
 
 impl WebBrowser {
@@ -29,54 +43,70 @@ impl WebBrowser {
     ) -> Self {
         WebBrowser {
             base: SamClientBase::new(id, command_recv, event_send, packet_recv, packet_send),
-            text_servers: HashMap::new(),
-            media_servers: HashMap::new(),
-            media_cache: HashMap::new(),
-            available_texts: HashMap::new(),
-            available_media: HashMap::new(),
+            text_contents: HashMap::new(),
+            media_contents: HashMap::new(),
+            text_servers: HashSet::new(),
+            media_servers: HashSet::new(),
+            pending_requests: HashSet::new(),
         }
     }
 
     fn handle_text_response(&mut self, source: NodeId, response: TextResponse) {
         match response {
             TextResponse::TextList(texts) => {
-                self.text_servers.insert(source, texts.clone());
                 for (id, name) in texts {
+                    let text_content = self.text_contents.entry(id).or_insert_with(|| TextContent {
+                        name: name.clone(),
+                        media_refs: HashSet::new(),
+                        servers: HashSet::new(),
+                    });
+                    text_content.servers.insert(source);
+
+                    // Send expected event
                     self.base.send_event(ClientEvent::SendTextList(
                         self.base.node_id,
                         id,
                         name
                     ));
-                    self.available_texts
-                        .entry(id)
-                        .or_insert_with(HashSet::new)
-                        .insert(source);
                 }
             }
-            TextResponse::MediaReferences(media_refs) => {
-                for (media_id, (name, servers)) in media_refs {
+            TextResponse::MediaReferences(refs) => {
+                for (media_id, (name, servers)) in refs {
+                    let media_content = self.media_contents.entry(media_id).or_insert_with(|| MediaContent {
+                        name: name.clone(),
+                        data: None,
+                        servers: HashSet::new(),
+                    });
+                    media_content.servers.extend(servers.iter());
+
+                    // Send expected event
                     self.base.send_event(ClientEvent::SendCatalogue(
                         self.base.node_id,
                         media_id,
-                        name.clone()
+                        name
                     ));
-                    let entry = self.available_media
-                        .entry(media_id)
-                        .or_insert_with(HashSet::new);
-                    entry.extend(servers);
                 }
             }
             TextResponse::NotFound(text_id) => {
+                if let Some(content) = self.text_contents.get_mut(&text_id) {
+                    content.servers.remove(&source);
+                }
                 self.base.send_event(ClientEvent::MissingTextList(
                     self.base.node_id,
                     text_id
                 ));
             }
             TextResponse::Incomplete(text_id) => {
-                // Request media for incomplete text
-                if let Some(servers) = self.available_media.get(&text_id) {
-                    if let Some(&server) = servers.iter().next() {
-                        self.request_media(server, text_id);
+                // Our own approach: Track missing media and request it
+                if let Some(content) = self.text_contents.get(&text_id) {
+                    for &media_id in &content.media_refs {
+                        if let Some(media_content) = self.media_contents.get(&media_id) {
+                            if media_content.data.is_none() {
+                                if let Some(&server) = media_content.servers.iter().next() {
+                                    self.request_media(server, media_id);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -86,34 +116,58 @@ impl WebBrowser {
     fn handle_media_response(&mut self, source: NodeId, response: MediaResponse) {
         match response {
             MediaResponse::Media(media_id, name, data) => {
-                self.media_cache.insert(media_id, (name.clone(), data.clone()));
-                self.base.send_event(ClientEvent::SendMedia(
-                    self.base.node_id,
-                    media_id,
-                    name,
-                    data
-                ));
+                if let Some(content) = self.media_contents.get_mut(&media_id) {
+                    content.data = Some(data.clone());
+                    // Send expected event
+                    self.base.send_event(ClientEvent::SendMedia(
+                        self.base.node_id,
+                        media_id,
+                        name,
+                        data
+                    ));
+                }
+                self.pending_requests.remove(&(source, media_id));
             }
             MediaResponse::MediaList(media_list) => {
-                self.media_servers.insert(source, media_list);
+                for (id, name) in media_list {
+                    let content = self.media_contents.entry(id).or_insert_with(|| MediaContent {
+                        name,
+                        data: None,
+                        servers: HashSet::new(),
+                    });
+                    content.servers.insert(source);
+                }
             }
             MediaResponse::NotFound(media_id) => {
-                if let Some(servers) = self.available_media.get_mut(&media_id) {
-                    servers.remove(&source);
+                if let Some(content) = self.media_contents.get_mut(&media_id) {
+                    content.servers.remove(&source);
                 }
                 self.base.send_event(ClientEvent::MissingDestForMedia(
                     self.base.node_id,
                     media_id
                 ));
+                self.pending_requests.remove(&(source, media_id));
             }
         }
     }
 
     fn request_media(&mut self, server: NodeId, media_id: u64) {
+        if !self.pending_requests.contains(&(server, media_id)) {
+            let message = Message::new(
+                self.base.node_id,
+                self.base.get_session_id(),
+                ContentType::MediaRequest(MediaRequest::Media(media_id))
+            );
+            self.base.send_message(message, server);
+            self.pending_requests.insert((server, media_id));
+        }
+    }
+
+    fn request_text(&mut self, server: NodeId, text_id: u64) {
         let message = Message::new(
             self.base.node_id,
             self.base.get_session_id(),
-            ContentType::MediaRequest(MediaRequest::Media(media_id))
+            ContentType::TextRequest(TextRequest::TextFile(text_id))
         );
         self.base.send_message(message, server);
     }
@@ -152,7 +206,8 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         if let EdgeType::Server(server_type) = edge_type {
                             match server_type {
-                                crate::server::server_type::ServerType::Content(content_type) => {
+                                crate::server::server_type::ServerType::Content(_) => {
+                                    self.text_servers.insert(from);
                                     self.base.node_states.insert(from, ConnectionState::Ready);
                                     self.base.send_event(ClientEvent::SendDestinations(
                                         self.base.node_id,
@@ -231,23 +286,26 @@ impl Client for WebBrowser {
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
             ClientCommand::GetTextFile(text_id) => {
-                if let Some(servers) = self.available_texts.get(&text_id) {
-                    if let Some(&server) = servers.iter().next() {
-                        let message = Message::new(
-                            self.base.node_id,
-                            self.base.get_session_id(),
-                            ContentType::TextRequest(TextRequest::TextFile(text_id))
-                        );
-                        self.base.send_message(message, server);
+                if let Some(content) = self.text_contents.get(&text_id) {
+                    if let Some(&server) = content.servers.iter().next() {
+                        self.request_text(server, text_id);
                     }
                 }
             }
             ClientCommand::GetContent(media_id) => {
-                if let Some(servers) = self.available_media.get(&media_id) {
-                    if let Some(&server) = servers.iter().next() {
+                if let Some(content) = self.media_contents.get(&media_id) {
+                    if let Some(&server) = content.servers.iter().next() {
                         self.request_media(server, media_id);
                     }
                 }
+            }
+            ClientCommand::RetrieveList(server_id) => {
+                let message = Message::new(
+                    self.base.node_id,
+                    self.base.get_session_id(),
+                    ContentType::TextRequest(TextRequest::TextList)
+                );
+                self.base.send_message(message, server_id);
             }
             _ => self.base.handle_command(command)
         }

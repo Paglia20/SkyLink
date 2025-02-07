@@ -17,14 +17,12 @@ pub enum ClientCommand {
 
 #[derive(Debug, Clone)]
 pub enum ClientEvent {
-    // Network events
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
     AckReceived(Packet),
     NackReceived(Packet),
 
-    // Connection events
     MissingDestination(NodeId, NodeId),
     MissingRoute(NodeId, NodeId),
     LostMessage(u64, NodeId),
@@ -32,14 +30,12 @@ pub enum ClientEvent {
     DroneInsideDestination(NodeId),
     WrongDestinationType(NodeId, NodeId),
 
-    // Chat events
     SendDestinations(NodeId, NodeId),
     SendContactsToSC(NodeId, NodeId),
     MissingContacts(NodeId, NodeId),
     ReceivedChatText(NodeId, NodeId, String),
     RegisterSuccessfully(NodeId, NodeId),
 
-    // Web browser events
     SendTextList(NodeId, u64, String),
     SendCatalogue(NodeId, u64, String),
     SendMedia(NodeId, u64, String, Vec<u8>),
