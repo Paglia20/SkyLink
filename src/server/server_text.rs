@@ -150,6 +150,7 @@ impl NetworkEdge for TextServer {
                                 // I set it as a not usable contact.
                             }
                         }
+                        self.type_checked(from);
                     }
                 }
             }
@@ -308,13 +309,13 @@ impl Server for TextServer {
     fn positive_feed(&mut self, nodes: Vec<NodeId>) {
         self.server_struct.network.positive_feedback(nodes);
     }
-
     fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool {
         self.server_struct.save_flood_response(flood_resp)
     }
     fn send_to_all(&mut self, packet: Packet) {
         self.server_struct.send_to_all(packet);
     }
+
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
         self.server_struct.network.update_state(source_id, value);
     }
@@ -327,9 +328,15 @@ impl Server for TextServer {
     fn can_flood(&mut self) -> bool {
         self.server_struct.can_flood()
     }
-
     fn starting_to_flood(&mut self) {
         self.server_struct.starting_to_flood();
+    }
+    fn can_type_check(&mut self, dst: NodeId) -> bool {
+        self.server_struct.can_type_check(dst)
+    }
+
+    fn type_checked(&mut self, src: NodeId) {
+        //self.server_struct.type_checked(src);
     }
 
     fn get_command_recv(&self) -> Receiver<ServerCommand> {

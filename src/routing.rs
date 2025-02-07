@@ -119,37 +119,40 @@ impl Network {
         let start_index = self.node_map.get(start)?.1;
         let end_index = self.node_map.get(end)?.1;
 
+        if self.graph[end_index].node_type.clone() != None {
+
+            let mut stack = vec![(start_index, vec![start_index])];
+            let mut max_weight = f64::MIN;
+            let mut best_path_indexes: Option<Vec<NodeIndex>> = None;
+            let mut best_path_length = usize::MAX;
 
 
-        let mut stack = vec![(start_index, vec![start_index])];
-        let mut max_weight = f64::MIN;
-        let mut best_path_indexes: Option<Vec<NodeIndex>> = None;
-        let mut best_path_length = usize::MAX;
-
-
-        while let Some((current, path)) = stack.pop() {
-            if current == end_index {
-                let weight = self.calculate_path_weight(path.clone());
-                if weight > max_weight || (weight == max_weight && path.len() < best_path_length) {
-                    max_weight = weight;
-                    best_path_length = path.len();
-                    best_path_indexes = Some(path.clone());
-                }
-            } else {
-                for neighbor in self.graph.neighbors(current) {
-                    // Check if this neighbor is already in the current path
-                    if !path.contains(&neighbor) {
-                        let mut new_path = path.clone();
-                        new_path.push(neighbor);
-                        stack.push((neighbor, new_path));
+            while let Some((current, path)) = stack.pop() {
+                if current == end_index {
+                    let weight = self.calculate_path_weight(path.clone());
+                    if weight > max_weight || (weight == max_weight && path.len() < best_path_length) {
+                        max_weight = weight;
+                        best_path_length = path.len();
+                        best_path_indexes = Some(path.clone());
+                    }
+                } else {
+                    for neighbor in self.graph.neighbors(current) {
+                        // Check if this neighbor is already in the current path
+                        if !path.contains(&neighbor) {
+                            let mut new_path = path.clone();
+                            new_path.push(neighbor);
+                            stack.push((neighbor, new_path));
+                        }
                     }
                 }
             }
+
+
+            // Convert the best path from NodeIndex to NodeId, if it exists.
+            best_path_indexes.map(|indexes| (indexes.into_iter().map(|idx| self.graph[idx].id).collect(), max_weight))
+        } else {
+            None
         }
-
-
-        // Convert the best path from NodeIndex to NodeId, if it exists.
-        best_path_indexes.map(|indexes| (indexes.into_iter().map(|idx| self.graph[idx].id).collect(), max_weight))
     }
 
 
@@ -248,19 +251,15 @@ impl Network {
             return false;
         }
 
-        let mut res = true;
-        for (id,(state, _)) in self.node_map.iter() {
-            if *state != 0 {
-                match self.best_path(&source_id, id) {
-                    Some((_, _)) => {},
-                    None => res = false,
-                }
-            }
-            else {
-                res = false;
+
+        for (id,_) in self.node_map.iter() {
+            match self.best_path(&source_id, id) {
+                Some((_, _)) => {},
+                None => return false
             }
         }
-        res
+
+        true
     }
 
     pub fn add_destination_without_path(&mut self, dst_id: NodeId) {

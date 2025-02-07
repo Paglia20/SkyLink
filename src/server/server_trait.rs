@@ -37,12 +37,10 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     }
                 }
                 default => {
-                    // I use the same check as the flood, to apply some kind of congestion control.
-                    if self.can_flood() {
-                            // If I have some unchecked nodes I try to check them.
-                        for i in self.get_unresolved() {
-                            self.server_check_type(i)
-                        }
+
+                    // If I have some unchecked nodes I try to check them.
+                    for i in self.get_unresolved() {
+                        self.server_check_type(i)
                     }
                     
                     // I check a counter, so that I don't try to send all the fragments every loop.
@@ -60,10 +58,12 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             Some(state) => {
                 state == 1
             }
-            None =>{false}
+            None =>{
+                false
+            }
         };
         if !out && DEBUG_MODE{
-            println!("dst state was not ok");
+            println!("{destination} state was not ok ");
             // send nack?
         }
         out
@@ -81,9 +81,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.is_state_ok(destination)
             }
         };
+
+        let session_id = message.session_id;
+        let frags = Self::fragment_message(&message);
+
         if check {
-            let session_id = message.session_id;
-            let frags = Self::fragment_message(&message);
             self.get_fragments_hm().insert((session_id, source_id), (destination, frags.clone()));
             // I also save the fragments in the memory, in case I have to send them again.
 
@@ -92,9 +94,15 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 // I apply the send operation on each single fragment.
             }
         } else {
-            // The message is dropped.
             let event = ServerEvent::WrongDestinationType(self.get_src_id(), destination);
             self.send_event(event);
+
+            //I don't need to ask for the type, since that is done periodically already.
+
+            // I'll have to resend the fragments later.
+            for fragment in frags {
+                self.add_unsent_fragment(fragment, session_id, destination);
+            }
         }
     }
     
@@ -103,6 +111,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             None => {
                 /// REMOVE
                 // println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
+
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
                 self.flood(); // Since I miss the destination, I start a flooding.
@@ -111,6 +120,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             Some(srh) => {
                 /// REMOVE
                 println!("Server {} has a path to {}", self.get_src_id(), destination);
+
                 let first_dst = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
@@ -279,7 +289,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             PacketType::FloodResponse(flood_resp) => {
                 if self.save_flood_response(flood_resp) {
                     ///REMOVE, TO CHECK FLOODS
-                    // println!("server 14 sent type request");
+                    println!("server 14 sent type request to {}", packet.routing_header.source().unwrap());
 
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
                     self.send_message(msg, packet.routing_header.source().unwrap());
@@ -368,13 +378,16 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     }
     
     fn server_check_type(&mut self, id: NodeId) {
-        let req = TypeExchange::TypeRequest { from: self.get_src_id() };
-        let exc = ContentType::TypeExchange(req);
-        let s_id = self.get_session_id();
-        self.send_message(Message::new(self.get_src_id(), s_id, exc), id);
+        if self.can_type_check(id) {
+            println!("Server 14 need to check state of {}", id);
+            let req = TypeExchange::TypeRequest { from: self.get_src_id() };
+            let exc = ContentType::TypeExchange(req);
+            let s_id = self.get_session_id();
+            self.send_message(Message::new(self.get_src_id(), s_id, exc), id);
 
-        if DEBUG_MODE {
-            println!("sent check from {}", self.get_src_id());
+            if DEBUG_MODE {
+                println!("sent check from {}", self.get_src_id());
+            }
         }
     }
     
@@ -418,7 +431,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.send_event(ServerEvent::DiscardedMessage(self.get_src_id(), session_id));
 
                 if DEBUG_MODE {
-                    println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.get_src_id(), source_id)
+                    println!("Server {} discarded message to {} after receiving his nack, because state was not good", self.get_src_id(), source_id)
                 }
             }
         }
@@ -432,7 +445,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         
         self.flood();
         for (fragment, identifier) in to_process {
-            self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
+            if self.is_state_ok(identifier.2) {
+                self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
+            } else {
+                self.add_unsent_fragment(fragment, identifier.0, identifier.2);
+            }
         }
     }
     
@@ -450,6 +467,8 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn reset_unsent_fragments(&mut self);
     fn can_flood(&mut self) -> bool;
     fn starting_to_flood(&mut self);
+    fn can_type_check(&mut self, dst: NodeId) -> bool;
+    fn type_checked(&mut self, src: NodeId);
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;

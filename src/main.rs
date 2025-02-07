@@ -14,7 +14,7 @@ mod test;
 //for testing
 pub const ALL_CHAT: bool = false;
 pub const ALL_CONTENT: bool = false;
-pub const DEBUG_MODE : bool = true;
+pub const DEBUG_MODE : bool = false;
 pub const NO_SERVER_MODE: bool = false; //provvisoria finchè non ci sono i server
 pub const AUTOMATIC_FLOOD: bool = false; //fast as fuck boi
 

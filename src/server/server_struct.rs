@@ -26,6 +26,8 @@ pub struct ServerStruct {
     next_session_id: u64,
     is_flooding: bool,
     flood_counter: u8,
+
+    type_checking: HashSet<NodeId>,
     
 }
 
@@ -51,6 +53,7 @@ impl ServerStruct {
             next_session_id: 0,
             is_flooding: false,
             flood_counter: 0,
+            type_checking: HashSet::new(),
         }
     }
 
@@ -170,26 +173,21 @@ impl ServerStruct {
     pub fn save_flood_response(&mut self, flood_response: FloodResponse) -> bool{
         let mut res = false;
         // I'll ask for the TypeExchange only if it's a client or a server, and I don't know the state yet.
-        match flood_response.path_trace.first().unwrap().1 {
+        match flood_response.path_trace.last().unwrap().1 {
             NodeType::Drone => {},
             _ => {
-                // I check if I know it rather than the state, because if I was to receive many flood_response,
-                // I would send that many TypeRequest back to the node.
-                match self.network.get_srh(&self.node_id, &flood_response.path_trace.first().unwrap().0) {
-                    Some(_) => {},
-                    None => {
-                        res = true
-                    }
+                if !self.type_checking.contains(&flood_response.path_trace.last().unwrap().0) {
+                    res = true;
+                    self.type_checking.insert(flood_response.path_trace.last().unwrap().0);
                 }
             }
         }
-
 
         self.network.add_route(self.node_id, flood_response.path_trace);
 
         // I try to check if I have all routes to the nodes I already know, so that if I'm not done;
         // I also have a counter, in case I loose all connection to a node, so that I won't stop to flood forever in that case.
-        if self.network.has_all_routes(self.node_id) || self.flood_counter >= 200 {
+        if self.network.has_all_routes(self.node_id) || self.flood_counter >= 100 {
             // After this is set to false, I can flood again
             self.is_flooding = false;
             self.flood_counter = 0;
@@ -266,11 +264,18 @@ impl ServerStruct {
     }
     
     pub fn starting_to_flood(&mut self) {
-        println!("how many times?");
         self.is_flooding = true;
     }
 
     pub fn add_destination_without_path(&mut self, destination: NodeId) {
         self.network.add_destination_without_path(destination);
     }
+
+    pub fn can_type_check(&mut self, dst: NodeId) -> bool {
+        self.type_checking.insert(dst)
+    }
+
+    /*pub fn type_checked(&mut self, src: NodeId) {
+        self.type_checking.remove(&src);
+    }*/
 }
