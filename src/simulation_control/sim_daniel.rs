@@ -1738,18 +1738,3 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
     // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
-
-
-
-
-/*
-feel free to update this list.
-
-se hai altre idee di scene dimmelo
-
-- cambiare i cerchi in droni
-
-(..)
-
-
- */
