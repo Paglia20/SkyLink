@@ -866,7 +866,7 @@ impl SimulationControl {
         let mut message = String::new();
         match packet.clone().pack_type{
             PacketType::MsgFragment(fragment) => {
-                message = format!("sent fragment id: {}, data: {:?}", fragment.fragment_index, fragment.data);
+                message = format!("sent fragment id: {}, to {}", fragment.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::Ack(ack) => {
                 message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
@@ -876,7 +876,7 @@ impl SimulationControl {
             }
             PacketType::FloodRequest(rq) => {
                 let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
-                message = format!("sent flood request: (id: {}, from:{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
+                message = format!("sent flood request: (id: {}, initiator :{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
             }
             PacketType::FloodResponse(rr) => {
                 let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();

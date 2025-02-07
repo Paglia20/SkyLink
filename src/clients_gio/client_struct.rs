@@ -234,6 +234,11 @@ impl NetworkEdge for ClientStruct {
 
 impl NetworkEdgeErrors for ClientStruct {
     fn check_type(&mut self, id: NodeId) {
+
+        ///remove
+        // println!("client {} sent type request to {id}", self.node_id);
+
+
         let req = TypeExchange::TypeRequest { from: self.node_id };
         let exc = ContentType::TypeExchange(req);
         let s_id = self.get_session_id();
@@ -440,9 +445,6 @@ impl ClientStruct {
             } else {
                 self.flood_count += 1;
             }
-
-            //if i don't have the type yet check it
-            self.periodic_check_type();
         }
     }
 }

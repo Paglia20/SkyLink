@@ -209,6 +209,8 @@ impl NetworkEdge for ChatClient {
                         };
                         let message = Message::new(self.comm.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
 
+                        ///remove
+                        // println!("client {} sent type response to {from}", self.comm.node_id);
 
                         self.send_message(message, from);
 
