@@ -263,10 +263,10 @@ impl Server for MediaServer {
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
         self.server_struct.network.update_state(source_id, value);
     }
-
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
+
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
@@ -280,7 +280,10 @@ impl Server for MediaServer {
         self.server_struct.can_type_check(dst)
     }
     fn type_checked(&mut self, src: NodeId) {
-        //self.server_struct.type_checked(src);
+        self.server_struct.type_checked(src);
+    }
+    fn add_destination_without_path(&mut self, dst: NodeId) {
+        self.server_struct.add_destination_without_path(dst);
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()

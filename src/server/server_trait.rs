@@ -39,8 +39,10 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 default => {
 
                     // If I have some unchecked nodes I try to check them.
-                    for i in self.get_unresolved() {
-                        self.server_check_type(i)
+                    for i in self.get_unresolved().into_iter() {
+                        ///REMOVE
+                        // println!("Unresolved {}", i);
+                        self.server_check_type(i);
                     }
                     
                     // I check a counter, so that I don't try to send all the fragments every loop.
@@ -109,11 +111,12 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn server_send_single_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         match self.get_srh(destination) {
             None => {
-                /// REMOVE
+                ///REMOVE
                 // println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
 
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
+                self.add_destination_without_path(destination);
                 self.flood(); // Since I miss the destination, I start a flooding.
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
@@ -121,11 +124,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 /// REMOVE
                 println!("Server {} has a path to {}", self.get_src_id(), destination);
 
-                let first_dst = srh.hops[1];
+                let first_hop = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
                 // If everything worked, I try to send.
-                match self.get_packet_sender(&first_dst) {
+                match self.get_packet_sender(&first_hop) {
                     Some(sender) => {
                         match sender.send(packet.clone()) {
                             Ok(_) => {
@@ -135,17 +138,18 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                                 // If the send fails, probably my neighbour isn't my neighbour anymore.
                                 self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                                 self.add_unsent_fragment(fragment, session_id, destination);
-                                self.remove_faulty_connection(first_dst);
+                                self.remove_faulty_connection(first_hop);
                             }
                         }
                     }
                     None => {
-                        println!("Server {} isn't connected with {}", self.get_src_id(), first_dst);
+                        ///REMOVE
+                        println!("Server {} isn't connected with {}", self.get_src_id(), first_hop);
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                         self.add_unsent_fragment(fragment, session_id, destination);
-                        self.remove_faulty_connection(first_dst);
+                        self.remove_faulty_connection(first_hop);
                     }
                 }
             },
@@ -287,12 +291,13 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 unreachable!() // We already managed them earlier.
             }
             PacketType::FloodResponse(flood_resp) => {
+                let dst = packet.routing_header.source().unwrap();
                 if self.save_flood_response(flood_resp) {
-                    ///REMOVE, TO CHECK FLOODS
-                    println!("server 14 sent type request to {}", packet.routing_header.source().unwrap());
-
+                    ///REMOVE
+                    println!("server 14 sent type request to {}", dst);
+                    
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
-                    self.send_message(msg, packet.routing_header.source().unwrap());
+                    self.send_message(msg, dst);
                 }
             }
         }
@@ -377,13 +382,13 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         }
     }
     
-    fn server_check_type(&mut self, id: NodeId) {
-        if self.can_type_check(id) {
-            println!("Server 14 need to check state of {}", id);
+    fn server_check_type(&mut self, dst: NodeId) {
+        if self.can_type_check(dst) {
+            ///REMOVE
+            // println!("Server 14 needs to check state of {}", dst);
             let req = TypeExchange::TypeRequest { from: self.get_src_id() };
-            let exc = ContentType::TypeExchange(req);
-            let s_id = self.get_session_id();
-            self.send_message(Message::new(self.get_src_id(), s_id, exc), id);
+            let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(req));
+            self.send_message(message, dst);
 
             if DEBUG_MODE {
                 println!("sent check from {}", self.get_src_id());
@@ -443,13 +448,16 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         // I then empty the HashMap to not have any duplicate.
         self.reset_unsent_fragments();
         
+        for (_, (_,_,dst)) in to_process.iter() {
+            self.add_destination_without_path(*dst);
+        }
+        
         self.flood();
-        for (fragment, identifier) in to_process {
-            if self.is_state_ok(identifier.2) {
-                self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
-            } else {
+        for (fragment, identifier) in to_process.into_iter() {
+            self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
+            /*} else {
                 self.add_unsent_fragment(fragment, identifier.0, identifier.2);
-            }
+            }*/
         }
     }
     
@@ -469,6 +477,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn starting_to_flood(&mut self);
     fn can_type_check(&mut self, dst: NodeId) -> bool;
     fn type_checked(&mut self, src: NodeId);
+    fn add_destination_without_path(&mut self, dst: NodeId);
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;

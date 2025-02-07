@@ -176,9 +176,8 @@ impl ServerStruct {
         match flood_response.path_trace.last().unwrap().1 {
             NodeType::Drone => {},
             _ => {
-                if !self.type_checking.contains(&flood_response.path_trace.last().unwrap().0) {
+                if self.type_checking.insert(flood_response.path_trace.last().unwrap().0) {
                     res = true;
-                    self.type_checking.insert(flood_response.path_trace.last().unwrap().0);
                 }
             }
         }
@@ -187,7 +186,7 @@ impl ServerStruct {
 
         // I try to check if I have all routes to the nodes I already know, so that if I'm not done;
         // I also have a counter, in case I loose all connection to a node, so that I won't stop to flood forever in that case.
-        if self.network.has_all_routes(self.node_id) || self.flood_counter >= 100 {
+        if self.network.has_all_routes(self.node_id) || self.flood_counter >= 200 {
             // After this is set to false, I can flood again
             self.is_flooding = false;
             self.flood_counter = 0;
@@ -275,7 +274,7 @@ impl ServerStruct {
         self.type_checking.insert(dst)
     }
 
-    /*pub fn type_checked(&mut self, src: NodeId) {
+    pub fn type_checked(&mut self, src: NodeId) {
         self.type_checking.remove(&src);
-    }*/
+    }
 }
