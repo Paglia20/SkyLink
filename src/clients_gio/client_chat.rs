@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, ReceivedChatText, RegisterSuccessfully, SendContactsToSC, SendDestinations};
+ use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, ReceivedChatText, RegisterSuccessfully, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;

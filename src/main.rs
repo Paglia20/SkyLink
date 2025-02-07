@@ -10,6 +10,7 @@ mod server;
 mod simulation_control;
 mod skylink_drone;
 mod test;
+mod clients_sam;
 
 //for testing
 pub const ALL_CHAT: bool = false;
