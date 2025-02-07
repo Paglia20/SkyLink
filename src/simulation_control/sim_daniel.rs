@@ -359,14 +359,15 @@ impl MyApp {
 
     pub fn render_bottom_panel(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
-            .height_range(100.0..=400.0)
+            .height_range(225.0..=400.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)),
+                        RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)).color(Color32::WHITE),
                     );
                 });
+
                 ui.vertical(|ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
@@ -384,7 +385,10 @@ impl MyApp {
             .resizable(true)
             .min_width(300.0)
             .show(ctx, |ui| {
-                ui.heading("Actions");
+                // Title Actions
+                ui.colored_label(Color32::WHITE, RichText::new("Actions").strong().size(24.0));
+                ui.add_space(15.0);
+
                 match self.side_panel_scenes {
                     InitialScene => {
 
@@ -420,13 +424,7 @@ impl MyApp {
                                 self.turn_on_notification(0);
                             }
 
-                            if ui.button("test log!").clicked() {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Cause::Sent,
-                                    fastrand::u8(0..10),
-                                    "ciao".to_string(),
-                                ));
-                            }
+
                             if ui.button("test (graphically) chat with 0 and 11!").clicked() {
                                 /* questo andrà cambiato appena leo avrà fatto il server,
                                  è solo per vedere se ci piace il font delle chat */
@@ -457,24 +455,6 @@ impl MyApp {
                                 let msg = create_packet(vec![0, 1, 8, 5, 2]);
                                 self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
                             }
-
-                            if ui.button("Test flooding with 0").clicked() {
-                                self.sim_contr.flood_with(0);
-                            }
-
-
-                            if ui.button("Test Shortcut").clicked() {
-                                let msg = create_packet(vec![0, 1, 8]);
-                                let cs_shortcut = ControllerShortcut(msg);
-                                match self.sim_contr.channel_for_drone.try_send(cs_shortcut) {
-                                    Ok(_) => {
-                                        println!("sent through shortcut")
-                                    }
-                                    Err(_) => {
-                                        println!("error through shortcut");
-                                    }
-                                }
-                            }
                         }
 
                         if ui.button("Clear Log").clicked() {
@@ -498,7 +478,6 @@ impl MyApp {
                                     egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                 };
 
-                                ui.add_space(120.0);
                                 //immagine scalata
                                 ui.image((texture.id(), new_size));
                             }
@@ -657,7 +636,8 @@ impl MyApp {
                 ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
                 ui.set_height(ui.available_height());
 
-                ui.heading("Network Topology");
+                // Title
+                ui.colored_label(Color32::WHITE, RichText::new("Network Topology").strong().size(16.0));
 
                 let available_size = ui.available_size();
                 let center = egui::pos2(

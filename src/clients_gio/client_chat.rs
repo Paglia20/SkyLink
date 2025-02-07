@@ -427,8 +427,6 @@ impl ChatClient {
                 self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
 
 
-                ///double check this works please
-                println!("server_id is {}", server_id);
                 let msg = Message::new(src, session, content);
                 self.client_base.send_message(msg, server_id);
             }

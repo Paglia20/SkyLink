@@ -16,8 +16,8 @@ pub enum ClientCommand {
 
     ///Special commands for chat client, Register to a Server
     Register(NodeId), // dst id
-    ///Special commands for chat client, Send a Message to NodeId
-    SendMSG(NodeId, String), // Contact id, not dst (that will be a server), nb: it's different from sendmessage
+    ///Special commands for chat client, Send a Message to NodeId (the actual destination will be a server)
+    SendMSG(NodeId, String),
 
     ///WebClient only, Get a TextFile full of media references, hence the response will be a media references
     GetTextFile(u64),
