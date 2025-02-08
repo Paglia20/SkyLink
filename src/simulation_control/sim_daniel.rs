@@ -10,6 +10,8 @@ use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
+use crossbeam_channel::select_biased;
+use egui::accesskit::DefaultActionVerb::Select;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType};
@@ -478,7 +480,12 @@ impl MyApp {
                                     egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                 };
 
-                                //immagine scalata
+                                // I want a Central Logo
+                                let remaining_space = available_size.y - new_size.y;
+                                let vertical_padding = remaining_space / 2.0;
+                                ui.add_space(vertical_padding);
+
+
                                 ui.image((texture.id(), new_size));
                             }
                         }
@@ -1650,23 +1657,21 @@ impl MyApp {
     }
 
     pub fn update_event_receivers(&mut self) {
-        match self.sim_contr.drone_event_recv.try_recv() {
+        match self.sim_contr.server_event_recv.try_recv() {
             Ok(event) => {
-                self.manage_drone_event(event);
+                self.manage_server_event(event);
             }
             _ => {}
         }
-
         match self.sim_contr.client_event_recv.try_recv() {
             Ok(event) => {
                 self.manage_client_event(event);
             }
             _ => {}
         }
-
-        match self.sim_contr.server_event_recv.try_recv() {
+        match self.sim_contr.drone_event_recv.try_recv() {
             Ok(event) => {
-                self.manage_server_event(event);
+                self.manage_drone_event(event);
             }
             _ => {}
         }

@@ -27,6 +27,7 @@ dependencies = [
  "rusty_tester",
  "serde",
  "serde_json",
+ "skylink",
  "toml",
  "wg_2024",
  "wg_2024-rust",
@@ -3399,6 +3400,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95890f873bec569a0362c235787f3aca6e1e887302ba4840839bcc6459c42da6"
 dependencies = [
  "quote",
+]
+
+[[package]]
+name = "skylink"
+version = "0.1.0"
+source = "git+https://github.com/Suge42/Skylink_drone.git#1a02fb19ee44a82b60227ebeb39b1358efda92a2"
+dependencies = [
+ "crossbeam-channel",
+ "fastrand",
+ "wg_2024",
 ]
 
 [[package]]

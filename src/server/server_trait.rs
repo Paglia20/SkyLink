@@ -24,6 +24,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         if AUTOMATIC_FLOOD {
             self.flood();
         }
+        let mut count = 0;
         loop {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
@@ -36,21 +37,24 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.handle_packet(packet);
                     }
                 }
-                default => {
-
-                    // If I have some unchecked nodes I try to check them.
-                    for i in self.get_unresolved().into_iter() {
-                        ///REMOVE
-                        // println!("Unresolved {}", i);
-                        self.server_check_type(i);
-                    }
-                    
-                    // I check a counter, so that I don't try to send all the fragments every loop.
-                    if self.check_to_resend_fragments() {
-                        // If I have some unsent fragment, I check periodically.
-                        self.process_unsent_periodically();
-                    }
+                default => {}
+            }
+            if count > 255 {
+                // If I have some unchecked nodes I try to check them.
+                for i in self.get_unresolved().into_iter() {
+                    ///REMOVE
+                    // println!("Unresolved {}", i);
+                    self.server_check_type(i);
                 }
+
+                // I check a counter, so that I don't try to send all the fragments every loop.
+                if self.check_to_resend_fragments() {
+                    // If I have some unsent fragment, I check periodically.
+                    self.process_unsent_periodically();
+                }
+                count = 0;
+            }else {
+                count += 1;
             }
         }
     }
@@ -284,7 +288,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             PacketType::Nack(nack) => {
                 if self.handle_nack(nack.clone(), packet.clone()) {
-                    self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
+                    self.server_send_fragment_after_nack(packet.session_id, nack, self.get_src_id());
                 }
             }
             PacketType::FloodRequest(_) => {
@@ -303,20 +307,20 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         }
     }
     
-    fn server_send_fragment_after_nack(&mut self, packet: Packet, nack: Nack, self_id: NodeId) {
+    fn server_send_fragment_after_nack(&mut self, session_id: u64, nack: Nack, self_id: NodeId) {
         let mut tmp_frg = None;
         let mut tmp_dst = 0;
         let mut event = None;
-        match self.get_fragments_hm().get(&(packet.session_id, self_id)) {
+        match self.get_fragments_hm().get(&(session_id, self_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore.
             None => {
                 let err=  String::from("Failed to find message again after NACK");
-                event = Some(ServerEvent::LostMessage(packet.session_id, self_id, err));
+                event = Some(ServerEvent::LostMessage(session_id, self_id, err));
             },
             Some((destination,fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
-                        event = Some(ServerEvent::LostFragment(packet.session_id, self_id, nack.fragment_index));
+                        event = Some(ServerEvent::LostFragment(session_id, self_id, nack.fragment_index));
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
@@ -330,7 +334,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         // I need to create these copies of the results because in the match self is borrowed mutually,
         // so I can't call the necessary functions.
         if let Some(fragment) = tmp_frg {
-            self.server_send_single_fragment(fragment.clone(), tmp_dst, packet.session_id);
+            self.server_send_single_fragment(fragment.clone(), tmp_dst, session_id);
         }
         if let Some(event) = event {
             self.send_event(event);

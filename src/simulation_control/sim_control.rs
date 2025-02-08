@@ -3,7 +3,7 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_control::Cause::{AckReceived, DroneInsideDestination, Error, Flood, LostMessage, MissingDestination, NackReceived, Sent};
 use crate::simulation_control::sim_daniel::NodeNature;
 use crate::simulation_control::storage::SimulationStorage;
-use crate::skylink_drone::drone::SkyLinkDrone;
+use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};

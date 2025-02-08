@@ -7,6 +7,7 @@ edition = "2021"
 # AP main library.
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize", "debug"] }
 # All the imported drones
+skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }
 d-r-o-n-e_drone = { git = "https://github.com/AP-2024-25-D-R-O-N-E/drone.git"}
 fungi_drone = { git = "https://github.com/Fungi-B-D/Fungi-Drone.git" }
 wg_2024-rust = { git = "https://github.com/LuigiMiazzo17/unitn-advancedProgramming-WGL_2024-drone.git" }

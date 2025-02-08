@@ -109,7 +109,7 @@ impl NetworkEdge for MediaServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, _: Packet, _: Nack) {}
+    fn send_fragment_after_nack(&mut self, _: u64, _: Nack) {}
 
     fn send_ack(&mut self, _: Packet, _: u64) {}
 

@@ -8,7 +8,6 @@ mod network_edge;
 mod routing;
 mod server;
 mod simulation_control;
-mod skylink_drone;
 mod test;
 
 //for testing

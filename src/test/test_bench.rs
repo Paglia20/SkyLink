@@ -2,7 +2,7 @@ use crate::initializer::initialize;
 use crate::sim_control::{LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::*;
 use crate::simulation_control::sim_daniel::*;
-use crate::skylink_drone::drone::SkyLinkDrone;
+use skylink::SkyLinkDrone;
 use crate::test::test_initializer::test_initialize;
 use crossbeam_channel::{select, select_biased, unbounded, Receiver, Sender};
 use std::cell::RefCell;
