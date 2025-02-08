@@ -27,7 +27,7 @@ impl NetworkEdge for MediaServer {
     }
     
     fn handle_message(&mut self, message: Message) {
-        
+
         match message.content {
             ContentType::MediaRequest(media_request) => {
                 let source_id = message.source_id;
@@ -321,9 +321,9 @@ fn divide_text_file(file_str: String) -> Vec<String> {
     let mut res = Vec::new();
     let mut tmp_string = String::new();
     for c in file_str.chars() {
-        if c != '\n' {
+        if c != '\r' && c != '\n' {
             tmp_string.push(c);
-        } else {
+        } else if c != '\n' {
             // I save the name of the media.
             res.push(tmp_string);
             tmp_string = String::new();
