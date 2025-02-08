@@ -9,6 +9,7 @@ mod routing;
 mod server;
 mod simulation_control;
 mod test;
+mod clients_sam;
 
 //for testing
 pub const CLIENT_GIO: bool = true;
