@@ -231,25 +231,172 @@ impl SimulationControl {
             }
             // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
             // todo!() daniel
-            ServerEvent::LostFragment(session_id, node_id, fragment_index) => {}
-            ServerEvent::WrongDestinationType(my_node_id, wrong_node_id) => {}
-            ServerEvent::MissingDestination(_, _) => {}
-            ServerEvent::MissingRoute(_, _) => {}
-            ServerEvent::LostMessage(_, _, _) => {}
-            ServerEvent::DiscardedMessage(_, _) => {}
-            ServerEvent::DroneInsideDestination(_, _) => {}
-            ServerEvent::WrongDestination(_, _) => {}
-            ServerEvent::FileNotFound(_, _) => {}
-            ServerEvent::IncompleteFile(_, _) => {}
-            ServerEvent::FilesState(_, _, _) => {}
-            ServerEvent::FileNotReadable(_, _, _) => {}
-            ServerEvent::MediaNotFound(_, _) => {}
-            ServerEvent::MediaState(_, _) => {}
-            ServerEvent::ClientRegistered(_, _) => {}
-            ServerEvent::ClientAlreadyRegistered(_, _) => {}
-            ServerEvent::WrongCommandGiven(_, _) => {}
-            ServerEvent::ControllerShortcut(_) => {}
-            ServerEvent::Flooding(_) => {}
+            ServerEvent::LostFragment(_session_id, node_id, fragment_index) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id,
+                    message: format!("fragment {} lost", fragment_index)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::WrongDestinationType(my_node_id, wrong_node_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: my_node_id,
+                    message: format!("the type of destination drone {} is wrong", wrong_node_id)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::MissingDestination(server_id,missing_destination_id ) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("missing destination {}", missing_destination_id)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::MissingRoute(server_id, missing_route_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("missing route for server {}", missing_route_id)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::LostMessage(sess, initiator_id, error) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: initiator_id,
+                    message: format!("Lost message in session {}. Initiator {} reports: {} ", sess, initiator_id, error)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::DiscardedMessage(server_id, sess) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("discarded message in sess {}", sess)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::DroneInsideDestination(server_id, drone_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("destination {drone_id} removed because it's a drone, not a server")
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::WrongDestination(server_id, pack) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("packet {} sent to wrong destination", pack)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::FileNotFound(server_id, file_id ) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("file {} not found: the file is requested but not owned", file_id)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::IncompleteFile(server_id, file_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("at least one media of file {file_id} is missing")
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::FilesState(server_id, completed_files, incomplete_files) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("COMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}", completed_files, incomplete_files)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::FileNotReadable(server_id, file_name, error) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("the file named {} is not readable, reported error: {}", file_name, error)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::MediaNotFound(server_id, media_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("media {} not found", media_id)
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::MediaState(server_id, medias_ids_and_names) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!(
+                        "{}",
+                        medias_ids_and_names.iter()
+                            .map(|(num, text)| format!("media id: {}, media name: {}", num, text))
+                            .collect::<Vec<String>>()
+                            .join("\n")
+                    )
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::ClientRegistered(server_id, client_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("client {client_id} registered correctly")
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::ClientAlreadyRegistered(server_id, client_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("client {client_id} was already registered")
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::WrongCommandGiven(server_id, wrong_command) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("command {:?} is wrong", wrong_command )
+                };
+                self.log.push_back(new_log);
+            }
+            ServerEvent::ControllerShortcut(event) => {
+                match event {
+                    DroneEvent::PacketSent(_) => {}
+                    DroneEvent::PacketDropped(_) => {}
+                    DroneEvent::ControllerShortcut(packet) => {
+                        let server_id = packet.routing_header.source().unwrap();
+                        let new_log = LogEntry{
+                            cause: Error,
+                            node_id: server_id,
+                            message: "starting controller shortcut".to_string()
+                        };
+                        self.log.push_back(new_log);
+                    }
+                }
+
+            }
+            ServerEvent::Flooding(server_id) => {
+                let new_log = LogEntry{
+                    cause: Error,
+                    node_id: server_id,
+                    message: format!("flooding...")
+                };
+                self.log.push_back(new_log);
+            }
         }
     }
 
@@ -625,8 +772,8 @@ impl SimulationControl {
             cause: Sent,
             node_id: id_drone,
             message: format!(
-                "Received fragment {:?} of packet: {}",
-                packet.session_id, packet
+                "Received fragment {:?} moving from node {} to {}",
+                packet.session_id, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap()
             ),
         };
         self.log.push_back(new_log);
@@ -637,8 +784,8 @@ impl SimulationControl {
             cause: Error,
             node_id: id_drone,
             message: format!(
-                "Error in sending fragment {:?} of packet: {}",
-                packet.session_id, packet
+                "Error in sending fragment {:?} from {} to {}",
+                packet.session_id, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap()
             ),
         };
         self.log.push_back(new_log);
@@ -651,8 +798,8 @@ impl SimulationControl {
                         cause: AckReceived,
                         node_id: ack_id,
                         message: format!(
-                            "Node {:?} received Ack of fragment {}"
-                            , ack_id, ack.fragment_index
+                            "received Ack of fragment {} coming from {} in session {}"
+                            , ack.fragment_index, packet.routing_header.source().unwrap() ,packet.session_id
                         )
                     };
                     self.log.push_back(new_log);
@@ -669,8 +816,8 @@ impl SimulationControl {
                         cause: NackReceived,
                         node_id: nack_id,
                         message: format!(
-                            "Node {:?} received Nack of fragment {}, nack type:{:?} "
-                            , nack_id, nack.fragment_index, nack.nack_type
+                            "received Nack of fragment {}, nack type:{:?} "
+                            , nack.fragment_index, nack.nack_type
                         )
                     };
                     self.log.push_back(new_log);
@@ -703,7 +850,7 @@ impl SimulationControl {
         let new_log = LogEntry{
             cause: LostMessage,
             node_id,
-            message: format!("node {} lost message from session {:?}", node_id, sess),
+            message: format!("lost message from session {:?}", sess),
         };
         self.log.push_back(new_log);
     }
@@ -712,8 +859,8 @@ impl SimulationControl {
             cause: LostMessage,
             node_id,
             message: format!(
-                "node {} lost message from session {:?} of fragment index {:?}",
-                node_id, sess, frag_index),
+                " lost message from session {:?} of fragment index {:?}",
+                sess, frag_index),
         };
         self.log.push_back(new_log);
     }
@@ -809,8 +956,8 @@ impl SimulationControl {
             cause: Sent,
             node_id: id_drone,
             message: format!(
-                "Received fragment {:?} of packet: {}",
-                packet.session_id, packet
+                "Received fragment {:?} moving from node {} to {}",
+                packet.session_id, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap()
             ),
         };
         self.log.push_back(new_log);
@@ -838,8 +985,8 @@ impl SimulationControl {
                         cause: AckReceived,
                         node_id: ack_id,
                         message: format!(
-                            "Node {:?} received Nack of fragment {}"
-                            , ack_id, ack.fragment_index
+                            " received Nack of fragment {}"
+                            ,ack.fragment_index
                         )
                     };
                     self.log.push_back(new_log);
@@ -869,7 +1016,7 @@ impl SimulationControl {
                 message = format!("sent fragment id: {}, to {}", fragment.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::Ack(ack) => {
-                message = format!("sent ack id: {} to {}", ack.fragment_index, packet.routing_header.destination().unwrap());
+                message = format!("forwarded ack with id: {} from initiator {} to {} of session {}", ack.fragment_index, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap(), packet.session_id);
             }
             PacketType::Nack(nack) => {
                 message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
