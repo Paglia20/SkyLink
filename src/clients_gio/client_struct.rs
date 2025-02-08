@@ -23,11 +23,21 @@ pub struct ClientStruct {
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
 
-    pub flood_ids: HashSet<(u64, NodeId)>, // Just like drones
-    pub used_session_id: HashSet<u64>,     // Do we need this?
+    ///Remember all the seen floods
+    pub flood_ids: HashSet<(u64, NodeId)>,
+    ///Pretty self-explanatory, used to compute a new one whenever asked for it
+    pub used_session_id: HashSet<u64>,
+    ///Full Network known by this client, has all the unique functions to make it work
     pub network: Network,
-    pub fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>, //(session_id, source) - (destination, copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
-    pub unsent_fragments: (u8, HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>), // The NodeId is the src, the u8 is a counter (for now to the maximum I guess) to avoid sending too much stuff.
+
+    ///Hashmap with all the fragments we sent, in case we have to re-send them because of nack.
+    ///(session_id, source) - (destination, copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
+    pub fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>,
+
+    ///Hashmap with all the unsent fragments, to process a re-send after a new knowledge of network ecc...
+    pub unsent_fragments: HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>,
+
+    ///Is the client in flooding mode? prevent to flood too many times
     pub is_flooding: bool,
     pub flood_count: u64,
 }
@@ -110,24 +120,24 @@ impl NetworkEdge for ClientStruct {
 
     ///If the sending of a fragment gave an error, we put it in a hashmap to try sending it again.
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
-        match self.unsent_fragments.1.get_mut(&(session_id, self.node_id)) {
+        match self.unsent_fragments.get_mut(&(session_id, self.node_id)) {
             Some((_, fragments)) => {
                 fragments.push(fragment);
             },
             None => {
                 let mut vec = Vec::new();
                 vec.push(fragment);
-                self.unsent_fragments.1.insert((session_id, self.node_id), (destination, vec));
+                self.unsent_fragments.insert((session_id, self.node_id), (destination, vec));
             }
         }
     }
 
     ///If a fragment resulted in a nack, we try sending it again.
-    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        match self.fragments.get(&(packet.session_id, self.node_id)) {
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
+        match self.fragments.get(&(packet_session_id, self.node_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore
             None => {
-                self.send_event(ClientEvent::LostMessage(packet.session_id, self.node_id));
+                self.send_event(ClientEvent::LostMessage(packet_session_id, self.node_id));
 
                 if !self.is_flooding {
                     self.flood();
@@ -139,11 +149,11 @@ impl NetworkEdge for ClientStruct {
             Some((dst,_, fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
-                        self.send_event(ClientEvent::LostFragment(packet.session_id, self.node_id, nack.fragment_index));
+                        self.send_event(ClientEvent::LostFragment(packet_session_id, self.node_id, nack.fragment_index));
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
-                        self.send_fragment(fragment.clone(), *dst, packet.session_id);
+                        self.send_fragment(fragment.clone(), *dst, packet_session_id);
                     }
                 }
             }
@@ -311,7 +321,7 @@ impl ClientTrait for ClientStruct {
             used_session_id: HashSet::default(),
             network: Network::new(),
             fragments: HashMap::default(),
-            unsent_fragments: (0, HashMap::new()),
+            unsent_fragments: HashMap::new(),
             is_flooding: false,
             flood_count: 0 }
     }
@@ -393,14 +403,13 @@ impl ClientStruct {
     pub fn process_unsent_periodically(&mut self) {
         // I create a temporary copy of the fragments that needs to be processed.
         let mut to_process = Vec::new();
-        for (identifier, content) in self.unsent_fragments.1.iter() {
+        for (identifier, content) in self.unsent_fragments.iter() {
             for fragment in content.1.iter() {
                 to_process.push((fragment.clone(), identifier.clone(), content.0));
             }
         }
         // I then empty the HashMap to not have any duplicate.as
-        self.unsent_fragments.1 = HashMap::new();
-        self.unsent_fragments.0 = 0;
+        self.unsent_fragments = HashMap::new();
         for (fragment, identifier, dst) in to_process {
             self.send_fragment(fragment.clone(), dst, identifier.0);
         }
@@ -411,12 +420,12 @@ impl ClientStruct {
         match nack.nack_type.clone() {
             NackType::UnexpectedRecipient(wrong_node) => {
                 self.network.remove_node(wrong_node);
-                self.send_fragment_after_nack(packet, nack);
+                self.send_fragment_after_nack(packet.session_id, nack);
             },
             ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone
                 self.network.remove_node(wrong_node);
-                self.send_fragment_after_nack(packet, nack);
+                self.send_fragment_after_nack(packet.session_id, nack);
             },
             NackType::DestinationIsDrone => {
                 let wrong_node = packet.routing_header.hops.last().unwrap();
@@ -430,7 +439,7 @@ impl ClientStruct {
                 self.network.negative_feedback(dropper);
 
                 // I just send it again
-                self.send_fragment_after_nack(packet.clone(), nack);
+                self.send_fragment_after_nack(packet.session_id, nack);
             }
         }
     }

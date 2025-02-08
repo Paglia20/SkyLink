@@ -172,8 +172,8 @@ impl NetworkEdge for TextServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
+        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
     }
 
     fn send_ack(&mut self, _: Packet, _: u64) {}

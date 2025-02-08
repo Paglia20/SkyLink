@@ -261,8 +261,8 @@ impl NetworkEdge for WebBrowser {
         self.client_base.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        self.client_base.send_fragment_after_nack(packet, nack)
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack)  {
+        self.client_base.send_fragment_after_nack(packet_session_id, nack)
     }
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
@@ -326,6 +326,7 @@ impl ClientTrait for WebBrowser {
 
     ///Run function of WebBrowser, is equal to the web browser but call for different handles
     fn run(&mut self) {
+        let mut count = 0;
         loop {
             select_biased! {
                 recv(self.client_base.command_recv) -> cmd => {
@@ -345,13 +346,16 @@ impl ClientTrait for WebBrowser {
             }
 
             // I check a counter, so that I don't try to send all the fragments every loop.
-            if self.client_base.unsent_fragments.0 >= 100 {
-                self.client_base.process_unsent_periodically();
-
+            if count >= 128 {
                 //if I have some unchecked nodes I try to check them
                 self.client_base.periodic_check_type();
+
+                self.client_base.process_unsent_periodically();
+
+                //resent count
+                count = 0;
             } else {
-                self.client_base.unsent_fragments.0 += 1;
+                count += 1;
             }
         }
     }
