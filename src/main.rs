@@ -1,4 +1,3 @@
-use std::fs;
 use crate::initializer::initialize;
 use crate::simulation_control::{sim_control, sim_daniel::*};
 
