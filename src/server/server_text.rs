@@ -388,9 +388,9 @@ fn divide_text_file(file_str: String) -> HashMap<String, Vec<(u64, NodeId)>> {
     let mut res = HashMap::new();
     let mut tmp_string = String::new();
     for c in file_str.chars() {
-        if c != '\n' {
+        if c != '\r' && c != '\n' {
             tmp_string.push(c);
-        } else {
+        } else if c != '\n' {
             // I save the name of the media, but still can't know which media server might have it.
             res.insert(tmp_string, Vec::new());
             tmp_string = String::new();
