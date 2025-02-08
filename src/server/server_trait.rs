@@ -211,7 +211,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 .path_trace
                 .push((self.get_src_id(), NodeType::Server));
             // I first add myself to the path_trace.
-            if self.handle_flood_request(flood_request.clone(), packet) {
+            if self.handle_flood_request(flood_request.clone(), packet.session_id) {
                 self.edge_send_flood_response(flood_request);
             }
         } else if packet.routing_header.destination().unwrap() != self.get_src_id() {
@@ -471,7 +471,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn handle_command(&mut self, command: ServerCommand);
     fn send_event(&self, event: ServerEvent);
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet);
-    fn handle_flood_request(&mut self, request: FloodRequest, packet: Packet) -> bool;
+    fn handle_flood_request(&mut self, request: FloodRequest, session_id: u64) -> bool;
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool;
     fn positive_feed(&mut self, nodes: Vec<NodeId>);
     fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool;

@@ -2,7 +2,7 @@ use crate::routing::Network;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
-use wg_2024::network::NodeId;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, NodeType, Packet};
 use crate::DEBUG_MODE;
 
@@ -57,7 +57,7 @@ impl ServerStruct {
         }
     }
 
-    pub fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool{
+    pub fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) -> bool{
 
         // I try to insert the new flood in the already known ones.
         if self.flood_ids.insert((flood_request.flood_id,flood_request.initiator_id)) {
@@ -74,6 +74,9 @@ impl ServerStruct {
                         .unwrap()
                         .0;
                 }
+                
+                let packet = Packet::new_flood_request(SourceRoutingHeader::empty_route(), session_id, flood_request);
+                
                 //I update the path_trace in the packet.
                 for (key, _) in self.packet_send.iter() {
                     if *key != prev {

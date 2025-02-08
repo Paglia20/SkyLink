@@ -27,6 +27,7 @@ impl NetworkEdge for MediaServer {
     }
     
     fn handle_message(&mut self, message: Message) {
+        
         match message.content {
             ContentType::MediaRequest(media_request) => {
                 let source_id = message.source_id;
@@ -107,7 +108,9 @@ impl NetworkEdge for MediaServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, _: u64, _: Nack) {}
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
+        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+    }
 
     fn send_ack(&mut self, _: Packet, _: u64) {}
 
@@ -243,8 +246,8 @@ impl Server for MediaServer {
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet) {
         self.server_struct.handle_fragment(fragment, packet);
     }
-    fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool {
-        self.server_struct.handle_flood_request(flood_request.clone(), packet)
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) -> bool {
+        self.server_struct.handle_flood_request(flood_request.clone(), session_id)
     }
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)

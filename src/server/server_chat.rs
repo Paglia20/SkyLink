@@ -194,8 +194,8 @@ impl Server for ChatServer {
     fn handle_fragment(&mut self, fragment: Fragment, packet: Packet) {
         self.server_struct.handle_fragment(fragment, packet);
     }
-    fn handle_flood_request(&mut self, flood_request: FloodRequest, packet: Packet) -> bool {
-        self.server_struct.handle_flood_request(flood_request.clone(), packet)
+    fn handle_flood_request(&mut self, flood_request: FloodRequest, session_id: u64) -> bool {
+        self.server_struct.handle_flood_request(flood_request.clone(), session_id)
     }
     fn handle_nack(&mut self, nack: Nack, packet: Packet) -> bool {
         self.server_struct.handle_nack(nack.clone(), packet)
