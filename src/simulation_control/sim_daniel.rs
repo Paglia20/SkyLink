@@ -11,6 +11,8 @@ use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
+use crossbeam_channel::select_biased;
+use egui::accesskit::DefaultActionVerb::Select;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType};
@@ -119,6 +121,7 @@ pub struct MyApp {
     circle_mode: bool,
     sort: bool,
     dropper: Option<NodeId>,
+    logo: Option<TextureHandle>,
 }
 
 
@@ -146,7 +149,6 @@ impl MyApp {
             checked.push(false);
             selected_nodes.push(false);
         }
-
         let mut app = Self {
             nodes: vec,
             side_panel_scenes: InitialScene,
@@ -157,6 +159,7 @@ impl MyApp {
             circle_mode: true,
             sort: false,
             dropper: None,
+            logo: None,
         };
         app
     }
@@ -359,14 +362,15 @@ impl MyApp {
 
     pub fn render_bottom_panel(&self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
-            .height_range(100.0..=400.0)
+            .height_range(225.0..=400.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)),
+                        RichText::new("Simulation Control Log:").font(FontId::proportional(14.0)).color(Color32::WHITE),
                     );
                 });
+
                 ui.vertical(|ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
@@ -384,7 +388,10 @@ impl MyApp {
             .resizable(true)
             .min_width(300.0)
             .show(ctx, |ui| {
-                ui.heading("Actions");
+                // Title Actions
+                ui.colored_label(Color32::WHITE, RichText::new("Actions").strong().size(24.0));
+                ui.add_space(15.0);
+
                 match self.side_panel_scenes {
                     InitialScene => {
 
@@ -420,13 +427,7 @@ impl MyApp {
                                 self.turn_on_notification(0);
                             }
 
-                            if ui.button("test log!").clicked() {
-                                self.sim_contr.log.push_back(LogEntry::new(
-                                    Cause::Sent,
-                                    fastrand::u8(0..10),
-                                    "ciao".to_string(),
-                                ));
-                            }
+
                             if ui.button("test (graphically) chat with 0 and 11!").clicked() {
                                 /* questo andrà cambiato appena leo avrà fatto il server,
                                  è solo per vedere se ci piace il font delle chat */
@@ -440,7 +441,7 @@ impl MyApp {
                             if ui.button("test (graphically) media with 12").clicked() {
                                 /* questo andrà cambiato appena leo avrà fatto il server,
                                  è solo per vedere se ci piace il font delle media */
-                                let v = include_bytes!("../test/esempio.png").to_vec();
+                                let v = include_bytes!("../test/contents_inputs/media_files/esempio.png").to_vec();
 
                                 self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "esempio.png".to_string(), v);
                             }
@@ -457,29 +458,37 @@ impl MyApp {
                                 let msg = create_packet(vec![0, 1, 8, 5, 2]);
                                 self.sim_contr.all_sender_packets.get(&1).unwrap().send(msg).expect("Node Not connected to SC");
                             }
-
-                            if ui.button("Test flooding with 0").clicked() {
-                                self.sim_contr.flood_with(0);
-                            }
-
-
-                            if ui.button("Test Shortcut").clicked() {
-                                let msg = create_packet(vec![0, 1, 8]);
-                                let cs_shortcut = ControllerShortcut(msg);
-                                match self.sim_contr.channel_for_drone.try_send(cs_shortcut) {
-                                    Ok(_) => {
-                                        println!("sent through shortcut")
-                                    }
-                                    Err(_) => {
-                                        println!("error through shortcut");
-                                    }
-                                }
-                            }
                         }
-
 
                         if ui.button("Clear Log").clicked() {
                             self.sim_contr.log.clear();
+                        }
+
+                        //load logo
+                        if self.logo.is_none(){
+                            self.logo = Some(load_texture(ctx,"src/simulation_control/texture_pngs/SkyLinkLogo.png"));
+                        } else {
+                            if let Some(texture) = self.logo.clone() {
+
+                                // obtain available space
+                                let available_size = ui.available_size();
+
+                                let size = texture.size_vec2();
+                                let aspect_ratio = size.x / size.y;
+                                let new_size = if available_size.x / available_size.y > aspect_ratio {
+                                    egui::vec2(available_size.y * aspect_ratio, available_size.y)
+                                } else {
+                                    egui::vec2(available_size.x, available_size.x / aspect_ratio)
+                                };
+
+                                // I want a Central Logo
+                                let remaining_space = available_size.y - new_size.y;
+                                let vertical_padding = remaining_space / 2.0;
+                                ui.add_space(vertical_padding);
+
+
+                                ui.image((texture.id(), new_size));
+                            }
                         }
                     }
                     ManageAdd => {
@@ -529,7 +538,6 @@ impl MyApp {
                     }
                     Statistics => {
                         //drop stats
-
                         let max_value_drop = self.sim_contr.storage.dropped_packets.values().map(|vec| vec.len() as f64).fold(0.0, f64::max);
 
                         if max_value_drop > 0.0 {
@@ -597,7 +605,7 @@ impl MyApp {
                                 .iter()
                                 .map(|(&id, vec)| {
                                     let length = *vec as f64;
-                                    Bar::new(id as f64, length / max_value_drop * 10.0)
+                                    Bar::new(id as f64, length / max_value_flood * 10.0)
                                         .width(0.8) // Normalizzazione
                                         .fill(Color32::BLUE)
 
@@ -636,7 +644,8 @@ impl MyApp {
                 ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
                 ui.set_height(ui.available_height());
 
-                ui.heading("Network Topology");
+                // Title
+                ui.colored_label(Color32::WHITE, RichText::new("Network Topology").strong().size(16.0));
 
                 let available_size = ui.available_size();
                 let center = egui::pos2(
@@ -778,15 +787,7 @@ impl MyApp {
                         .show(ctx, |ui| {
                             match node.node_window_scenes {
                                 Start => {
-                                    let mut connections= String::new();
-                                    let mut first = true;
-                                    for connection in node.connections.clone() {
-                                        if !first {
-                                            connections.push_str(", ");
-                                        }
-                                        first = false;
-                                        connections.push_str(&connection.to_string());
-                                    }
+                                    let connections = MyApp::format_connections(node.clone());
                                     ui.label( RichText::new(format!("Connected to: {}", connections))
                                                   .font(FontId::new(12.0, egui::FontFamily::Monospace))
                                                   .color(Color32::WHITE),);
@@ -816,7 +817,7 @@ impl MyApp {
                                     ui.separator();
                                     // Qui puoi aggiungere ulteriori informazioni o controlli
                                     self.sender_id = 0;
-                                    ui.label( RichText::new(format!("Log:"))
+                                    ui.label( RichText::new("Log:".to_string())
                                                   .font(FontId::new(14.0, egui::FontFamily::Monospace))
                                                   .color(Color32::LIGHT_RED),);
                                     ui.separator();
@@ -946,15 +947,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label(RichText::new(format!("Connected to: {}", connections))
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1078,7 +1071,22 @@ impl MyApp {
                                                                     ui.separator();
                                                                     if let Some(chat) = self.sim_contr.storage.retrieve_chat(node.id, dst){
                                                                         for (id, str) in chat {
-                                                                            ui.label(format!("{id} - {str}"));
+                                                                            // Layout per i messaggi
+                                                                            ui.horizontal(|ui| {
+                                                                                if id == node.id {
+                                                                                    // Messaggio inviato da questo nodo (destro)
+                                                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                                                        ui.group(|ui| {
+                                                                                            ui.label(str);
+                                                                                        });
+                                                                                    });
+                                                                                } else {
+                                                                                    // Messaggio ricevuto da un altro nodo (sinistro)
+                                                                                    ui.group(|ui| {
+                                                                                        ui.label(format!("{id}: {str}"));
+                                                                                    });
+                                                                                }
+                                                                            });
                                                                         }
                                                                     }
                                                                     //send message
@@ -1209,15 +1217,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label( RichText::new(format!("Connected to: {}", connections))
                                                                   .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1406,7 +1406,7 @@ impl MyApp {
                                                                 ui.separator();
                                                                 for (id) in node_text_lists {
                                                                     if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
-                                                                        self.sim_contr.get_text_file(node.id, id.0);
+                                                                        self.sim_contr.get_text_file_or_media(node.id, id.0);
                                                                         node.content = Some(MediaToResolve)
                                                                     }
                                                                 }
@@ -1417,7 +1417,7 @@ impl MyApp {
 
                                                                         for id in media_available {
                                                                             if ui.button(id.to_string()).clicked() {
-                                                                                self.sim_contr.get_media(node.id, id.clone());
+                                                                                self.sim_contr.get_text_file_or_media(node.id, id.clone());
                                                                                 node.content = None;
                                                                                 node.node_window_scenes = Start; // Close the window
                                                                             }
@@ -1464,7 +1464,7 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
 
-                                                    ui.label(RichText::new(format!("Log:"))
+                                                    ui.label(RichText::new("Log:".to_string())
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
                                                                  .color(Color32::WHITE),);
 
@@ -1487,16 +1487,7 @@ impl MyApp {
                                                 .resizable(true)
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
-                                                    let mut connections = String::new();
-
-                                                    let mut first = true;
-                                                    for connection in node.connections.clone() {
-                                                        if !first {
-                                                            connections.push_str(", ");
-                                                        }
-                                                        first = false;
-                                                        connections.push_str(&connection.to_string());
-                                                    }
+                                                    let connections = MyApp::format_connections(node.clone());
 
                                                     ui.label(RichText::new(format!("Connected to: {}", connections))
                                                                  .font(FontId::new(15.0, egui::FontFamily::Monospace))
@@ -1667,26 +1658,37 @@ impl MyApp {
     }
 
     pub fn update_event_receivers(&mut self) {
-        match self.sim_contr.drone_event_recv.try_recv() {
-            Ok(event) => {
-                self.manage_drone_event(event);
-            }
-            _ => {}
-        }
-
-        match self.sim_contr.client_event_recv.try_recv() {
-            Ok(event) => {
-                self.manage_client_event(event);
-            }
-            _ => {}
-        }
-
         match self.sim_contr.server_event_recv.try_recv() {
             Ok(event) => {
                 self.manage_server_event(event);
             }
             _ => {}
         }
+        match self.sim_contr.client_event_recv.try_recv() {
+            Ok(event) => {
+                self.manage_client_event(event);
+            }
+            _ => {}
+        }
+        match self.sim_contr.drone_event_recv.try_recv() {
+            Ok(event) => {
+                self.manage_drone_event(event);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn format_connections(node: MyNodes) -> String {
+        let mut connections = String::new();
+        let mut first = true;
+        for connection in node.connections.clone() {
+            if !first {
+                connections.push_str(", ");
+            }
+            first = false;
+            connections.push_str(&connection.to_string());
+        }
+        connections
     }
 }
 impl eframe::App for MyApp {
@@ -1742,18 +1744,3 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
     // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
-
-
-
-
-/*
-feel free to update this list.
-
-se hai altre idee di scene dimmelo
-
-- cambiare i cerchi in droni
-
-(..)
-
-
- */

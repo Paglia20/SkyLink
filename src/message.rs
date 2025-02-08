@@ -119,7 +119,7 @@ pub enum MediaResponse {
 /*
 
 Ricapitolando:
-id media > 1000
+id media > 20000
 id texfiles < 1000
 
 

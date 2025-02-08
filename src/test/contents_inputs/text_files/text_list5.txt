@@ -1,0 +1,7 @@
+../test/contents_inputs/media_files/goat.png
+../test/contents_inputs/media_files/leone.png
+../test/contents_inputs/media_files/mario.png
+../test/contents_inputs/media_files/dog.png
+../test/contents_inputs/media_files/dunk.png
+../test/contents_inputs/media_files/esempio.png
+../test/contents_inputs/media_files/bronto.png

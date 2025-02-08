@@ -48,6 +48,9 @@ impl NetworkEdge for ChatServer {
                     ChatRequest::SendMessage {from, to, message: msg} => {
                         if self.registered_clients.contains(&to) {
                             // If I have the client, I send the message.
+
+                            // I also send the list, to be sure that the client has the chat with who is contacting him.
+                            // Send the actual message.
                             let resp = ChatResponse::MessageFrom {from, message: msg};
                             let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::ChatResponse(resp));
                             self.send_message(msg, to);
@@ -68,7 +71,6 @@ impl NetworkEdge for ChatServer {
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
-                        self.server_struct.add_destination_without_path(from);
 
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
@@ -84,6 +86,7 @@ impl NetworkEdge for ChatServer {
                                 // I set it as a not usable contact.
                             }
                         }
+                        self.type_checked(from);
                     }
                 }
             }
@@ -105,8 +108,8 @@ impl NetworkEdge for ChatServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet: Packet, nack: Nack) {
-        self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack)  {
+        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
     }
 
     fn send_ack(&mut self, _: Packet, _: u64) {}
@@ -204,16 +207,18 @@ impl Server for ChatServer {
     fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool {
         self.server_struct.save_flood_response(flood_resp)
     }
-
     fn send_to_all(&mut self, packet: Packet) {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
+        /// REMOVE
+        println!("update_node_state: source_id={:?}, value={:?}", source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
+
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
@@ -222,6 +227,15 @@ impl Server for ChatServer {
     }
     fn starting_to_flood(&mut self) {
         self.server_struct.starting_to_flood();
+    }
+    fn can_type_check(&mut self, dst: NodeId) -> bool {
+        self.server_struct.can_type_check(dst)
+    }
+    fn type_checked(&mut self, src: NodeId) {
+        self.server_struct.type_checked(src);
+    }
+    fn add_destination_without_path(&mut self, dst: NodeId) {
+        self.server_struct.add_destination_without_path(dst);
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()

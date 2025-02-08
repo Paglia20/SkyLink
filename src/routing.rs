@@ -118,15 +118,14 @@ impl Network {
     pub fn best_path(&self, start: &NodeId, end: &NodeId) -> Option<(Vec<NodeId>, f64)> {
         let start_index = self.node_map.get(start)?.1;
         let end_index = self.node_map.get(end)?.1;
-
-
-
+        
+        
         let mut stack = vec![(start_index, vec![start_index])];
         let mut max_weight = f64::MIN;
         let mut best_path_indexes: Option<Vec<NodeIndex>> = None;
         let mut best_path_length = usize::MAX;
-
-
+        
+        
         while let Some((current, path)) = stack.pop() {
             if current == end_index {
                 let weight = self.calculate_path_weight(path.clone());
@@ -248,24 +247,19 @@ impl Network {
             return false;
         }
 
-        let mut res = true;
-        for (id,(state, _)) in self.node_map.iter() {
-            if *state != 0 {
-                match self.best_path(&source_id, id) {
-                    Some((_, _)) => {},
-                    None => res = false,
-                }
-            }
-            else {
-                res = false;
+        for (id,_) in self.node_map.iter() {
+            match self.best_path(&source_id, id) {
+                Some((_, _)) => {},
+                None => return false
             }
         }
-        res
+
+        true
     }
 
     pub fn add_destination_without_path(&mut self, dst_id: NodeId) {
         match self.node_map.get(&dst_id) {
-            Some(&(_, existing_index)) => {
+            Some(&(_state, _existing_index)) => {
                 // If node already present, I don't need to do anything.
             },
             None => {

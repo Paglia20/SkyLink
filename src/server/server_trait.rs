@@ -24,6 +24,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         if AUTOMATIC_FLOOD {
             self.flood();
         }
+        let mut count = 0;
         loop {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
@@ -36,21 +37,24 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.handle_packet(packet);
                     }
                 }
-                default => {
-                    // I use the same check as the flood, to apply some kind of congestion control.
-                    if self.can_flood() {
-                            // If I have some unchecked nodes I try to check them.
-                        for i in self.get_unresolved() {
-                            self.server_check_type(i)
-                        }
-                    }
-                    
-                    // I check a counter, so that I don't try to send all the fragments every loop.
-                    if self.check_to_resend_fragments() {
-                        // If I have some unsent fragment, I check periodically.
-                        self.process_unsent_periodically();
-                    }
+                default => {}
+            }
+            if count > 255 {
+                // If I have some unchecked nodes I try to check them.
+                for i in self.get_unresolved().into_iter() {
+                    ///REMOVE
+                    // println!("Unresolved {}", i);
+                    self.server_check_type(i);
                 }
+
+                // I check a counter, so that I don't try to send all the fragments every loop.
+                if self.check_to_resend_fragments() {
+                    // If I have some unsent fragment, I check periodically.
+                    self.process_unsent_periodically();
+                }
+                count = 0;
+            }else {
+                count += 1;
             }
         }
     }
@@ -60,10 +64,12 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             Some(state) => {
                 state == 1
             }
-            None =>{false}
+            None =>{
+                false
+            }
         };
         if !out && DEBUG_MODE{
-            println!("dst state was not ok");
+            println!("{destination} state was not ok ");
             // send nack?
         }
         out
@@ -81,9 +87,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.is_state_ok(destination)
             }
         };
+
+        let session_id = message.session_id;
+        let frags = Self::fragment_message(&message);
+
         if check {
-            let session_id = message.session_id;
-            let frags = Self::fragment_message(&message);
             self.get_fragments_hm().insert((session_id, source_id), (destination, frags.clone()));
             // I also save the fragments in the memory, in case I have to send them again.
 
@@ -92,30 +100,39 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 // I apply the send operation on each single fragment.
             }
         } else {
-            // The message is dropped.
             let event = ServerEvent::WrongDestinationType(self.get_src_id(), destination);
             self.send_event(event);
+
+            //I don't need to ask for the type, since that is done periodically already.
+
+            // I'll have to resend the fragments later.
+            for fragment in frags {
+                self.add_unsent_fragment(fragment, session_id, destination);
+            }
         }
     }
     
     fn server_send_single_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         match self.get_srh(destination) {
             None => {
-                /// REMOVE
-                println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
+                ///REMOVE
+                // println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
+
                 // I first check if I have any path to the destination
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), destination));
+                self.add_destination_without_path(destination);
                 self.flood(); // Since I miss the destination, I start a flooding.
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some(srh) => {
                 /// REMOVE
                 println!("Server {} has a path to {}", self.get_src_id(), destination);
-                let first_dst = srh.hops[1];
+
+                let first_hop = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
                 // If everything worked, I try to send.
-                match self.get_packet_sender(&first_dst) {
+                match self.get_packet_sender(&first_hop) {
                     Some(sender) => {
                         match sender.send(packet.clone()) {
                             Ok(_) => {
@@ -125,17 +142,18 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                                 // If the send fails, probably my neighbour isn't my neighbour anymore.
                                 self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                                 self.add_unsent_fragment(fragment, session_id, destination);
-                                self.remove_faulty_connection(first_dst);
+                                self.remove_faulty_connection(first_hop);
                             }
                         }
                     }
                     None => {
-                        println!("Server {} isn't connected with {}", self.get_src_id(), first_dst);
+                        ///REMOVE
+                        println!("Server {} isn't connected with {}", self.get_src_id(), first_hop);
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                         self.add_unsent_fragment(fragment, session_id, destination);
-                        self.remove_faulty_connection(first_dst);
+                        self.remove_faulty_connection(first_hop);
                     }
                 }
             },
@@ -270,35 +288,39 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             PacketType::Nack(nack) => {
                 if self.handle_nack(nack.clone(), packet.clone()) {
-                    self.server_send_fragment_after_nack(packet, nack, self.get_src_id());
+                    self.server_send_fragment_after_nack(packet.session_id, nack, self.get_src_id());
                 }
             }
             PacketType::FloodRequest(_) => {
                 unreachable!() // We already managed them earlier.
             }
             PacketType::FloodResponse(flood_resp) => {
+                let dst = packet.routing_header.source().unwrap();
                 if self.save_flood_response(flood_resp) {
+                    ///REMOVE
+                    println!("server 14 sent type request to {}", dst);
+                    
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
-                    self.send_message(msg, packet.routing_header.source().unwrap());
+                    self.send_message(msg, dst);
                 }
             }
         }
     }
     
-    fn server_send_fragment_after_nack(&mut self, packet: Packet, nack: Nack, self_id: NodeId) {
+    fn server_send_fragment_after_nack(&mut self, session_id: u64, nack: Nack, self_id: NodeId) {
         let mut tmp_frg = None;
         let mut tmp_dst = 0;
         let mut event = None;
-        match self.get_fragments_hm().get(&(packet.session_id, self_id)) {
+        match self.get_fragments_hm().get(&(session_id, self_id)) {
             // I try to find again the fragment, and notify the sim controller if I don't have it anymore.
             None => {
                 let err=  String::from("Failed to find message again after NACK");
-                event = Some(ServerEvent::LostMessage(packet.session_id, self_id, err));
+                event = Some(ServerEvent::LostMessage(session_id, self_id, err));
             },
             Some((destination,fragments)) => {
                 match fragments.get(nack.fragment_index as usize) {
                     None => {
-                        event = Some(ServerEvent::LostFragment(packet.session_id, self_id, nack.fragment_index));
+                        event = Some(ServerEvent::LostFragment(session_id, self_id, nack.fragment_index));
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
@@ -312,7 +334,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         // I need to create these copies of the results because in the match self is borrowed mutually,
         // so I can't call the necessary functions.
         if let Some(fragment) = tmp_frg {
-            self.server_send_single_fragment(fragment.clone(), tmp_dst, packet.session_id);
+            self.server_send_single_fragment(fragment.clone(), tmp_dst, session_id);
         }
         if let Some(event) = event {
             self.send_event(event);
@@ -364,14 +386,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         }
     }
     
-    fn server_check_type(&mut self, id: NodeId) {
-        let req = TypeExchange::TypeRequest { from: self.get_src_id() };
-        let exc = ContentType::TypeExchange(req);
-        let s_id = self.get_session_id();
-        self.send_message(Message::new(self.get_src_id(), s_id, exc), id);
+    fn server_check_type(&mut self, dst: NodeId) {
+        if self.can_type_check(dst) {
+            ///REMOVE
+            // println!("Server 14 needs to check state of {}", dst);
+            let req = TypeExchange::TypeRequest { from: self.get_src_id() };
+            let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(req));
+            self.send_message(message, dst);
 
-        if DEBUG_MODE {
-            println!("sent check from {}", self.get_src_id());
+            if DEBUG_MODE {
+                println!("sent check from {}", self.get_src_id());
+            }
         }
     }
     
@@ -415,7 +440,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.send_event(ServerEvent::DiscardedMessage(self.get_src_id(), session_id));
 
                 if DEBUG_MODE {
-                    println!("Client {} discarded message to {} after receiving his nack, because state was not good", self.get_src_id(), source_id)
+                    println!("Server {} discarded message to {} after receiving his nack, because state was not good", self.get_src_id(), source_id)
                 }
             }
         }
@@ -427,9 +452,16 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         // I then empty the HashMap to not have any duplicate.
         self.reset_unsent_fragments();
         
+        for (_, (_,_,dst)) in to_process.iter() {
+            self.add_destination_without_path(*dst);
+        }
+        
         self.flood();
-        for (fragment, identifier) in to_process {
+        for (fragment, identifier) in to_process.into_iter() {
             self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
+            /*} else {
+                self.add_unsent_fragment(fragment, identifier.0, identifier.2);
+            }*/
         }
     }
     
@@ -447,6 +479,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn reset_unsent_fragments(&mut self);
     fn can_flood(&mut self) -> bool;
     fn starting_to_flood(&mut self);
+    fn can_type_check(&mut self, dst: NodeId) -> bool;
+    fn type_checked(&mut self, src: NodeId);
+    fn add_destination_without_path(&mut self, dst: NodeId);
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;

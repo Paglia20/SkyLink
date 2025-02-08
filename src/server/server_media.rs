@@ -88,6 +88,7 @@ impl NetworkEdge for MediaServer {
                                 // I set it as a not usable contact.
                             }
                         }
+                        self.type_checked(from);
                     }
                 }
             }
@@ -109,7 +110,7 @@ impl NetworkEdge for MediaServer {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, _: Packet, _: Nack) {}
+    fn send_fragment_after_nack(&mut self, _: u64, _: Nack) {}
 
     fn send_ack(&mut self, _: Packet, _: u64) {}
 
@@ -257,7 +258,6 @@ impl Server for MediaServer {
     fn save_flood_response(&mut self, flood_resp: FloodResponse) -> bool {
         self.server_struct.save_flood_response(flood_resp)
     }
-
     fn send_to_all(&mut self, packet: Packet) {
         self.server_struct.send_to_all(packet);
     }
@@ -267,6 +267,7 @@ impl Server for MediaServer {
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
+
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
@@ -275,6 +276,15 @@ impl Server for MediaServer {
     }
     fn starting_to_flood(&mut self) {
         self.server_struct.starting_to_flood();
+    }
+    fn can_type_check(&mut self, dst: NodeId) -> bool {
+        self.server_struct.can_type_check(dst)
+    }
+    fn type_checked(&mut self, src: NodeId) {
+        self.server_struct.type_checked(src);
+    }
+    fn add_destination_without_path(&mut self, dst: NodeId) {
+        self.server_struct.add_destination_without_path(dst);
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()
