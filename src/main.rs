@@ -24,9 +24,17 @@ fn main() {
     //change switch to change the run
     let switch = Switch::SimDaniel;
 
+    let s = if ALL_CONTENT{
+        "inputs/input_star_medias.toml"
+    }else if ALL_CHAT {
+        "inputs/input_star_chat.toml"
+    } else {
+        "inputs/input_tree.toml"
+    };
+
     match switch {
         Switch::SimDaniel => {
-            if let Some((sim_contr, handles)) = initialize("inputs/input_star_with_pdr.toml") {
+            if let Some((sim_contr, handles)) = initialize(s) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();

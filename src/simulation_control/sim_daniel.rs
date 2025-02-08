@@ -1241,6 +1241,13 @@ impl MyApp {
                                                         node.node_window_scenes = ShowAuxiliaryLists;
                                                     }
 
+                                                    if ui.button("Show Catalogue").clicked(){
+                                                        node.node_window_scenes = ShowAuxiliaryLists;
+                                                        node.content = Some(MediaToResolve)
+                                                    }
+
+
+
                                                     if ui.button("Show Possessed Medias").clicked(){
                                                         node.node_window_scenes = ShowContents;
                                                         node.content = None;
