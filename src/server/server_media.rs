@@ -67,7 +67,6 @@ impl NetworkEdge for MediaServer {
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
-                        self.server_struct.add_destination_without_path(from);
 
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
@@ -100,7 +99,6 @@ impl NetworkEdge for MediaServer {
                 self.send_nack_message(message.source_id, new_nack);
             }
         }
-
     }
 
     fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
@@ -261,6 +259,8 @@ impl Server for MediaServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
+        /// REMOVE
+        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {
