@@ -87,7 +87,7 @@ impl NetworkEdge for MediaServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        self.type_checked(from);
+                        //self.type_checked(from);
                     }
                 }
             }

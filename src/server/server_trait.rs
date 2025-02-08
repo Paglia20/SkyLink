@@ -298,7 +298,9 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 let dst = packet.routing_header.source().unwrap();
                 if self.save_flood_response(flood_resp) {
                     ///REMOVE
+
                     println!("server {} sent type request to {}", self.get_src_id(), dst);
+
                     
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
                     self.send_message(msg, dst);

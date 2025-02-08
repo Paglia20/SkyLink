@@ -326,7 +326,7 @@ fn create_servers(servers: Vec<config::Server>,
             test_chooser = 0;
         }
     }
-
+    
 
     // If I don't have media-text servers, I set it to 0.
     let files_per_server = if length >= 2 {
@@ -334,6 +334,9 @@ fn create_servers(servers: Vec<config::Server>,
     } else {
         0
     };
+    println!("media_count: {}", media_count);
+    println!("text_count {}", text_count);
+    println!("files_per_serveR: {}", files_per_server);
     if files_per_server < 1 && media_count > 0 && text_count > 0 {
         panic!("Files per server must be > 1");
     }
