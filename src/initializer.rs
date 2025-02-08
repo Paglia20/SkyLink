@@ -89,6 +89,8 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
                 .map(|id| (id, packet_senders[&id].clone()))
                 .collect();
 
+            // println!("Drone {} has {:?}", drone.id, drone_send);
+
             //create the thread of the drone, and add it to a Vec to be pushed afterward
             handles.push(thread::spawn(move || {
                 let mut drone = SkyLinkDrone::new(
@@ -326,7 +328,7 @@ fn create_servers(servers: Vec<config::Server>,
             test_chooser = 0;
         }
     }
-    
+
 
     // If I don't have media-text servers, I set it to 0.
     let files_per_server = if length >= 2 {
@@ -334,7 +336,7 @@ fn create_servers(servers: Vec<config::Server>,
     } else {
         0
     };
-    
+
     if files_per_server < 1 && media_count > 0 && text_count > 0 {
         panic!("Files per server must be > 1");
     }
@@ -358,6 +360,8 @@ fn create_servers(servers: Vec<config::Server>,
             .into_iter()
             .map(|id| (id, packet_senders[&id].clone()))
             .collect();
+
+        // println!("Server {} has {:?}", server.id, server_send);
 
 
         let mut server_files = Vec::new();
