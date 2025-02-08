@@ -1,4 +1,4 @@
-use crate::skylink_drone::drone::SkyLinkDrone;
+use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::JoinHandle;

@@ -1,5 +1,5 @@
 use crate::sim_control::SimulationControl;
-use crate::skylink_drone::drone::SkyLinkDrone;
+use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
