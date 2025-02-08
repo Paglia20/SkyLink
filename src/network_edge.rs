@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
-use crate::clients_gio::client_type::ClientType;
+// use crate::clients_gio::client_type::ClientType;
+use crate::clients_sam::sam_client_type::ClientType;
 use crate::server::server_type::ServerType;
 
 pub trait NetworkEdge {

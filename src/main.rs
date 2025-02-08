@@ -1,7 +1,7 @@
 use crate::initializer::initialize;
 use crate::simulation_control::{sim_control, sim_daniel::*};
 
-mod clients_gio;
+// mod clients_gio;
 mod initializer;
 mod message;
 mod network_edge;
@@ -10,7 +10,7 @@ mod server;
 mod simulation_control;
 mod skylink_drone;
 mod test;
-pub mod clients_sam;
+mod clients_sam;
 
 //for testing
 pub const ALL_CHAT: bool = false;

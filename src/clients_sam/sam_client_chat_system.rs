@@ -4,12 +4,11 @@ use super::sam_events::{ClientCommand, ClientEvent, ConnectionState};
 use super::sam_client_trait::Client;
 use super::sam_client_type::ClientType;
 use crate::message::{Message, ContentType, ChatRequest, ChatResponse, TypeExchange};
-use crate::network_edge::{EdgeType, NetworkEdge};
+use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, Packet};
-
+use wg_2024::packet::{Fragment, Nack, NackType, Packet};
 
 struct ChatSession {
     server_id: NodeId,
@@ -19,114 +18,10 @@ struct ChatSession {
 
 pub struct ChatClient {
     base: SamClientBase,
-    chat_servers: HashSet<NodeId>,           // Available chat servers
-    active_sessions: HashMap<NodeId, ChatSession>,  // Active chat sessions per client
-    available_contacts: HashMap<NodeId, HashSet<NodeId>>, // Server -> Set of available clients
-    message_cache: HashMap<(NodeId, u64), String>,  // Cache messages by (source, msg_id)
-}
-
-impl ChatClient {
-    pub fn new(
-        id: NodeId,
-        command_recv: Receiver<ClientCommand>,
-        event_send: Sender<ClientEvent>,
-        packet_recv: Receiver<Packet>,
-        packet_send: HashMap<NodeId, Sender<Packet>>,
-    ) -> Self {
-        ChatClient {
-            base: SamClientBase::new(id, command_recv, event_send, packet_recv, packet_send),
-            chat_servers: HashSet::new(),
-            active_sessions: HashMap::new(),
-            available_contacts: HashMap::new(),
-            message_cache: HashMap::new(),
-        }
-    }
-
-    fn handle_chat_response(&mut self, source: NodeId, response: ChatResponse) {
-        match response {
-            ChatResponse::ClientList(clients) => {
-                let entry = self.available_contacts.entry(source).or_insert_with(HashSet::new);
-                for client_id in clients {
-                    if !entry.contains(&client_id) {
-                        entry.insert(client_id);
-                        // Notify about new contact
-                        self.base.send_event(ClientEvent::SendContactsToSC(
-                            self.base.node_id,
-                            client_id
-                        ));
-                    }
-                }
-            }
-            ChatResponse::MessageFrom { from, message } => {
-                // Store in cache with unique message ID
-                let msg_id = if let Some(session) = self.active_sessions.get_mut(&from) {
-                    session.last_message_id += 1;
-                    session.messages.push(message.clone());
-                    session.last_message_id
-                } else {
-                    let mut session = ChatSession {
-                        server_id: source,
-                        last_message_id: 0,
-                        messages: vec![message.clone()],
-                    };
-                    let msg_id = session.last_message_id;
-                    self.active_sessions.insert(from, session);
-                    msg_id
-                };
-
-                self.message_cache.insert((from, msg_id), message.clone());
-
-                // Send event as expected by project
-                self.base.send_event(ClientEvent::ReceivedChatText(
-                    from,
-                    self.base.node_id,
-                    message
-                ));
-            }
-            ChatResponse::ClientNotFound(client_id) => {
-                // Clean up our internal state
-                if let Some(contacts) = self.available_contacts.get_mut(&source) {
-                    contacts.remove(&client_id);
-                }
-                self.active_sessions.remove(&client_id);
-
-                // Send expected event
-                self.base.send_event(ClientEvent::MissingContacts(
-                    self.base.node_id,
-                    client_id
-                ));
-            }
-        }
-    }
-
-    fn send_chat_message(&mut self, destination: NodeId, content: String) {
-        // Find a server to route through
-        if let Some(&server_id) = self.chat_servers.iter().next() {
-            let message = Message::new(
-                self.base.node_id,
-                self.base.get_session_id(),
-                ContentType::ChatRequest(ChatRequest::SendMessage {
-                    from: self.base.node_id,
-                    to: destination,
-                    message: content.clone(),
-                })
-            );
-
-            // Update our session state
-            if let Some(session) = self.active_sessions.get_mut(&destination) {
-                session.last_message_id += 1;
-                session.messages.push(content);
-            } else {
-                self.active_sessions.insert(destination, ChatSession {
-                    server_id,
-                    last_message_id: 0,
-                    messages: vec![content],
-                });
-            }
-
-            self.base.send_message(message, server_id);
-        }
-    }
+    chat_servers: HashSet<NodeId>,
+    active_sessions: HashMap<NodeId, ChatSession>,
+    available_contacts: HashMap<NodeId, HashSet<NodeId>>,
+    message_cache: HashMap<(NodeId, u64), String>,
 }
 
 impl NetworkEdge for ChatClient {
@@ -201,6 +96,32 @@ impl NetworkEdge for ChatClient {
     fn get_session_id(&mut self) -> u64 {
         self.base.get_session_id()
     }
+
+    fn get_src_id(&self) -> NodeId {
+        self.base.get_src_id()
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.base.remove_sender(id)
+    }
+}
+
+impl NetworkEdgeErrors for ChatClient {
+    fn check_type(&mut self, id: NodeId) {
+        self.base.check_type(id)
+    }
+
+    fn is_state_ok(&self, node_id: NodeId) -> bool {
+        self.base.is_state_ok(node_id)
+    }
+
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
+        self.base.send_nack_message(dst, nack)
+    }
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+        self.base.send_drone_nack(dst, nack)
+    }
 }
 
 impl Client for ChatClient {
@@ -211,7 +132,13 @@ impl Client for ChatClient {
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
-        ChatClient::new(id, command_recv, event_send, packet_recv, packet_send)
+        ChatClient {
+            base: SamClientBase::new(id, command_recv, event_send, packet_recv, packet_send),
+            chat_servers: HashSet::new(),
+            active_sessions: HashMap::new(),
+            available_contacts: HashMap::new(),
+            message_cache: HashMap::new(),
+        }
     }
 
     fn run(&mut self) {
@@ -262,5 +189,86 @@ impl Client for ChatClient {
 
     fn send_event(&self, ce: ClientEvent) {
         self.base.send_event(ce);
+    }
+}
+
+impl ChatClient {
+    fn handle_chat_response(&mut self, source: NodeId, response: ChatResponse) {
+        match response {
+            ChatResponse::ClientList(clients) => {
+                let entry = self.available_contacts.entry(source).or_insert_with(HashSet::new);
+                for client_id in clients {
+                    if !entry.contains(&client_id) {
+                        entry.insert(client_id);
+                        self.base.send_event(ClientEvent::SendContactsToSC(
+                            self.base.node_id,
+                            client_id
+                        ));
+                    }
+                }
+            }
+            ChatResponse::MessageFrom { from, message } => {
+                let msg_id = if let Some(session) = self.active_sessions.get_mut(&from) {
+                    session.last_message_id += 1;
+                    session.messages.push(message.clone());
+                    session.last_message_id
+                } else {
+                    let mut session = ChatSession {
+                        server_id: source,
+                        last_message_id: 0,
+                        messages: vec![message.clone()],
+                    };
+                    let msg_id = session.last_message_id;
+                    self.active_sessions.insert(from, session);
+                    msg_id
+                };
+
+                self.message_cache.insert((from, msg_id), message.clone());
+
+                self.base.send_event(ClientEvent::ReceivedChatText(
+                    from,
+                    self.base.node_id,
+                    message
+                ));
+            }
+            ChatResponse::ClientNotFound(client_id) => {
+                if let Some(contacts) = self.available_contacts.get_mut(&source) {
+                    contacts.remove(&client_id);
+                }
+                self.active_sessions.remove(&client_id);
+
+                self.base.send_event(ClientEvent::MissingContacts(
+                    self.base.node_id,
+                    client_id
+                ));
+            }
+        }
+    }
+
+    fn send_chat_message(&mut self, destination: NodeId, content: String) {
+        if let Some(&server_id) = self.chat_servers.iter().next() {
+            let message = Message::new(
+                self.base.node_id,
+                self.base.get_session_id(),
+                ContentType::ChatRequest(ChatRequest::SendMessage {
+                    from: self.base.node_id,
+                    to: destination,
+                    message: content.clone(),
+                })
+            );
+
+            if let Some(session) = self.active_sessions.get_mut(&destination) {
+                session.last_message_id += 1;
+                session.messages.push(content);
+            } else {
+                self.active_sessions.insert(destination, ChatSession {
+                    server_id,
+                    last_message_id: 0,
+                    messages: vec![content],
+                });
+            }
+
+            self.base.send_message(message, server_id);
+        }
     }
 }

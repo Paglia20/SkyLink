@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::fs;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
-use crate::clients_gio::client_type::ClientType;
+//use crate::clients_gio::client_type::ClientType;
+use crate::clients_sam::sam_client_type::ClientType;
 use crate::server::server_struct::ServerStruct;
 
 pub struct MediaServer {

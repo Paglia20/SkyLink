@@ -3,15 +3,15 @@ use super::sam_client_base::SamClientBase;
 use super::sam_events::{ClientCommand, ClientEvent, ConnectionState};
 use super::sam_client_trait::Client;
 use super::sam_client_type::ClientType;
-use crate::message::{Message, ContentType, TextRequest, TextResponse, MediaRequest, MediaResponse, TypeExchange};
-use crate::network_edge::{EdgeType, NetworkEdge};
+use crate::message::{
+    Message, ContentType, TextRequest, TextResponse, MediaRequest, MediaResponse, TypeExchange,
+};
+use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet};
 
-
-// Our own data structures for managing content
 struct TextContent {
     name: String,
     media_refs: HashSet<u64>,
@@ -26,11 +26,11 @@ struct MediaContent {
 
 pub struct WebBrowser {
     base: SamClientBase,
-    text_contents: HashMap<u64, TextContent>,      // text_id -> TextContent
-    media_contents: HashMap<u64, MediaContent>,    // media_id -> MediaContent
-    text_servers: HashSet<NodeId>,                // Available text servers
-    media_servers: HashSet<NodeId>,               // Available media servers
-    pending_requests: HashSet<(NodeId, u64)>,     // (server_id, content_id)
+    text_contents: HashMap<u64, TextContent>,
+    media_contents: HashMap<u64, MediaContent>,
+    text_servers: HashSet<NodeId>,
+    media_servers: HashSet<NodeId>,
+    pending_requests: HashSet<(NodeId, u64)>,
 }
 
 impl WebBrowser {
@@ -54,52 +54,52 @@ impl WebBrowser {
     fn handle_text_response(&mut self, source: NodeId, response: TextResponse) {
         match response {
             TextResponse::TextList(texts) => {
-                for (id, name) in texts {
-                    let text_content = self.text_contents.entry(id).or_insert_with(|| TextContent {
-                        name: name.clone(),
-                        media_refs: HashSet::new(),
-                        servers: HashSet::new(),
-                    });
-                    text_content.servers.insert(source);
-
-                    // Send expected event
-                    self.base.send_event(ClientEvent::SendTextList(
-                        self.base.node_id,
-                        id,
-                        name
-                    ));
+                // Use into_iter() to take ownership of texts.
+                for (id, name) in texts.into_iter() {
+                    {
+                        // Create a block so that the borrow from text_contents ends.
+                        let _ = {
+                            let entry = self.text_contents.entry(id).or_insert_with(|| TextContent {
+                                name: name.clone(),
+                                media_refs: HashSet::new(),
+                                servers: HashSet::new(),
+                            });
+                            entry.servers.insert(source);
+                        };
+                    }
+                    // Now the borrow has ended.
+                    self.base.send_event(ClientEvent::SendTextList(self.base.node_id, id, name));
                 }
             }
             TextResponse::MediaReferences(refs) => {
-                for (media_id, (name, servers)) in refs {
-                    let media_content = self.media_contents.entry(media_id).or_insert_with(|| MediaContent {
-                        name: name.clone(),
-                        data: None,
-                        servers: HashSet::new(),
-                    });
-                    media_content.servers.extend(servers.iter());
-
-                    // Send expected event
-                    self.base.send_event(ClientEvent::SendCatalogue(
-                        self.base.node_id,
-                        media_id,
-                        name
-                    ));
+                for (media_id, (name, servers)) in refs.into_iter() {
+                    {
+                        let _ = {
+                            let entry = self.media_contents.entry(media_id).or_insert_with(|| MediaContent {
+                                name: name.clone(),
+                                data: None,
+                                servers: HashSet::new(),
+                            });
+                            // Clone each server so that the borrow is ended
+                            entry.servers.extend(servers.iter().cloned());
+                        };
+                    }
+                    self.base.send_event(ClientEvent::SendCatalogue(self.base.node_id, media_id, name));
                 }
             }
             TextResponse::NotFound(text_id) => {
-                if let Some(content) = self.text_contents.get_mut(&text_id) {
-                    content.servers.remove(&source);
+                {
+                    if let Some(content) = self.text_contents.get_mut(&text_id) {
+                        content.servers.remove(&source);
+                    }
                 }
-                self.base.send_event(ClientEvent::MissingTextList(
-                    self.base.node_id,
-                    text_id
-                ));
+                self.base.send_event(ClientEvent::MissingTextList(self.base.node_id, text_id));
             }
             TextResponse::Incomplete(text_id) => {
-                // Our own approach: Track missing media and request it
                 if let Some(content) = self.text_contents.get(&text_id) {
-                    for &media_id in &content.media_refs {
+                    // We clone the media_refs so the borrow ends.
+                    let refs: Vec<u64> = content.media_refs.iter().cloned().collect();
+                    for media_id in refs {
                         if let Some(media_content) = self.media_contents.get(&media_id) {
                             if media_content.data.is_none() {
                                 if let Some(&server) = media_content.servers.iter().next() {
@@ -116,36 +116,35 @@ impl WebBrowser {
     fn handle_media_response(&mut self, source: NodeId, response: MediaResponse) {
         match response {
             MediaResponse::Media(media_id, name, data) => {
-                if let Some(content) = self.media_contents.get_mut(&media_id) {
-                    content.data = Some(data.clone());
-                    // Send expected event
-                    self.base.send_event(ClientEvent::SendMedia(
-                        self.base.node_id,
-                        media_id,
-                        name,
-                        data
-                    ));
+                {
+                    if let Some(content) = self.media_contents.get_mut(&media_id) {
+                        content.data = Some(data.clone());
+                    }
                 }
+                self.base.send_event(ClientEvent::SendMedia(self.base.node_id, media_id, name, data));
                 self.pending_requests.remove(&(source, media_id));
             }
             MediaResponse::MediaList(media_list) => {
-                for (id, name) in media_list {
-                    let content = self.media_contents.entry(id).or_insert_with(|| MediaContent {
-                        name,
-                        data: None,
-                        servers: HashSet::new(),
-                    });
-                    content.servers.insert(source);
+                for (id, name) in media_list.into_iter() {
+                    {
+                        let _ = {
+                            let entry = self.media_contents.entry(id).or_insert_with(|| MediaContent {
+                                name,
+                                data: None,
+                                servers: HashSet::new(),
+                            });
+                            entry.servers.insert(source);
+                        };
+                    }
                 }
             }
             MediaResponse::NotFound(media_id) => {
-                if let Some(content) = self.media_contents.get_mut(&media_id) {
-                    content.servers.remove(&source);
+                {
+                    if let Some(content) = self.media_contents.get_mut(&media_id) {
+                        content.servers.remove(&source);
+                    }
                 }
-                self.base.send_event(ClientEvent::MissingDestForMedia(
-                    self.base.node_id,
-                    media_id
-                ));
+                self.base.send_event(ClientEvent::MissingDestForMedia(self.base.node_id, media_id));
                 self.pending_requests.remove(&(source, media_id));
             }
         }
@@ -156,7 +155,7 @@ impl WebBrowser {
             let message = Message::new(
                 self.base.node_id,
                 self.base.get_session_id(),
-                ContentType::MediaRequest(MediaRequest::Media(media_id))
+                ContentType::MediaRequest(MediaRequest::Media(media_id)),
             );
             self.base.send_message(message, server);
             self.pending_requests.insert((server, media_id));
@@ -167,7 +166,7 @@ impl WebBrowser {
         let message = Message::new(
             self.base.node_id,
             self.base.get_session_id(),
-            ContentType::TextRequest(TextRequest::TextFile(text_id))
+            ContentType::TextRequest(TextRequest::TextFile(text_id)),
         );
         self.base.send_message(message, server);
     }
@@ -199,7 +198,7 @@ impl NetworkEdge for WebBrowser {
                             ContentType::TypeExchange(TypeExchange::TypeResponse {
                                 edge_type: EdgeType::Client(ClientType::WebBrowser),
                                 from: self.base.node_id,
-                            })
+                            }),
                         );
                         self.send_message(response, from);
                     }
@@ -209,10 +208,7 @@ impl NetworkEdge for WebBrowser {
                                 crate::server::server_type::ServerType::Content(_) => {
                                     self.text_servers.insert(from);
                                     self.base.node_states.insert(from, ConnectionState::Ready);
-                                    self.base.send_event(ClientEvent::SendDestinations(
-                                        self.base.node_id,
-                                        from
-                                    ));
+                                    self.base.send_event(ClientEvent::SendDestinations(self.base.node_id, from));
                                 }
                                 _ => {
                                     self.base.node_states.insert(from, ConnectionState::Failed);
@@ -253,17 +249,43 @@ impl NetworkEdge for WebBrowser {
     fn get_session_id(&mut self) -> u64 {
         self.base.get_session_id()
     }
+
+    fn get_src_id(&self) -> NodeId {
+        self.base.get_src_id()
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.base.remove_sender(id)
+    }
+}
+
+impl NetworkEdgeErrors for WebBrowser {
+    fn check_type(&mut self, id: NodeId) {
+        self.base.check_type(id);
+    }
+
+    fn is_state_ok(&self, node_id: NodeId) -> bool {
+        self.base.is_state_ok(node_id)
+    }
+
+    fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
+        self.base.send_nack_message(dst, nack);
+    }
+
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+        self.base.send_drone_nack(dst, nack);
+    }
 }
 
 impl Client for WebBrowser {
     fn new(
-        id: NodeId,
+        node_id: NodeId,
         command_recv: Receiver<ClientCommand>,
         event_send: Sender<ClientEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
-        WebBrowser::new(id, command_recv, event_send, packet_recv, packet_send)
+        WebBrowser::new(node_id, command_recv, event_send, packet_recv, packet_send)
     }
 
     fn run(&mut self) {
@@ -307,7 +329,7 @@ impl Client for WebBrowser {
                 );
                 self.base.send_message(message, server_id);
             }
-            _ => self.base.handle_command(command)
+            _ => self.handle_command(command)
         }
     }
 
