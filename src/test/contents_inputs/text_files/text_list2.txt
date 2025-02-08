@@ -1,6 +1,6 @@
-../test/contents_inputs/media_files/farfalla_blu.png
-../test/contents_inputs/media_files/farfalla.png
-../test/contents_inputs/media_files/goat.png
-../test/contents_inputs/media_files/leone.png
-../test/contents_inputs/media_files/mario.png
-../test/contents_inputs/media_files/squirtle.png
+src/test/contents_inputs/media_files/farfalla_blu.png
+src/test/contents_inputs/media_files/farfalla.png
+src/test/contents_inputs/media_files/goat.png
+src/test/contents_inputs/media_files/leone.png
+src/test/contents_inputs/media_files/mario.png
+src/test/contents_inputs/media_files/squirtle.png

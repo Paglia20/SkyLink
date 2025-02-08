@@ -150,7 +150,7 @@ impl NetworkEdge for TextServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        self.type_checked(from);
+                        //self.type_checked(from);
                     }
                 }
             }
@@ -251,6 +251,18 @@ impl Server for TextServer {
                 }
             }
         }
+        server_struct.send_event(ServerEvent::FilesState(node_id,
+                                                text_files
+                                                    .iter()
+                                                    .filter(|(_,(_,x))| !x.iter().any(|(_,y)|y.is_empty()) )
+                                                    .map(|(a,(b,_))| (*a,b.clone()))
+                                                    .collect(), // Keeps only files with all medias.
+                                                text_files
+                                                    .iter()
+                                                    .filter(|(_,(_,x))| x.iter().any(|(_,y)|y.is_empty()) )
+                                                    .map(|(a,(b,_))| (*a,b.clone()))
+                                                    .collect(), // Keeps only files with at least one missing media,
+        ));
         TextServer {
             server_struct,
             text_files,
