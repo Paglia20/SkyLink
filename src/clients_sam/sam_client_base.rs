@@ -42,89 +42,89 @@ impl NetworkEdge for SamClientBase {
         match packet.pack_type.clone() {
             PacketType::FloodRequest(mut flood_request) => {
                 flood_request.path_trace.push((self.node_id, NodeType::Client));
-                let flood_key = (flood_request.flood_id, flood_request.initiator_id);
 
-                if self.flood_ids.insert(flood_key) {
+                let flood_id = (
+                    flood_request.flood_id,
+                    flood_request.initiator_id,
+                );
+
+                if self.flood_ids.insert(flood_id) {
+                    // Send flooding notification for this node
                     self.is_flooding = true;
                     self.send_event(ClientEvent::Flooding(self.node_id));
 
-                    if self.packet_send.len() == 1 {
-                        self.edge_send_flood_response(flood_request);
+                    // Forward to all except previous node
+                    let prev = if flood_request.path_trace.len() > 1 {
+                        flood_request.path_trace[flood_request.path_trace.len() - 2].0
                     } else {
-                        let prev = if flood_request.path_trace.len() > 1 {
-                            flood_request.path_trace[flood_request.path_trace.len() - 2].0
-                        } else {
-                            flood_request.initiator_id
-                        };
+                        flood_request.initiator_id
+                    };
 
-                        packet.pack_type = PacketType::FloodRequest(flood_request.clone());
+                    // Create the path trace string for the event
+                    let path: Vec<NodeId> = flood_request.path_trace
+                        .iter()
+                        .map(|(id, _)| *id)
+                        .collect();
 
-                        // Forward flood to all neighbors except previous
-                        for (key, sender) in &self.packet_send {
-                            if *key != prev {
-                                if sender.send(packet.clone()).is_ok() {
-                                    self.send_event(ClientEvent::PacketSent(packet.clone()));
-                                }
+                    // Send event with proper format
+                    let packet_with_path = Packet {
+                        pack_type: PacketType::FloodRequest(flood_request.clone()),
+                        routing_header: packet.routing_header.clone(),
+                        session_id: packet.session_id,
+                    };
+                    self.send_event(ClientEvent::PacketSent(packet_with_path));
+
+                    packet.pack_type = PacketType::FloodRequest(flood_request.clone());
+
+                    // Send to all neighbors except previous
+                    for (key, sender) in &self.packet_send {
+                        if *key != prev {
+                            if sender.send(packet.clone()).is_ok() {
+                                // Don't send another event here since we already sent it above
                             }
                         }
                     }
 
-                    // Generate new flood request with new ID
-                    let new_flood_id = self.get_flood_id();
-                    let new_flood_request = wg_2024::packet::FloodRequest {
-                        flood_id: new_flood_id,
-                        initiator_id: self.node_id,
-                        path_trace: vec![(self.node_id, NodeType::Client)],
-                    };
-
-                    let new_packet = Packet::new_flood_request(
-                        wg_2024::network::SourceRoutingHeader::default(),
-                        self.get_session_id(),
-                        new_flood_request
-                    );
-
-                    // Send new flood request to all neighbors
-                    for (_, sender) in &self.packet_send {
-                        if sender.send(new_packet.clone()).is_ok() {
-                            self.send_event(ClientEvent::PacketSent(new_packet.clone()));
-                        }
-                    }
-
-                } else {
+                    // Send flood response
                     self.edge_send_flood_response(flood_request);
                 }
             }
-            PacketType::MsgFragment(fragment) => {
-                if packet.routing_header.destination().unwrap() != self.node_id {
-                    // Forward as a drone would
-                    packet.routing_header.hop_index += 1;
-                    let next_hop = packet.routing_header.hops[packet.routing_header.hop_index];
+            PacketType::MsgFragment(msg_fragment) => {
+                let session_id = packet.session_id;
+                let source_id = packet.routing_header.hops[0];
+                let total_fragments = msg_fragment.total_n_fragments;
 
-                    if let Some(sender) = self.packet_send.get(&next_hop) {
-                        if sender.send(packet.clone()).is_ok() {
-                            self.send_event(ClientEvent::PacketSent(packet));
-                        }
-                    }
+                // First send the received event
+                self.send_event(ClientEvent::PacketReceived(packet.clone()));
+
+                // Then store fragment
+                {
+                    let entry = self.fragments
+                        .entry((session_id, source_id))
+                        .or_insert_with(|| (self.node_id, None::<ContentType>, Vec::new()));
+                    entry.2.push(msg_fragment.clone());
+                }
+
+                // Send ACK
+                self.send_ack(packet.clone(), msg_fragment.fragment_index);
+
+                // Check if message is complete and handle it
+                let fragments_complete = if let Some((_, _, frags)) = self.fragments.get(&(session_id, source_id)) {
+                    frags.len() as u64 == total_fragments
                 } else {
-                    // Handle message fragment
-                    let session_id = packet.session_id;
-                    let source_id = packet.routing_header.hops[0];
-                    let total_fragments = fragment.total_n_fragments;
+                    false
+                };
 
-                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                if fragments_complete {
+                    // Get a clone of the fragments
+                    if let Some((_, _, frags)) = self.fragments.get(&(session_id, source_id)) {
+                        let frags_clone = frags.clone();
 
-                    let destination = self.node_id;
-                    let frag_index = fragment.fragment_index;
-
-                    let entry = self.fragments.entry((session_id, source_id)).or_insert((destination, None, vec![]));
-                    entry.2.push(fragment);
-
-                    self.send_ack(packet.clone(), frag_index);
-
-                    let fragments = &self.fragments.get(&(session_id, source_id)).unwrap().2;
-                    if fragments.len() as u64 == total_fragments {
-                        if let Ok(message) = Self::reassemble_message(session_id, source_id, fragments) {
+                        // Try to reassemble and handle the message
+                        if let Ok(message) = Self::reassemble_message(session_id, source_id, &frags_clone) {
+                            // Remove fragments first
                             self.fragments.remove(&(session_id, source_id));
+                            // Then handle the message
                             self.handle_message(message);
                         } else {
                             self.send_event(ClientEvent::ErrorReassembling(self.node_id));
@@ -133,39 +133,53 @@ impl NetworkEdge for SamClientBase {
                 }
             }
             PacketType::Ack(ack) => {
+                // Send ACK received event first
                 self.send_event(ClientEvent::AckReceived(packet.clone()));
 
                 if let Some(source) = packet.routing_header.source() {
-                    if let Some((_, fragments)) = self.unsent_fragments.1.get_mut(&(packet.session_id, source)) {
+                    if let Some((_, fragments)) =
+                        self.unsent_fragments.1.get_mut(&(packet.session_id, source))
+                    {
                         fragments.retain(|f| f.fragment_index != ack.fragment_index);
                     }
                 }
             }
             PacketType::Nack(nack) => {
                 self.send_event(ClientEvent::NackReceived(packet.clone()));
-                let source = packet.routing_header.source().unwrap_or(self.node_id);
-                let fragments_to_send = if let Some((destination, _, fragments)) = self.fragments.get(&(packet.session_id, source)) {
-                    Some((*destination, fragments.clone()))
-                } else {
-                    None
-                };
+                if let Some(source) = packet.routing_header.source() {
+                    // Get the values we need first with an immutable borrow
+                    let fragments_to_send = if let Some((destination, _, fragments)) =
+                        self.fragments.get(&(packet.session_id, source))
+                    {
+                        // Clone what we need
+                        let destination = *destination;
+                        let fragments: Vec<Fragment> = fragments.iter().cloned().collect();
+                        Some((destination, fragments))
+                    } else {
+                        None
+                    };
 
-                if let Some((destination, fragments)) = fragments_to_send {
-                    for fragment in fragments {
-                        self.send_fragment(fragment, destination, packet.session_id);
+                    // Now use the cloned values without holding the borrow
+                    if let Some((destination, fragments)) = fragments_to_send {
+                        for fragment in fragments {
+                            self.send_fragment(fragment, destination, packet.session_id);
+                        }
                     }
                 }
             }
             PacketType::FloodResponse(response) => {
+                // Add route from response
                 self.network.add_route(self.node_id, response.path_trace.clone());
 
+                // Update flooding state
                 if self.network.has_all_routes(self.node_id) || self.flood_count >= 200 {
                     self.is_flooding = false;
                     self.flood_count = 0;
 
+                    // Try to send any unsent fragments now that we have routes
                     let mut to_process = Vec::new();
                     for (identifier, content) in self.unsent_fragments.1.iter() {
-                        for fragment in &content.1 {
+                        for fragment in content.1.iter() {
                             to_process.push((fragment.clone(), identifier.clone(), content.0));
                         }
                     }
@@ -179,6 +193,7 @@ impl NetworkEdge for SamClientBase {
                     self.flood_count += 1;
                 }
 
+                // Check types of unresolved nodes
                 for id in self.network.get_unresolved() {
                     self.check_type(id);
                 }
@@ -275,10 +290,8 @@ impl NetworkEdge for SamClientBase {
         }
     }
 
-
     fn flood(&mut self) {
         self.is_flooding = true;
-        // Add flooding event emission
         self.send_event(ClientEvent::Flooding(self.node_id));
 
         let flood_request = wg_2024::packet::FloodRequest {
@@ -293,12 +306,12 @@ impl NetworkEdge for SamClientBase {
             flood_request
         );
 
-        // Send to all connected nodes and emit packet sent events
-        for (_, sender) in &self.packet_send {
+        // Send to all connected nodes
+        self.packet_send.iter().for_each(|(_, sender)| {
             if sender.send(packet.clone()).is_ok() {
                 self.send_event(ClientEvent::PacketSent(packet.clone()));
             }
-        }
+        });
     }
 
     fn get_flood_id(&mut self) -> u64 {
@@ -427,185 +440,33 @@ impl Client for SamClientBase {
 }
 
 impl SamClientBase {
-    fn handle_flood_response(&mut self, flood_resp: wg_2024::packet::FloodResponse) {
-        // Add route and paths
-        self.network.add_route(self.node_id, flood_resp.path_trace.clone());
+    fn edge_send_flood_response(&mut self, flood_request: wg_2024::packet::FloodRequest) {
+        // Clone the values we need before moving flood_request
+        let flood_id = flood_request.flood_id;
+        let path_trace = flood_request.path_trace.clone();
+        let initiator_id = flood_request.initiator_id;
 
-        // Check if we have paths to all nodes including servers
-        let can_flood = !self.network.has_all_routes(self.node_id) && self.flood_count < 200;
-
-        if !can_flood {
-            self.is_flooding = false;
-            self.flood_count = 0;
-
-            // Process any unsent fragments
-            let fragments_to_send: Vec<_> = self.unsent_fragments.1
-                .iter()
-                .flat_map(|(id, (dst, frags))| {
-                    frags.iter().map(move |f| (f.clone(), *id, *dst))
-                })
-                .collect();
-
-            self.unsent_fragments.1.clear();
-            self.unsent_fragments.0 = 0;
-
-            for (fragment, id, dst) in fragments_to_send {
-                self.send_fragment(fragment, dst, id.0);
-            }
-        } else {
-            self.flood_count += 1;
-        }
-
-        // Check unresolved nodes
-        for id in self.network.get_unresolved() {
-            if !self.is_flooding {
-                self.check_type(id);
-            }
-        }
-    }
-
-    fn flood(&mut self) {
-        if self.is_flooding {
-            return;
-        }
-
-        self.is_flooding = true;
-        self.send_event(ClientEvent::Flooding(self.node_id));
-
-        let flood_request = wg_2024::packet::FloodRequest {
-            flood_id: self.get_flood_id(),
-            initiator_id: self.node_id,
-            path_trace: vec![(self.node_id, NodeType::Client)],
+        let flood_response = wg_2024::packet::FloodResponse {
+            flood_id,
+            path_trace: path_trace.clone(),
         };
 
-        let packet = Packet::new_flood_request(
-            wg_2024::network::SourceRoutingHeader::default(),
-            self.get_session_id(),
-            flood_request
-        );
-
-        for sender in self.packet_send.values() {
-            if sender.send(packet.clone()).is_ok() {
-                self.send_event(ClientEvent::PacketSent(packet.clone()));
-            }
-        }
-    }
-
-    fn process_network_paths(&mut self) {
-        if !self.network.has_all_routes(self.node_id) && !self.is_flooding {
-            self.flood();
-        }
-    }
-
-    pub fn edge_send_flood_response(&mut self, flood_request: wg_2024::packet::FloodRequest) {
-        let flood_resp = wg_2024::packet::FloodResponse {
-            flood_id: flood_request.flood_id,
-            path_trace: flood_request.path_trace.clone(),
-        };
-
-        let mut hops = flood_request.path_trace
+        let mut hops: Vec<NodeId> = path_trace
             .iter()
             .map(|(id, _)| *id)
             .rev()
-            .collect::<Vec<NodeId>>();
-
-        if flood_request.path_trace[0].0 != flood_request.initiator_id {
-            hops.push(flood_request.initiator_id);
-        }
-
-        let response_packet = Packet {
-            pack_type: PacketType::FloodResponse(flood_resp),
-            routing_header: wg_2024::network::SourceRoutingHeader {
-                hop_index: 0,
-                hops
-            },
-            session_id: flood_request.flood_id,
-        };
-
-        self.handle_packet(response_packet);
-    }
-
-    pub fn send_as_drone(&mut self, mut packet: Packet) {
-        packet.routing_header.hop_index += 1;
-        if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
-            if let Some(sender) = self.packet_send.get(&next_id) {
-                if sender.send(packet.clone()).is_ok() {
-                    self.send_event(ClientEvent::PacketSent(packet));
-                } else {
-                    self.network.remove_faulty_connection(self.node_id, next_id);
-                }
-            }
-        }
-    }
-
-    pub fn handle_edge_nack(&mut self, nack_type: crate::message::EdgeNackType, source_id: NodeId) {
-        match nack_type {
-            crate::message::EdgeNackType::UnexpectedMessage => {
-                self.network.update_state(source_id, 2);
-                if crate::DEBUG_MODE {
-                    println!("Client {} discarded message after receiving unexpected message nack from {}", self.node_id, source_id);
-                }
-            }
-        }
-    }
-
-    pub fn client_send_fragment(&mut self, message: Message, destination: NodeId) {
-        let session_id = self.get_session_id();
-        let fragments = Self::fragment_message(&message);
-
-        self.fragments.insert(
-            (session_id, self.node_id),
-            (destination, Some(message.content), fragments.clone())
-        );
-
-        for fragment in fragments {
-            self.send_fragment(fragment, destination, session_id);
-        }
-    }
-
-    pub fn periodic_check_type(&mut self) {
-        for id in self.network.get_unresolved() {
-            self.check_type(id);
-        }
-    }
-
-    pub fn process_unsent_periodically(&mut self) {
-        let to_process: Vec<_> = self.unsent_fragments.1
-            .iter()
-            .flat_map(|(id, (dst, frags))| {
-                frags.iter().map(move |f| (f.clone(), *id, *dst))
-            })
             .collect();
 
-        self.unsent_fragments.1.clear();
-        self.unsent_fragments.0 = 0;
-
-        for (fragment, id, dst) in to_process {
-            self.send_fragment(fragment, dst, id.0);
+        if path_trace[0].0 != initiator_id {
+            hops.push(initiator_id);
         }
-    }
 
-    pub fn handle_nack(&mut self, nack: Nack, packet: Packet) {
-        match nack.nack_type {
-            NackType::UnexpectedRecipient(wrong_node) => {
-                self.network.remove_node(wrong_node);
-                self.send_fragment_after_nack(packet, nack);
-            },
-            NackType::ErrorInRouting(wrong_node) => {
-                self.network.remove_node(wrong_node);
-                self.send_fragment_after_nack(packet, nack);
-            },
-            NackType::DestinationIsDrone => {
-                if let Some(wrong_node) = packet.routing_header.hops.last() {
-                    self.network.update_state(*wrong_node, 2);
-                }
-            },
-            NackType::Dropped => {
-                if let Some(dropper) = packet.routing_header.source() {
-                    self.network.negative_feedback(dropper);
-                }
-                self.send_fragment_after_nack(packet, nack);
-            }
-        }
+        let packet = Packet {
+            pack_type: PacketType::FloodResponse(flood_response),
+            routing_header: wg_2024::network::SourceRoutingHeader { hop_index: 0, hops },
+            session_id: flood_id,
+        };
+
+        self.handle_packet(packet);
     }
 }
