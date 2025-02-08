@@ -44,6 +44,8 @@ impl NetworkEdge for TextServer {
                         self.send_message(msg, source_id);
                     },
                     TextRequest::TextFile(file_id) => {
+                        ///remove
+                        println!("a textfilerequest arrived of id {file_id}, here the complete: {:?}",self.text_files.get(&file_id));
                         match self.text_files.get(&file_id) {
                             Some((_,file)) => {
                                 // If I have the text file, I start the check on it
@@ -54,7 +56,9 @@ impl NetworkEdge for TextServer {
                                     self.send_message(msg, source_id);
                                     self.send_event(ServerEvent::IncompleteFile(self.get_src_id(), file_id));
                                 } else {
+                                    println!("siamo nell'else ");
                                     // If the requested text file is ready, I created the response from it
+                                    //mediareferences (HashMap<u64, (String, Vec<NodeId>)>)
                                     let resp = TextResponse::MediaReferences(file
                                         .iter()
                                         .map(|(x,y)|
@@ -66,6 +70,10 @@ impl NetworkEdge for TextServer {
                                         )
                                         .collect()
                                     );
+                                    println!("{:?}", resp);
+
+
+
                                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TextResponse(resp));
                                     self.send_message(msg, source_id);
                                 }
@@ -390,7 +398,7 @@ fn divide_text_file(file_str: String) -> HashMap<String, Vec<(u64, NodeId)>> {
     for c in file_str.chars() {
         if c != '\r' && c != '\n' {
             tmp_string.push(c);
-        } else if c != '\n' {
+        } else if c == '\n' {
             // I save the name of the media, but still can't know which media server might have it.
             res.insert(tmp_string, Vec::new());
             tmp_string = String::new();

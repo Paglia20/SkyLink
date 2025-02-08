@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, WrongDestinationType};
+use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendMedia, WrongDestinationType};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
@@ -342,7 +342,12 @@ impl ClientTrait for ClientStruct {
     ///Send Client Event to Simulation Controller
      fn send_event(&self, ce: ClientEvent) {
         match self.event_send.try_send(ce.clone()){
-            Ok(_) => {}
+            Ok(_) => {
+                ///remove
+                if let SendMedia(..) = ce{
+                    println!("passato di qui");
+                }
+            }
             Err(_err) => {
                 if DEBUG_MODE {
                     println!("{} - simulation control unreachable for {:?}", self.node_id, ce)

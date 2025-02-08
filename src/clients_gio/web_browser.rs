@@ -24,15 +24,15 @@ pub struct WebBrowser{
     ///Common Client base
     client_base: ClientStruct,
 
-    ///Web Browser Spec
+    ///Web Browser Spec:
     ///Stored TextLists
     available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
 
-    ///Web Browser Spec
+    ///Web Browser Spec:
     ///Catalogue for each media, which media server has that id (ikea catalogue)
     catalogue: HashMap<u64, Vec<NodeId>>,
 
-    ///Web Browser Spec
+    ///Web Browser Spec:
     ///Stored Content
     arrived_content: HashMap<u64, ArrivedMedia>,
 }
@@ -149,10 +149,14 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
+                        ///remove
+                        println!("arrived media response of id {id}");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
-                        self.send_event(SendMedia(self.get_src_id(), id, name, media))
+                        self.send_event(SendMedia(self.get_src_id(), id, name, vec![]));
                     }
                     MediaResponse::NotFound(id) => {
+                        ///remove
+                        println!("not found");
                         //i update the catalogue
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
@@ -177,15 +181,18 @@ impl NetworkEdge for WebBrowser {
                         }
                     }
                     TextResponse::MediaReferences(media_refs) => {
-                        println!("arrived media reference");
+                        ///remove
+                        println!("arrived media reference {:?}", media_refs);
                         for (media_id, (name, media_server_id)) in media_refs{
+                            let mut is_new= false;
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
                             for e in media_server_id {
                                 entry.push(e);
+                                if entry.len() == 1 {
+                                    is_new = true;
+                                }
                             }
-
-                            if entry.len() == 1 {
-                                println!("updated cat");
+                            if is_new {
                                 self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
                             }
                         }
@@ -455,6 +462,7 @@ impl WebBrowser{
 
     ///Retrieve a media file, consulting catalogue
     fn get_media(&mut self, cont_id: u64) {
+        println!("trying to get media");
         let src = self.client_base.get_src_id();
         let session = self.client_base.get_session_id();
 

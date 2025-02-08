@@ -426,9 +426,17 @@ impl SimulationControl {
         }
     }
 
-    pub fn get_text_file_or_media(&self, src: NodeId, text_file_id: u64){
+    pub fn get_text_file(&self, src: NodeId, text_file_id: u64){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(text_file_id)).unwrap();
+            /*if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get text file {}",text_file_id);
+            }*/
+        }
+    }
+    pub fn force_client_get_media(&self, src: NodeId, file_id: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetContent(file_id)).unwrap();
             /*if DEBUG_MODE{
                 println!("Sim Controller Forced {src} to get text file {}",text_file_id);
             }*/

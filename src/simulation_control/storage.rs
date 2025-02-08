@@ -19,7 +19,7 @@ pub struct SimulationStorage {
     pub text_lists: HashMap<NodeId, Vec<(u64, String)>>,
     //per il momento, NON voglio che text lists anticipi già che media ha dentro per una risoluzione mirata
     //se vorrò cambiarlo dovrò cambiare anche il clientevent
-    pub catalogues: HashMap<NodeId, Vec<u64>>,
+    pub catalogues: HashMap<NodeId, Vec<(u64, String)>>,
     pub medias: HashMap<NodeId, Vec<(u64, String, Vec<u8>)>>,
 
     pub how_many_flood: HashMap<NodeId, u64>
@@ -104,7 +104,7 @@ impl SimulationStorage{
     }
 
     pub(crate) fn add_to_catalogue(&mut self, src: NodeId, media_id: u64, media_name : String) {
-        let medias_to_buy = self.text_lists.entry(src).or_insert(vec![]);
+        let medias_to_buy = self.catalogues.entry(src).or_insert(vec![]);
         if !medias_to_buy.contains(&(media_id, media_name.clone())){
             medias_to_buy.push((media_id, media_name));
         }
@@ -125,7 +125,7 @@ impl SimulationStorage{
 
     pub(crate) fn missing_media(&mut self, p0: NodeId, p1: u64) {
         if let Some(medias) = self.catalogues.get_mut(&p0){
-            medias.retain(|n| *n != p1);
+            medias.retain(|n| n.0 != p1);
         }
     }
     pub(crate) fn missing_txt_list(&mut self, p0: NodeId, p1: u64) {

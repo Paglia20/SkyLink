@@ -33,16 +33,20 @@ impl NetworkEdge for MediaServer {
                 let source_id = message.source_id;
                 match media_request {
                     MediaRequest::MediaList => {
+
                         let resp = MediaResponse::MediaList(self
                             .media_files
                             .iter()
                             .map(|(x,y)| (*x, y.0.clone()))
                             .collect()
                         );
+
                         let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaResponse(resp));
                         self.send_message(msg, source_id);
                     },
                     MediaRequest::Media(media_id) => {
+                        ///remove
+                        println!("arrived media request");
                         match self.media_files.get(&media_id) {
                             Some(entry) => {
                                 let resp = MediaResponse::Media(media_id, entry.0.clone(), entry.1.clone());
@@ -231,6 +235,7 @@ impl Server for MediaServer {
                                             self.next_file_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
                         self.next_file_id += 1;
                         self.media_files.insert(file_id, (file, file_data));
+
                     }
                     Err(err) => {
                         // I notify the SC and discard the file.
@@ -323,7 +328,7 @@ fn divide_text_file(file_str: String) -> Vec<String> {
     for c in file_str.chars() {
         if c != '\r' && c != '\n' {
             tmp_string.push(c);
-        } else if c != '\n' {
+        } else if c == '\n' {
             // I save the name of the media.
             res.push(tmp_string);
             tmp_string = String::new();

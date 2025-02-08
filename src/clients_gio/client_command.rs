@@ -76,6 +76,7 @@ pub enum ClientEvent {
     SendCatalogue(NodeId, u64, String),
     ///Web Client needs to send the found Medias to SC
     SendMedia(NodeId, u64, String, Vec<u8>),
+
     MissingDestForMedia(NodeId, u64),
     MissingTextList(NodeId, u64),
 }

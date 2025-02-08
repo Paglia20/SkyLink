@@ -10,8 +10,6 @@ use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
-use crossbeam_channel::select_biased;
-use egui::accesskit::DefaultActionVerb::Select;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
 use wg_2024::network::NodeId;
 use wg_2024::packet::{NodeType};
@@ -19,6 +17,7 @@ use wg_2024::packet::NodeType::*;
 use wg_2024::packet::PacketType::*;
 use egui_plot::{Bar, BarChart, Plot};
 use wg_2024::controller::DroneEvent;
+use crate::clients_gio::client_command::ClientEvent::SendMedia;
 use crate::DEBUG_MODE;
 use crate::server::server_command::ServerEvent;
 
@@ -295,6 +294,7 @@ impl MyApp {
     pub fn manage_client_event(&mut self, client_event:ClientEvent){
         self.sim_contr.add_client_event_to_log(client_event.clone());
 
+
         match client_event {
             ClientEvent::Flooding(src) => {
                 self.sim_contr.storage.node_flooding(src);
@@ -320,6 +320,7 @@ impl MyApp {
             }
             ClientEvent::SendMedia(src, media_id, str, media) => {
                 // self.turn_on_notification(src);
+                println!("added to medias of {src}");
                 self.sim_contr.storage.add_to_medias(src, media_id, str, media);
             }
             ClientEvent::RegisterSuccessfully(src, dst) => {
@@ -1156,10 +1157,15 @@ impl MyApp {
                                                             };
                                                             ui.label("Registered to Servers ".to_string());
                                                             ui.separator();
-
-                                                            for (id) in node_reg {
-                                                                ui.label(format!("Server {id}"));
-                                                            }
+                                                            ui.vertical(|ui| {
+                                                                egui::ScrollArea::vertical()
+                                                                    .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                    .show(ui, |ui| {
+                                                                        for (id) in node_reg {
+                                                                            ui.label(format!("Server {id}"));
+                                                                        }
+                                                                    });
+                                                            });
                                                         }
 
                                                         _ => {
@@ -1406,37 +1412,53 @@ impl MyApp {
                                                                 Some(texts) => texts.clone(),
                                                                 None => vec![],
                                                             };
+                                                            if ui.button("Chiudi").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start; // Close the window
+                                                            }
+                                                            ui.add_space(10.0);
+
                                                             if node.content.is_none() {
                                                                 ui.label("My Text TextLists are: ".to_string());
                                                                 ui.label("Choose witch you want to resolve to update your catalogue".to_string());
                                                                 ui.separator();
-                                                                for (id) in node_text_lists {
-                                                                    if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
-                                                                        self.sim_contr.get_text_file_or_media(node.id, id.0);
-                                                                        node.content = Some(MediaToResolve)
-                                                                    }
-                                                                }
+                                                                ui.vertical(|ui| {
+                                                                    egui::ScrollArea::vertical()
+                                                                        .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                        .show(ui, |ui| {
+                                                                            for (id) in node_text_lists {
+                                                                                if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
+                                                                                    self.sim_contr.get_text_file(node.id, id.0);
+                                                                                    node.content = Some(MediaToResolve)
+                                                                                }
+                                                                            }
+                                                                        });
+                                                                });
+
                                                             } else {
                                                                 if let Some(MediaToResolve) = node.content {
                                                                     if let Some(media_available) = self.sim_contr.storage.catalogues.get(&node.id){
                                                                         ui.label("All Medias you can Get: ".to_string());
+                                                                        ui.separator();
 
-                                                                        for id in media_available {
-                                                                            if ui.button(id.to_string()).clicked() {
-                                                                                self.sim_contr.get_text_file_or_media(node.id, id.clone());
-                                                                                node.content = None;
-                                                                                node.node_window_scenes = Start; // Close the window
-                                                                            }
-                                                                        }
+                                                                        ui.vertical(|ui| {
+                                                                            egui::ScrollArea::vertical()
+                                                                                .auto_shrink([true; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                                .show(ui, |ui| {
+                                                                                    for (id, name) in media_available {
+                                                                                        if ui.button(format!("{id} - {name}")).clicked() {
+                                                                                            self.sim_contr.force_client_get_media(node.id, id.clone());
+                                                                                            node.content = None;
+                                                                                            node.node_window_scenes = Start; // Close the window
+                                                                                        }
+                                                                                    }
+                                                                                });
+                                                                        });
+
                                                                     } else {
                                                                         ui.label("Updating catalogue, might take a second... ".to_string());
                                                                     }
                                                                 }
-                                                            }
-
-                                                            if ui.button("Chiudi").clicked() {
-                                                                node.content = None;
-                                                                node.node_window_scenes = Start; // Close the window
                                                             }
                                                         },
 
