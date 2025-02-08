@@ -1,4 +1,3 @@
-// sam_client_chat_system.rs
 use super::sam_client_base::SamClientBase;
 use super::sam_events::{ClientCommand, ClientEvent, ConnectionState};
 use super::sam_client_trait::Client;
@@ -197,9 +196,17 @@ impl ChatClient {
         match response {
             ChatResponse::ClientList(clients) => {
                 let entry = self.available_contacts.entry(source).or_insert_with(HashSet::new);
+
+                // Send destination event for the server
+                self.base.send_event(ClientEvent::SendDestinations(
+                    self.base.node_id,
+                    source
+                ));
+
                 for client_id in clients {
                     if !entry.contains(&client_id) {
                         entry.insert(client_id);
+                        // Send contact event for each new client
                         self.base.send_event(ClientEvent::SendContactsToSC(
                             self.base.node_id,
                             client_id
@@ -225,6 +232,7 @@ impl ChatClient {
 
                 self.message_cache.insert((from, msg_id), message.clone());
 
+                // Send received chat text event
                 self.base.send_event(ClientEvent::ReceivedChatText(
                     from,
                     self.base.node_id,
@@ -237,6 +245,7 @@ impl ChatClient {
                 }
                 self.active_sessions.remove(&client_id);
 
+                // Send missing contacts event
                 self.base.send_event(ClientEvent::MissingContacts(
                     self.base.node_id,
                     client_id
@@ -259,12 +268,12 @@ impl ChatClient {
 
             if let Some(session) = self.active_sessions.get_mut(&destination) {
                 session.last_message_id += 1;
-                session.messages.push(content);
+                session.messages.push(content.clone());
             } else {
                 self.active_sessions.insert(destination, ChatSession {
                     server_id,
                     last_message_id: 0,
-                    messages: vec![content],
+                    messages: vec![content.clone()],
                 });
             }
 
