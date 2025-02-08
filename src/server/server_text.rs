@@ -127,7 +127,6 @@ impl NetworkEdge for TextServer {
                             from: self.get_src_id(),
                         };
                         let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
-                        self.add_destination_without_path(from);
 
                         // I don't have to worry about having the path to 'from', since if it's missing floods will be initialized afterward.
                         self.send_message(message, from);
@@ -328,6 +327,8 @@ impl Server for TextServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
+        /// REMOVE
+        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
 

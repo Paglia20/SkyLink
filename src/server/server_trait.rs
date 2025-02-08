@@ -126,7 +126,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             }
             Some(srh) => {
                 /// REMOVE
-                println!("Server {} has a path to {}", self.get_src_id(), destination);
+                // println!("Server {} has a path to {}", self.get_src_id(), destination);
 
                 let first_hop = srh.hops[1];
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
