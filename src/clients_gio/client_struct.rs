@@ -84,9 +84,9 @@ impl NetworkEdge for ClientStruct {
 
         match self.network.get_srh(&self.node_id, &destination){
             None => {
-                if DEBUG_MODE {
-                    println!("Tried to send fragment {session_id} without path to {destination} with {}, so may have flooded again", self.node_id);
-                }
+
+                println!("Tried to send fragment {session_id} without path to {destination} with {}, so may have flooded again", self.node_id);
+
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
 

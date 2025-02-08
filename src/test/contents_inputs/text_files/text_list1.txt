@@ -1,7 +1,7 @@
-../test/contents_inputs/media_files/esempio.png
-../test/contents_inputs/media_files/bronto.png
-../test/contents_inputs/media_files/charmander.png
-../test/contents_inputs/media_files/deer.png
-../test/contents_inputs/media_files/dino.png
-../test/contents_inputs/media_files/dog.png
-../test/contents_inputs/media_files/dunk.png
+src/test/contents_inputs/media_files/esempio.png
+src/test/contents_inputs/media_files/bronto.png
+src/test/contents_inputs/media_files/charmander.png
+src/test/contents_inputs/media_files/deer.png
+src/test/contents_inputs/media_files/dino.png
+src/test/contents_inputs/media_files/dog.png
+src/test/contents_inputs/media_files/dunk.png

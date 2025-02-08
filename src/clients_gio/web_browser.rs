@@ -177,6 +177,7 @@ impl NetworkEdge for WebBrowser {
                         }
                     }
                     TextResponse::MediaReferences(media_refs) => {
+                        println!("arrived media reference");
                         for (media_id, (name, media_server_id)) in media_refs{
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
                             for e in media_server_id {
@@ -184,6 +185,7 @@ impl NetworkEdge for WebBrowser {
                             }
 
                             if entry.len() == 1 {
+                                println!("updated cat");
                                 self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
                             }
                         }
@@ -218,6 +220,8 @@ impl NetworkEdge for WebBrowser {
                         if let EdgeType::Server(server_type) = edge_type{
                             if let ServerType::Content(ty) = server_type{
                                 self.client_base.network.update_state(from, 1);
+                                // self.send_event(SendDestinations(self.client_base.node_id, from));
+
 
                                 if ty == ContentServerType::Text{
                                     //only if it's a text server I will notify the sc that is a dst.

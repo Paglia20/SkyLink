@@ -113,11 +113,11 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
 
         // Possible text_files read by servers.
         let text_files = vec![
-            "../test/contents_inputs/text_files/text_list1.txt".to_string(),
-            "../test/contents_inputs/text_files/text_list2.txt".to_string(),
-            "../test/contents_inputs/text_files/text_list3.txt".to_string(),
-            "../test/contents_inputs/text_files/text_list4.txt".to_string(),
-            "../test/contents_inputs/text_files/text_list5.txt".to_string(),
+            "src/test/contents_inputs/text_files/text_list1.txt".to_string(),
+            "src/test/contents_inputs/text_files/text_list2.txt".to_string(),
+            "src/test/contents_inputs/text_files/text_list3.txt".to_string(),
+            "src/test/contents_inputs/text_files/text_list4.txt".to_string(),
+            "src/test/contents_inputs/text_files/text_list5.txt".to_string(),
         ];
         // I create the servers in an external function, that'll add them to the 'handles' vector.
         let (chat_servers, media_servers) = create_servers(config.server.clone(),
@@ -330,7 +330,7 @@ fn create_servers(servers: Vec<config::Server>,
 
     // If I don't have media-text servers, I set it to 0.
     let files_per_server = if length >= 2 {
-        length / max(text_count, media_count)
+        files.len() / max(text_count, media_count)
     } else {
         0
     };
