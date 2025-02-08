@@ -480,7 +480,12 @@ impl MyApp {
                                     egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                 };
 
-                                //immagine scalata
+                                // I want a Central Logo
+                                let remaining_space = available_size.y - new_size.y;
+                                let vertical_padding = remaining_space / 2.0;
+                                ui.add_space(vertical_padding);
+
+
                                 ui.image((texture.id(), new_size));
                             }
                         }
