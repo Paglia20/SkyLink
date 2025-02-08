@@ -17,9 +17,8 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::{server, ALL_CHAT, ALL_CONTENT, DEBUG_MODE, NO_SERVER_MODE};
-use crate::clients_gio::client_chat::ChatClient;
-use crate::clients_gio::web_browser::WebBrowser;
+use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, DEBUG_MODE, NO_SERVER_MODE};
+use crate::clients_gio;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::server::server_trait::*;
@@ -328,8 +327,9 @@ fn create_servers(servers: Vec<config::Server>,
         }
     }
 
+
     // If I don't have media-text servers, I set it to 0.
-    let files_per_server = if length > 2 {
+    let files_per_server = if length >= 2 {
         length / max(text_count, media_count)
     } else {
         0
@@ -458,44 +458,63 @@ fn create_clients(clients: Vec<config::Client>,
 
             //create the thread of the Client, and add it to a Vec to be pushed afterward
             if ALL_CONTENT {
-                handles.push(thread::spawn(move || {
-                    let mut client = WebBrowser::new(
-                        client.id,
-                        contr_recv,
-                        node_event_send,
-                        client_recv,
-                        client_send,
-                    );
-                    client.run();
-                }));
+                if CLIENT_GIO {
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_gio::web_browser::WebBrowser::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
+                } else {
+                    //SAM MODE
+
+
+                }
             }
 
             else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
                 network_graph.entry(client.id).and_modify(|x|x.0 = NodeNature::ChatClient);
-                handles.push(thread::spawn(move || {
-                    let mut client = ChatClient::new(
-                        client.id,
-                        contr_recv,
-                        node_event_send,
-                        client_recv,
-                        client_send,
-                    );
-                    client.run();
-                }));
+                if CLIENT_GIO {
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_gio::client_chat::ChatClient::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
+                }else {
+                    //SAM MODE
+
+
+                }
 
                 chooser = !chooser
             } else {
                 //create media client
-                handles.push(thread::spawn(move || {
-                    let mut client = WebBrowser::new(
-                        client.id,
-                        contr_recv,
-                        node_event_send,
-                        client_recv,
-                        client_send,
-                    );
-                    client.run();
-                }));
+
+                if CLIENT_GIO {
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_gio::web_browser::WebBrowser::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
+                }else {
+                    //SAM MODE
+
+
+                }
 
                 chooser = !chooser
             }
@@ -587,7 +606,7 @@ fn check_bidirectional(conf: &Config) -> bool{
 
             // If we find a non-bidirectional connection, we return false.
             if !valid {
-                println!("..");
+                println!("a clients connections is not bidirectional");
                 return false;
             }
         }
@@ -619,7 +638,7 @@ fn check_in_drones(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_node_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else if DEBUG_MODE{
+            } else {
                 println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
         }
@@ -632,7 +651,7 @@ fn check_in_clients(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_drone_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else if DEBUG_MODE{
+            } else {
                 println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
         }
@@ -645,7 +664,7 @@ fn check_in_server(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
             if target.connected_drone_ids.contains(&src) {
                 *valid = true;
                 break;
-            } else if DEBUG_MODE{
+            } else {
                 println!("Input File invalid for not double connection between: {} - {}",target.id, src);
             }
         }
