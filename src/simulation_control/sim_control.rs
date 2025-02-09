@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
-use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
+use wg_2024::controller::DroneCommand::{AddSender, Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::drone::*;
@@ -566,6 +566,18 @@ impl SimulationControl {
 
         } else {
             println!("drone {} not found in the network.", id);
+        }
+    }
+
+    pub(crate) fn crash_all(&mut self) {
+        for (_, sender) in &self.drone_command_senders {
+            sender.try_send(Crash).unwrap()
+        }
+        for (_, sender) in &self.server_command_senders {
+            sender.try_send(ServerCommand::InstantCrash).unwrap()
+        }
+        for (_, sender) in &self.client_command_senders {
+            sender.try_send(ClientCommand::InstantCrash).unwrap()
         }
     }
 
