@@ -109,10 +109,6 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
                 drone.run();
             }));*/
 
-            if drone.id == 1 {
-                println!("drone_chooser: {}", drone_chooser);
-            }
-
             if drone_chooser >= 9 {
                 drone_chooser = 0;
             } else {

@@ -60,84 +60,82 @@ impl NetworkEdge for WebBrowser {
                 self.edge_send_flood_response(flood_request);
             }
         }
-        else {
-            if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
-                // If it's not his packet, but he has to act as a drone (that never misses)
-                self.client_base.send_as_drone(packet);
+        else if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
+            // If it's not his packet, but he has to act as a drone (that never misses)
+            self.client_base.send_as_drone(packet);
 
-            } else {
-                // We can take for granted he is the destination
-                match packet.pack_type.clone() {
-                    MsgFragment(fragment) => {
-                        let tot_num_frag = fragment.total_n_fragments as usize;
-                        let session_id = packet.session_id;
-                        let initiator_id = packet.routing_header.hops[0];
-                        let destination = self.client_base.get_src_id(); //he is the destination
-                        let frag_index = fragment.fragment_index;
-                        //add new frag
-                        let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
-                        entry.2.push(fragment);
+        } else {
+            // We can take for granted he is the destination
+            match packet.pack_type.clone() {
+                MsgFragment(fragment) => {
+                    let tot_num_frag = fragment.total_n_fragments as usize;
+                    let session_id = packet.session_id;
+                    let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.client_base.get_src_id(); //he is the destination
+                    let frag_index = fragment.fragment_index;
+                    //add new frag
+                    let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                    entry.2.push(fragment);
 
 
-                        //for each arrived frag, send back an ack
-                        self.send_ack(packet.clone(), frag_index);
+                    //for each arrived frag, send back an ack
+                    self.send_ack(packet.clone(), frag_index);
 
-                        //notify sc i got a packet
-                        self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                    //notify sc i got a packet
+                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
-                        // If all the frag have arrived recreate message
-                        let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
-                        if frags_clone.len() == tot_num_frag {
-                            let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                                Err(e) => {
-                                    if DEBUG_MODE {
-                                        println!("{e} with {}", self.client_base.get_src_id());
-                                    }
-                                    self.send_event(ErrorReassembling(self.get_src_id()));
-                                    return;
+                    // If all the frag have arrived recreate message
+                    let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
+                    if frags_clone.len() == tot_num_frag {
+                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{e} with {}", self.client_base.get_src_id());
                                 }
-                                Ok(mess) => { mess }
-                            };
-                            //handle message
-                            self.handle_message(message);
+                                self.send_event(ErrorReassembling(self.get_src_id()));
+                                return;
+                            }
+                            Ok(mess) => { mess }
+                        };
+                        //handle message
+                        self.handle_message(message);
 
-                            // empty the hashmap
-                            self.client_base.fragments().remove(&(packet.session_id, initiator_id));
-                        }
+                        // empty the hashmap
+                        self.client_base.fragments().remove(&(packet.session_id, initiator_id));
                     }
-                    Ack(ack) => {
-                        self.send_event(ClientEvent::AckReceived(packet.clone()));
+                }
+                Ack(ack) => {
+                    self.send_event(ClientEvent::AckReceived(packet.clone()));
 
-                        //the ack will have the source that was the destination of the initial packet
-                        let src = self.client_base.get_src_id();
-                        match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
-                            None => {}
-                            Some((_, _, vec)) => {
-                                vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+                    //the ack will have the source that was the destination of the initial packet
+                    let src = self.client_base.get_src_id();
+                    match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
+                        None => {}
+                        Some((_, _, vec)) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
-                                //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
-                                if vec.is_empty() {
-                                    let src = self.client_base.get_src_id();
-                                    self.client_base.fragments().remove_entry(&(packet.session_id, src));
-                                }
+                            //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
+                            if vec.is_empty() {
+                                let src = self.client_base.get_src_id();
+                                self.client_base.fragments().remove_entry(&(packet.session_id, src));
                             }
                         }
-
-                        // I apply the positive feed on all nodes in the path
-                        let nodes = packet.routing_header.hops;
-                        self.client_base.network().positive_feedback(nodes);
                     }
 
-                    PacketType::Nack(nack) => {
-                        self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        self.client_base.handle_nack(nack, packet);
-                    }
-                    FloodRequest(_) => {
-                        unreachable!()
-                    }
-                    FloodResponse(_flood_resp) => {
-                        self.client_base.save_flood_response(packet);
-                    }
+                    // I apply the positive feed on all nodes in the path
+                    let nodes = packet.routing_header.hops;
+                    self.client_base.network().positive_feedback(nodes);
+                }
+
+                PacketType::Nack(nack) => {
+                    self.send_event(ClientEvent::NackReceived(packet.clone()));
+                    self.client_base.handle_nack(nack, packet);
+                }
+                FloodRequest(_) => {
+                    unreachable!()
+                }
+                FloodResponse(_flood_resp) => {
+                    self.client_base.save_flood_response(packet);
                 }
             }
         }
@@ -318,8 +316,8 @@ impl NetworkEdgeErrors for WebBrowser {
         self.client_base.send_nack_message(dst, nack);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.client_base.send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 
