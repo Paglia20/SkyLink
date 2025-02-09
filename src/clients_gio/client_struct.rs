@@ -40,6 +40,8 @@ pub struct ClientStruct {
     ///Is the client in flooding mode? prevent to flood too many times
     is_flooding: bool,
     flood_count: u64,
+
+    is_running: bool,
 }
 
 impl NetworkEdge for ClientStruct {
@@ -323,7 +325,9 @@ impl ClientTrait for ClientStruct {
             fragments: HashMap::default(),
             unsent_fragments: HashMap::new(),
             is_flooding: false,
-            flood_count: 0 }
+            flood_count: 0,
+            is_running: true,
+        }
     }
 
     //unreachable functions
@@ -569,5 +573,14 @@ impl ClientStruct {
     ///Getter
     pub (crate) fn flood_count(&self) -> u64 {
         self.flood_count
+    }
+
+    ///Getter
+    pub fn is_running(&self) -> bool {
+        self.is_running
+    }
+
+    pub fn crash(&mut self){
+        self.is_running = false;
     }
 }
