@@ -46,8 +46,7 @@ impl NetworkEdge for MediaServer {
                         self.send_message(msg, source_id);
                     },
                     MediaRequest::Media(media_id) => {
-                        ///remove
-                        println!("arrived media request");
+                        // println!("arrived media request");
                         match self.media_files.get(&media_id) {
                             Some(entry) => {
                                 // Media(u64, String, Vec<u8>)
@@ -155,8 +154,8 @@ impl NetworkEdgeErrors for MediaServer {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.server_send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.server_send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -282,8 +281,7 @@ impl Server for MediaServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
-        /// REMOVE
-        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
+        // println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {

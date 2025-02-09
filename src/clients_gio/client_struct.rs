@@ -280,7 +280,7 @@ impl NetworkEdgeErrors for ClientStruct {
     }
 
     ///Send a drone nack
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
         let new_nack = Nack{
             fragment_index: 0,
             nack_type: nack,
@@ -289,14 +289,13 @@ impl NetworkEdgeErrors for ClientStruct {
             let first_hop = shr.current_hop().unwrap_or(self.node_id);
             let packet = Packet{
                 routing_header: shr,
-                session_id: self.get_session_id(),
+                session_id,
                 pack_type: Nack(new_nack),
             };
 
             match self.packet_send.get(&first_hop){
                 None => {
                     self.send_event(MissingDestination(self.node_id, dst));
-                    return;
                 }
                 Some(sender) => {
                     sender.send(packet).unwrap();
@@ -304,7 +303,6 @@ impl NetworkEdgeErrors for ClientStruct {
             }
         } else {
             self.send_event(MissingDestination(self.node_id, dst));
-            return;
         }
     }
 }
@@ -370,7 +368,7 @@ impl ClientStruct {
                     self.network.remove_faulty_connection(self.node_id, next_id);
                     self.send_event(MissingRoute(self.get_src_id(), next_id));
                     //send a nack as a drone
-                    self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                    self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id), packet.session_id);
                     ///remove
                     println!("error in routing sent to {} from {} caused by {}",
                              packet.routing_header.source().unwrap(),
@@ -381,7 +379,7 @@ impl ClientStruct {
                     match sender.try_send(packet.clone()) {
                         Err(_) => {
                             // !!You need to send back the same errors a drone would
-                            self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                            self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id), packet.session_id);
                             self.send_event(ClientEvent::PacketSendingError(packet));
                         }
                         Ok(_) => {
@@ -516,9 +514,7 @@ impl ClientStruct {
                         //println!("Previous: {}", prev);
                         if *key != prev {
                             //I send the flooding to everyone except the node I received it from.
-                            if let Ok(_) =
-                                sender.send(packet.clone())
-                            {
+                            if sender.send(packet.clone()).is_ok() {
                                 self.send_event(ClientEvent::PacketSent(packet.clone()));
                                 //If the message was sent, I also notify the sim controller.
                             } //There's no else, since I don't care of nodes which can't be reached.

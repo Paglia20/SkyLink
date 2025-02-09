@@ -274,8 +274,8 @@ impl NetworkEdgeErrors for ChatClient {
         self.client_base.send_nack_message(dst, nack);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.client_base.send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 

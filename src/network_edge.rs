@@ -185,7 +185,7 @@ pub trait NetworkEdgeErrors: NetworkEdge {
 
     fn send_nack_message(&mut self, dst: NodeId, nack: Message); //for edges nack
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType);  //for drone nack
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64);  //for drone nack
 
     fn create_nack(&mut self, nack_type: EdgeNackType) -> Message {
         Message{

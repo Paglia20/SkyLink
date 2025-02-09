@@ -44,8 +44,7 @@ impl NetworkEdge for TextServer {
                         self.send_message(msg, source_id);
                     },
                     TextRequest::TextFile(file_id) => {
-                        ///remove
-                        println!("a textfilerequest arrived of id {file_id}, here the complete: {:?}",self.text_files.get(&file_id));
+                        // println!("A text_file_request arrived of id {file_id}, here the complete: {:?}",self.text_files.get(&file_id));
                         match self.text_files.get(&file_id) {
                             Some((_,file)) => {
                                 // If I have the text file, I start the check on it
@@ -56,9 +55,8 @@ impl NetworkEdge for TextServer {
                                     self.send_message(msg, source_id);
                                     self.send_event(ServerEvent::IncompleteFile(self.get_src_id(), file_id));
                                 } else {
-                                    println!("siamo nell'else ");
                                     // If the requested text file is ready, I created the response from it
-                                    //mediareferences (HashMap<u64, (String, Vec<NodeId>)>)
+                                    // MediaReferences (HashMap<u64, (String, Vec<NodeId>)>)
                                     let resp = TextResponse::MediaReferences(file
                                         .iter()
                                         .map(|(x,y)|
@@ -70,8 +68,6 @@ impl NetworkEdge for TextServer {
                                         )
                                         .collect()
                                     );
-                                    println!("{:?}", resp);
-
 
 
                                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TextResponse(resp));
@@ -220,8 +216,8 @@ impl NetworkEdgeErrors for TextServer {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.server_send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.server_send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -339,8 +335,7 @@ impl Server for TextServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
-        /// REMOVE
-        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
+        // println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {
