@@ -17,8 +17,12 @@ use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment}
 use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::server::server_type::{ContentServerType, ServerType};
+use base64::{engine::general_purpose, Engine};
+use std::fs::write;
+use open;
 
 type ArrivedMedia = (String, Vec<u8>);
+const OPEN_MEDIA:bool = true;
 
 pub struct WebBrowser{
     ///Common Client base
@@ -154,7 +158,11 @@ impl NetworkEdge for WebBrowser {
                         ///remove
                         println!("got media");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
-                        self.send_event(SendMedia(self.get_src_id(), id, name, media));
+                        self.send_event(SendMedia(self.get_src_id(), id, name, media.clone()));
+
+                        if OPEN_MEDIA{
+                            self.open_media(media)
+                        }
                     }
                     MediaResponse::NotFound(id) => {
                         ///remove
@@ -431,7 +439,7 @@ impl WebBrowser{
 
     ///Retrieve a text file
     fn get_text_file(&mut self, text_file_id: u64) {
-        let src = self.client_base.get_src_id();
+        self.client_base.get_src_id();
         let session = self.client_base.get_session_id();
 
         if let Some(map) = self.available_text_lists.get(&text_file_id) {
@@ -461,24 +469,50 @@ impl WebBrowser{
         self.get_text_file(text_file_id)
     }
 
-    ///Retrieve a media file, consulting catalogue
+    ///Retrieve a media file, consulting catalogue, if it already has it, you just open it on www.
     fn get_media(&mut self, cont_id: u64) {
-        let src = self.client_base.get_src_id();
-        let session = self.client_base.get_session_id();
+        if self.arrived_content.contains_key(&cont_id) {
+            self.open_media(self.arrived_content.get(&cont_id).unwrap().1.clone())
+        }else {
+            let src = self.client_base.get_src_id();
+            let session = self.client_base.get_session_id();
 
-        if let Some(destinations) = self.catalogue.get(&cont_id) {
-            if !destinations.is_empty() {
-                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
-                    let content = ContentType::MediaRequest(Media(cont_id));
-                    let msg = Message::new(src, session, content);
-                    self.client_base.send_message(msg, dst);
-                    if DEBUG_MODE {
-                        println!("Sent media request from {src} to server {dst}");
+            if let Some(destinations) = self.catalogue.get(&cont_id) {
+                if !destinations.is_empty() {
+                    if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
+                        let content = ContentType::MediaRequest(Media(cont_id));
+                        let msg = Message::new(src, session, content);
+                        self.client_base.send_message(msg, dst);
+                        if DEBUG_MODE {
+                            println!("Sent media request from {src} to server {dst}");
+                        }
                     }
                 }
+            } else {
+                self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
             }
-        } else {
-            self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
+        }
+    }
+
+    fn open_media(&self, image_bytes: Vec<u8>){
+        let base64_image = general_purpose::STANDARD.encode(image_bytes);
+
+        let html_content = format!(
+            "<html>
+            <body>
+                <img src='data:image/jpeg;base64,{}' />
+            </body>
+        </html>",
+            base64_image
+        );
+
+        let file_path = "image.html";
+        write(file_path, html_content).expect("error in file");
+
+        if let Err(e) = open::that(file_path) {
+            if DEBUG_MODE {
+                println!("Error opening file: {}", e);
+            }
         }
     }
 }
