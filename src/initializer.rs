@@ -171,7 +171,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     match drone_chooser {
         0 => {
             thread::spawn(move || {
-                println!("FungiDrone is {}", drone_id);
+                // println!("FungiDrone is {}", drone_id);
                 let mut drone = FungiDrone::new(
                     drone_id,
                     node_event_send,
@@ -185,7 +185,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         1 => {
             thread::spawn(move || {
-                println!("RustyDrone is {}", drone_id);
+                // println!("RustyDrone is {}", drone_id);
                 let mut drone = rusty_drones::RustyDrone::new(
                     drone_id,
                     node_event_send,
@@ -199,7 +199,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         2 => {
             thread::spawn(move || {
-                println!("RustasticDrone is {}", drone_id);
+                // println!("RustasticDrone is {}", drone_id);
                 let mut drone = RustasticDrone::new(
                     drone_id,
                     node_event_send,
@@ -213,7 +213,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         3 => {
             thread::spawn(move || {
-                println!("RustDoIt is {}", drone_id);
+                // println!("RustDoIt is {}", drone_id);
                 let mut drone = RustDoIt::new(
                     drone_id,
                     node_event_send,
@@ -227,7 +227,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         4 => {
             thread::spawn(move || {
-                println!("RustDrone is {}", drone_id);
+                // println!("RustDrone is {}", drone_id);
                 let mut drone = wg_2024_rust::drone::RustDrone::new(
                     drone_id,
                     node_event_send,
@@ -241,7 +241,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         5 => {
             thread::spawn(move || {
-                println!("LockheedRustin is {}", drone_id);
+                // println!("LockheedRustin is {}", drone_id);
                 let mut drone = LockheedRustin::new(
                     drone_id,
                     node_event_send,
@@ -255,7 +255,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         6 => {
             thread::spawn(move || {
-                println!("GetDroned is {}", drone_id);
+                // println!("GetDroned is {}", drone_id);
                 let mut drone = GetDroned::new(
                     drone_id,
                     node_event_send,
@@ -269,7 +269,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         7 => {
             thread::spawn(move || {
-                println!("RollingDrone is {}", drone_id);
+                // println!("RollingDrone is {}", drone_id);
                 let mut drone = RollingDrone::new(
                     drone_id,
                     node_event_send,
@@ -283,7 +283,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         8 => {
             thread::spawn(move || {
-                println!("d_r_o_n_e is {}", drone_id);
+                // println!("d_r_o_n_e is {}", drone_id);
                 let mut drone = d_r_o_n_e_drone::MyDrone::new(
                     drone_id,
                     node_event_send,
@@ -296,8 +296,8 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
             })
         },
         _ => {
-            println!("dr_ones is {}", drone_id);
             thread::spawn(move || {
+                // println!("dr_ones is {}", drone_id);
                 let mut drone = dr_ones::Drone::new(
                     drone_id,
                     node_event_send,
