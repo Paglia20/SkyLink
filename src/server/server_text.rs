@@ -1,7 +1,7 @@
 use crate::message::{ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, TextRequest, TextResponse, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
-use crate::server::server_trait::Server;
+use crate::server::server_trait::{obtain_file_display_name, Server};
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -239,6 +239,7 @@ impl Server for TextServer {
         let mut text_files = HashMap::new();
         for e in files.into_iter() {
             // I read the file as a string
+            let text_name = obtain_file_display_name(e.clone());
             match fs::read_to_string(e.clone()) {
                 Ok(file_str) => {
                     // I divide the string to obtain the name of the medias contained in it.
@@ -250,7 +251,7 @@ impl Server for TextServer {
                     let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) + starting_id;
                     starting_id += 1;
 
-                    text_files.insert(file_id, (file_str, medias));
+                    text_files.insert(file_id, (text_name, medias));
                 },
                 Err(err) => {
                     // I notify the SC and discard the file.
@@ -406,7 +407,7 @@ fn divide_text_file(file_str: String) -> HashMap<String, Vec<(u64, NodeId)>> {
             tmp_string.push(c);
         } else if c == '\n' {
             // I save the name of the media, but still can't know which media server might have it.
-            res.insert(tmp_string, Vec::new());
+            res.insert(obtain_file_display_name(tmp_string), Vec::new());
             tmp_string = String::new();
         }
     }

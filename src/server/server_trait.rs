@@ -495,3 +495,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))>;
     fn get_server_type(&self) -> ServerType;
 }
+
+pub fn obtain_file_display_name(file_path: String) -> String {
+    let mut res = String::new();
+    for c in file_path.chars() {
+        if c == '/' {
+            res = String::new();
+        } else if c == '.' {
+            break;
+        } else {
+            res.push(c);
+        }
+    }
+    res
+}

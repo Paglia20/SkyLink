@@ -2,5 +2,5 @@ src/test/contents_inputs/media_files/farfalla_blu.png
 src/test/contents_inputs/media_files/farfalla.png
 src/test/contents_inputs/media_files/goat.png
 src/test/contents_inputs/media_files/dino.png
-src/test/contents_inputs/media_files/dog.png
+src/test/contents_inputs/media_files/dog.jpg
 src/test/contents_inputs/media_files/dunk.png
