@@ -15,8 +15,8 @@ pub struct ServerStruct {
     pub event_send: Sender<ServerEvent>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
+    
     pub flood_ids: HashSet<(u64, NodeId)>, // Used to recognize flooding from other nodes.
-
     pub network: Network, 
     
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
@@ -29,6 +29,7 @@ pub struct ServerStruct {
 
     type_checking: HashSet<NodeId>,
     
+    pub is_running: bool,
 }
 
 impl ServerStruct {
@@ -54,6 +55,7 @@ impl ServerStruct {
             is_flooding: false,
             flood_counter: 0,
             type_checking: HashSet::new(),
+            is_running: true,
         }
     }
 

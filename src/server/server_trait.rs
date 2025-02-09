@@ -25,7 +25,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             self.flood();
         }
         let mut count = 0;
-        loop {
+        while self.is_running() {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
@@ -484,6 +484,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn can_type_check(&mut self, dst: NodeId) -> bool;
     fn type_checked(&mut self, src: NodeId);
     fn add_destination_without_path(&mut self, dst: NodeId);
+    fn is_running(&self) -> bool;
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;
