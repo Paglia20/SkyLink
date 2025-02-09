@@ -111,6 +111,7 @@ impl NetworkEdge for ClientStruct {
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(MissingRoute(self.get_src_id(), destination));
+                        println!("this missing");
                         self.add_unsent_fragment(fragment, session_id, destination);
                         self.network.remove_faulty_connection(self.node_id, first_dst);
                     }
@@ -364,7 +365,9 @@ impl ClientStruct {
         if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
             match self.packet_send.get(&next_id) {
                 None => {
-                    self.send_event(MissingRoute(self.get_src_id(), next_id))
+                    self.send_event(MissingRoute(self.get_src_id(), next_id));
+                    //send a nack as a drone
+                    self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
