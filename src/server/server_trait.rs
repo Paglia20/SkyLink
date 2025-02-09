@@ -407,9 +407,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             fragment_index: 0,
             nack_type: nack,
         };
+        
         match self.get_srh(dst) {
             None => {
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), dst));
+                let srh = SourceRoutingHeader::new(vec![dst], 1);
+                let packet = Packet{
+                    routing_header: srh,
+                    session_id: self.get_session_id(),
+                    pack_type: PacketType::Nack(new_nack),
+                };
+                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
             }
             Some(srh) => {
                 let first_hop = srh.next_hop().unwrap_or(self.get_src_id());
@@ -419,10 +427,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     session_id: self.get_session_id(),
                     pack_type: PacketType::Nack(new_nack),
                 };
-
+                
                 match self.get_packet_sender(&first_hop) {
                     None => {
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
+                        self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
                     }
                     Some(sender) => {
                         self.send_ack_and_nack(sender.clone(), packet);
