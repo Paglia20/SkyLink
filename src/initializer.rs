@@ -18,9 +18,11 @@ use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, DEBUG_MODE, NO_SERVER_MODE};
+use crate::clients_sam;
 use crate::clients_gio;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
+use crate::clients_sam::sam_client_trait::Client;
 use crate::server::server_trait::*;
 use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
@@ -92,19 +94,19 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             // println!("Drone {} has {:?}", drone.id, drone_send);
 
             //create the thread of the drone, and add it to a Vec to be pushed afterward
-            handles.push(thread::spawn(move || {
-                let mut drone = SkyLinkDrone::new(
-                    drone.id,
-                    node_event_send,
-                    contr_recv,
-                    drone_recv,
-                    drone_send,
-                    drone.pdr,
-                );
-
-                drone.run();
-            }));
-            // handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+            // handles.push(thread::spawn(move || {
+            //     let mut drone = SkyLinkDrone::new(
+            //         drone.id,
+            //         node_event_send,
+            //         contr_recv,
+            //         drone_recv,
+            //         drone_send,
+            //         drone.pdr,
+            //     );
+            //
+            //     drone.run();
+            // }));
+            handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
 
             if drone_chooser >= 9 {
                 drone_chooser = 0;
@@ -154,7 +156,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             network_graph,
         );
 
-       Some((sim_contr, handles))
+        Some((sim_contr, handles))
     } else {
         None
     }
@@ -476,8 +478,16 @@ fn create_clients(clients: Vec<config::Client>,
                     }));
                 } else {
                     //SAM MODE
-
-
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_sam::sam_web_browser_system::WebBrowser::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
                 }
             }
 
@@ -496,6 +506,16 @@ fn create_clients(clients: Vec<config::Client>,
                     }));
                 }else {
                     //SAM MODE
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_sam::sam_client_chat_system::ChatClient::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
 
 
                 }
@@ -517,8 +537,16 @@ fn create_clients(clients: Vec<config::Client>,
                     }));
                 }else {
                     //SAM MODE
-
-
+                    handles.push(thread::spawn(move || {
+                        let mut client = clients_sam::sam_web_browser_system::WebBrowser::new(
+                            client.id,
+                            contr_recv,
+                            node_event_send,
+                            client_recv,
+                            client_send,
+                        );
+                        client.run();
+                    }));
                 }
 
                 chooser = !chooser

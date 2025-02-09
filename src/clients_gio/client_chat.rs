@@ -49,7 +49,7 @@ impl NetworkEdge for ChatClient {
         if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
             flood_request
                 .path_trace
-                .push((self.client_base.node_id, NodeType::Client));
+                .push((self.client_base.get_src_id(), NodeType::Client));
 
             //I update the path_trace in the packet.
             packet.pack_type = FloodRequest(flood_request.clone());
@@ -57,7 +57,7 @@ impl NetworkEdge for ChatClient {
             if !self.client_base.handle_flood_request(packet) {
                 self.edge_send_flood_response(flood_request);
             }
-        } else if packet.routing_header.destination().unwrap() != self.client_base.node_id {
+        } else if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
             // If it's not his packet, but he has to act as a drone (that never misses)
             self.client_base.send_as_drone(packet);
         } else {
@@ -67,12 +67,12 @@ impl NetworkEdge for ChatClient {
                     let tot_num_frag = fragment.total_n_fragments as usize;
                     let session_id = packet.session_id;
                     let initiator_id = packet.routing_header.hops[0];
-                    let destination = self.client_base.node_id; //he is the destination
+                    let destination = self.client_base.get_src_id(); //he is the destination
                     let frag_index = fragment.fragment_index;
 
 
                     //add new frag
-                    let entry = self.client_base.fragments.entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                    let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
                     entry.2.push(fragment);
 
 
@@ -83,13 +83,13 @@ impl NetworkEdge for ChatClient {
                     self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
                     // If all the frag have arrived recreate message
-                    let frags_clone = &self.client_base.fragments.get(&(packet.session_id, initiator_id)).unwrap().2;
+                    let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
                     if frags_clone.len() == tot_num_frag {
                         let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                             Ok(mess) => { mess }
                             Err(e) => {
                                 if DEBUG_MODE {
-                                    println!("{e} with {}", self.client_base.node_id);
+                                    println!("{e} with {}", self.client_base.get_src_id());
                                 }
                                 self.send_event(ErrorReassembling(self.get_src_id()));
                                 return;
@@ -99,14 +99,15 @@ impl NetworkEdge for ChatClient {
                         self.handle_message(message);
 
                         // empty the hashmap
-                        self.client_base.fragments.remove(&(packet.session_id, initiator_id));
+                        self.client_base.fragments().remove(&(packet.session_id, initiator_id));
                     }
                 }
                 Ack(ack) => {
                     self.send_event(ClientEvent::AckReceived(packet.clone()));
                     //the ack will have the source that was the destination of the initial packet
                     //if it's registered then I also want to notify SC, so I send it
-                    match self.client_base.fragments.get_mut(&(packet.session_id, self.client_base.node_id)) {
+                    let src = self.client_base.get_src_id();
+                    match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
                         None => {}
                         Some((_, cont, vec)) => {
                             vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
@@ -118,14 +119,15 @@ impl NetworkEdge for ChatClient {
                                     self.registered_to.insert(server);
                                     self.send_event(RegisterSuccessfully(self.get_src_id(), server));
                                 }
-                                self.client_base.fragments.remove_entry(&(packet.session_id, self.client_base.node_id));
+                                let src = self.client_base.get_src_id();
+                                self.client_base.fragments().remove_entry(&(packet.session_id, src));
                             }
                         }
                     }
 
                     // I apply the positive feed on all nodes in the path
                     let nodes = packet.routing_header.hops;
-                    self.client_base.network.positive_feedback(nodes);
+                    self.client_base.network().positive_feedback(nodes);
                 }
 
                 PacketType::Nack(nack) => {
@@ -154,7 +156,7 @@ impl NetworkEdge for ChatClient {
 
                             if is_new {
                                 //notify sc that you now have that contact
-                                self.send_event(SendContactsToSC(self.client_base.node_id, i));
+                                self.send_event(SendContactsToSC(self.client_base.get_src_id(), i));
                             }
 
                         }
@@ -162,7 +164,7 @@ impl NetworkEdge for ChatClient {
                     ChatResponse::MessageFrom { from, message } => {
                         //only when a message arrive in toto, we care to inform SC
                         //here is from the src of the text, so first parameter supplied is from!
-                        self.send_event(ReceivedChatText(from, self.client_base.node_id, message.clone()));
+                        self.send_event(ReceivedChatText(from, self.client_base.get_src_id(), message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
                     }
                     ChatResponse::ClientNotFound(node) => {
@@ -180,12 +182,12 @@ impl NetworkEdge for ChatClient {
                     TypeExchange::TypeRequest { from } => {
                         let type_resp = TypeExchange::TypeResponse {
                             edge_type: EdgeType::Client(ClientType::ChatClient),
-                            from: self.client_base.node_id,
+                            from: self.client_base.get_src_id(),
                         };
-                        let message = Message::new(self.client_base.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
+                        let message = Message::new(self.client_base.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
 
                         ///remove
-                        // println!("client {} sent type response to {from}", self.comm.node_id);
+                        // println!("client {} sent type response to {from}", self.comm.get_src_id());
 
                         self.send_message(message, from);
 
@@ -193,16 +195,16 @@ impl NetworkEdge for ChatClient {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         match edge_type{
                             EdgeType::Server(ServerType::Chat) => {
-                                println!("type res chat arrived in {} of {from}", self.client_base.node_id);
+                                println!("type res chat arrived in {} of {from}", self.client_base.get_src_id());
 
-                                self.client_base.network.update_state(from, 1);
+                                self.client_base.network().update_state(from, 1);
                                 
-                                println!("state of {} is {} (Should be 1)", from, self.client_base.network.get_state(&from).unwrap());
-                                self.send_event(SendDestinations(self.client_base.node_id, from));
+                                println!("state of {} is {} (Should be 1)", from, self.client_base.network().get_state(&from).unwrap());
+                                self.send_event(SendDestinations(self.client_base.get_src_id(), from));
                             },
 
                             _ => {
-                                self.client_base.network.update_state(from, 2);
+                                self.client_base.network().update_state(from, 2);
                             }
                         }
 
@@ -300,12 +302,12 @@ impl ClientTrait for ChatClient {
 
         loop {
             select_biased! {
-                recv(self.client_base.command_recv) -> cmd => {
+                recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
                         self.handle_command(command);
                     }
                 }
-                recv(self.client_base.packet_recv) -> pkt => {
+                recv(self.client_base.packet_recv()) -> pkt => {
                     if let Ok(packet) = pkt {
                         self.handle_packet(packet);
                     }
@@ -337,7 +339,7 @@ impl ClientTrait for ChatClient {
                 self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
-                self.client_base.packet_send.insert(node_id, sender);
+                self.client_base.packet_send().insert(node_id, sender);
             }
 
             ClientCommand::Flood =>{
@@ -418,7 +420,8 @@ impl ChatClient {
                 .filter(|x| self.registered_to.contains(x))
                 .collect();
 
-            if let Some(server_id) = self.client_base.network.get_optimal_dest(&self.get_src_id(), &available_servers){
+            let src = self.client_base.get_src_id();
+            if let Some(server_id) = self.client_base.network().get_optimal_dest(&src, &available_servers){
                 //decide witch server to contact, for the moment just the first one is okay
 
                 let session = self.get_session_id();

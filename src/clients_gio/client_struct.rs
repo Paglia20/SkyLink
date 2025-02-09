@@ -11,35 +11,35 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
-use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, FloodRequest};
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
 
 
 ///common struct of both the clients,
 ///important: some functions are left unreachable since will be called ad hoc by each client.
 pub struct ClientStruct {
-    pub node_id: NodeId,
-    pub command_recv: Receiver<ClientCommand>,
-    pub event_send: Sender<ClientEvent>,
-    pub packet_recv: Receiver<Packet>,
-    pub packet_send: HashMap<NodeId, Sender<Packet>>,
+    node_id: NodeId,
+    command_recv: Receiver<ClientCommand>,
+    event_send: Sender<ClientEvent>,
+    packet_recv: Receiver<Packet>,
+    packet_send: HashMap<NodeId, Sender<Packet>>,
 
     ///Remember all the seen floods
-    pub flood_ids: HashSet<(u64, NodeId)>,
+    flood_ids: HashSet<(u64, NodeId)>,
     ///Pretty self-explanatory, used to compute a new one whenever asked for it
-    pub used_session_id: HashSet<u64>,
+    used_session_id: HashSet<u64>,
     ///Full Network known by this client, has all the unique functions to make it work
-    pub network: Network,
+    network: Network,
 
     ///Hashmap with all the fragments we sent, in case we have to re-send them because of nack.
     ///(session_id, source) - (destination, copy of content (for registering ecc…) and frags), if the content is None is because it's yet to be fully arrived!
-    pub fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>,
+    fragments: HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)>,
 
     ///Hashmap with all the unsent fragments, to process a re-send after a new knowledge of network ecc...
-    pub unsent_fragments: HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>,
+    unsent_fragments: HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)>,
 
     ///Is the client in flooding mode? prevent to flood too many times
-    pub is_flooding: bool,
-    pub flood_count: u64,
+    is_flooding: bool,
+    flood_count: u64,
 }
 
 impl NetworkEdge for ClientStruct {
@@ -200,7 +200,7 @@ impl NetworkEdge for ClientStruct {
         let min = match self.flood_ids.iter().min(){
             Some(min) => (*min).0,
             None => {
-                let value = fastrand::u64(..30);
+                let value = fastrand::u64(..20);
                 self.flood_ids.insert((value, self.node_id));
                 return value
             }
@@ -343,10 +343,6 @@ impl ClientTrait for ClientStruct {
      fn send_event(&self, ce: ClientEvent) {
         match self.event_send.try_send(ce.clone()){
             Ok(_) => {
-                ///remove
-                if let SendMedia(..) = ce{
-                    println!("passato di qui");
-                }
             }
             Err(_err) => {
                 if DEBUG_MODE {
@@ -359,7 +355,7 @@ impl ClientTrait for ClientStruct {
 
 impl ClientStruct {
     ///Send a packet for which we are not the destination, hence acting as a Drone
-    pub fn send_as_drone(&mut self, mut packet: Packet) {
+    pub(crate) fn send_as_drone(&mut self, mut packet: Packet) {
         packet.routing_header.hop_index += 1;
         if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
             match self.packet_send.get(&next_id) {
@@ -384,14 +380,14 @@ impl ClientStruct {
     }
 
     ///Function called periodically to check type for any node for which we still didn't get a type response.
-    pub fn periodic_check_type(&mut self) {
+    pub (crate) fn periodic_check_type(&mut self) {
         for i in self.network.get_unresolved() {
             self.check_type(i)
         }
     }
 
     ///Function of clients to send entire messages, divided in fragments
-    pub fn client_send_in_fragments(&mut self, message: Message, destination: NodeId) {
+    pub (crate) fn client_send_in_fragments(&mut self, message: Message, destination: NodeId) {
         let session_id = message.session_id;
         let frags = Self::fragment_message(&message);
         self.fragments.insert((session_id, self.node_id), (destination, Some(message.content), frags.clone()));
@@ -405,7 +401,7 @@ impl ClientStruct {
     }
 
     ///Function called periodically to process any fragment that has not been sent due to checks failed or congestion problems.
-    pub fn process_unsent_periodically(&mut self) {
+    pub (crate) fn process_unsent_periodically(&mut self) {
         // I create a temporary copy of the fragments that needs to be processed.
         let mut to_process = Vec::new();
         for (identifier, content) in self.unsent_fragments.iter() {
@@ -421,7 +417,7 @@ impl ClientStruct {
     }
 
     ///Client Handle for any drone Nack
-    pub fn handle_nack(&mut self, nack: Nack, packet: Packet) {
+    pub (crate) fn handle_nack(&mut self, nack: Nack, packet: Packet) {
         match nack.nack_type.clone() {
             NackType::UnexpectedRecipient(wrong_node) => {
                 self.network.remove_node(wrong_node);
@@ -450,7 +446,7 @@ impl ClientStruct {
     }
 
     ///Client Handle for any Edge Nack
-    pub fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId) {
+    pub (crate) fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId) {
         match nack {
             EdgeNackType::UnexpectedMessage => {
                 //vuol dire che ha mandato un message al dst con state sbagliato.
@@ -461,7 +457,7 @@ impl ClientStruct {
     }
 
     ///Handle a flood response adding to the network the information, and updating is_flooding field
-    pub fn save_flood_response(&mut self, pack: Packet) {
+    pub (crate) fn save_flood_response(&mut self, pack: Packet) {
         if let FloodResponse(flood_resp) = pack.pack_type {
             self.network.add_route(self.node_id, flood_resp.path_trace.clone());
 
@@ -480,7 +476,7 @@ impl ClientStruct {
         }
     }
 
-    pub fn handle_flood_request(&mut self, mut packet: Packet) -> bool {
+    pub (crate) fn handle_flood_request(&mut self, mut packet: Packet) -> bool {
         if let FloodRequest(flood_request) = packet.pack_type.clone() {
             if self.flood_ids.insert((
                 flood_request.flood_id.clone(),
@@ -518,5 +514,60 @@ impl ClientStruct {
         } else {
            unreachable!();
         }
+    }
+
+    ///Getter
+    pub (crate) fn command_recv(&self) -> &Receiver<ClientCommand> {
+        &self.command_recv
+    }
+
+    ///Getter
+    pub (crate) fn event_send(&self) -> &Sender<ClientEvent> {
+        &self.event_send
+    }
+
+    ///Getter
+    pub (crate) fn packet_recv(&self) -> &Receiver<Packet> {
+        &self.packet_recv
+    }
+
+    ///Getter
+    pub (crate) fn packet_send(&mut self) -> &mut HashMap<NodeId, Sender<Packet>> {
+        &mut self.packet_send
+    }
+
+    ///Getter
+    pub (crate) fn flood_ids(&self) -> &HashSet<(u64, NodeId)> {
+        &self.flood_ids
+    }
+
+    ///Getter
+    pub (crate) fn used_session_id(&self) -> &HashSet<u64> {
+        &self.used_session_id
+    }
+
+    ///Getter
+    pub (crate) fn network(&mut self) -> &mut Network {
+        &mut self.network
+    }
+
+    ///Getter
+    pub (crate) fn fragments(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Option<ContentType>, Vec<Fragment>)> {
+        &mut self.fragments
+    }
+
+    ///Getter
+    pub (crate) fn unsent_fragments(&self) -> &HashMap<(u64, NodeId), (NodeId, Vec<(Fragment)>)> {
+        &self.unsent_fragments
+    }
+
+    ///Getter
+    pub (crate) fn is_flooding(&self) -> bool {
+        self.is_flooding
+    }
+
+    ///Getter
+    pub (crate) fn flood_count(&self) -> u64 {
+        self.flood_count
     }
 }
