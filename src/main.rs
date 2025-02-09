@@ -15,7 +15,7 @@ mod clients_sam;
 pub const CLIENT_GIO: bool = true; //if false run with sam's
 
 pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = true;
+pub const ALL_CONTENT: bool = false;
 
 pub const DEBUG_MODE : bool = false;
 pub const NO_SERVER_MODE: bool = false; //provvisoria finchè non ci sono i server
@@ -31,11 +31,12 @@ fn main() {
     }else if ALL_CHAT {
         "inputs/input_star_chat.toml"
     } else {
-        "inputs/input_tree.toml"
+        "inputs/input_star_with_pdr.toml"
     };
 
     match switch {
         Switch::SimDaniel => {
+            println!("running {s}");
             if let Some((sim_contr, handles)) = initialize(s) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {

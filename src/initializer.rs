@@ -94,6 +94,8 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             // println!("Drone {} has {:?}", drone.id, drone_send);
 
             //create the thread of the drone, and add it to a Vec to be pushed afterward
+            handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+          
             /*handles.push(thread::spawn(move || {
                 let mut drone = SkyLinkDrone::new(
                     drone.id,
@@ -106,7 +108,10 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             
                 drone.run();
             }));*/
-            handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+
+            if drone.id == 1 {
+                println!("drone_chooser: {}", drone_chooser);
+            }
 
             if drone_chooser >= 9 {
                 drone_chooser = 0;
@@ -573,6 +578,10 @@ fn create_clients(clients: Vec<config::Client>,
 }
 
 fn check_config(conf: &Config) -> bool {
+    ///remove
+    let o = check_bidirectional(conf);
+    let i = check_edges(conf);
+    println!("{o} - {i}");
     check_bidirectional(conf) && check_edges(conf)
 }
 
@@ -585,16 +594,12 @@ fn check_edges(conf: &Config) -> bool{
 
         for server in &conf.server {
             if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
-                if DEBUG_MODE {
-                    println!("server {} has not enough connections, or has itself as one", server.id)
-                }
+                println!("server {} has not enough connections, or has itself as one", server.id);
                 return false
             }
             for connection in &server.connected_drone_ids {
                 if all_client_ids.contains(connection) || all_server_ids.contains(connection) {
-                    if DEBUG_MODE {
-                        println!("server {} is wrongly connected to {connection}", server.id)
-                    }
+                    println!("server {} is wrongly connected to {connection}", server.id);
                     return false;
                 }
             }
@@ -607,9 +612,8 @@ fn check_edges(conf: &Config) -> bool{
         }
         for connection in &client.connected_drone_ids {
             if all_client_ids.contains(connection) || all_server_ids.contains(connection)  {
-                if DEBUG_MODE{
-                    println!("client {} is wrongly connected to {connection}", client.id)
-                }
+                println!("client {} is wrongly connected to {connection}", client.id);
+
                 return false;
             }
         }

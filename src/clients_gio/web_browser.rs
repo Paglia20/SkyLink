@@ -22,7 +22,7 @@ use std::fs::write;
 use open;
 
 type ArrivedMedia = (String, Vec<u8>);
-const OPEN_MEDIA:bool = true;
+const OPEN_AUTO_MEDIA:bool = true;
 
 pub struct WebBrowser{
     ///Common Client base
@@ -155,18 +155,14 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
-                        ///remove
-                        println!("got media");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
                         self.send_event(SendMedia(self.get_src_id(), id, name, media.clone()));
 
-                        if OPEN_MEDIA{
+                        if OPEN_AUTO_MEDIA {
                             self.open_media(media)
                         }
                     }
                     MediaResponse::NotFound(id) => {
-                        ///remove
-                        println!("not found");
                         //i update the catalogue
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
@@ -264,7 +260,7 @@ impl NetworkEdge for WebBrowser {
 
             },
             _ => {
-                // Gio: no point in getting other types of req
+                //no point in getting other types of req
                 let new_nack = self.create_nack(UnexpectedMessage);
                 self.send_nack_message(message.source_id, new_nack);
             }

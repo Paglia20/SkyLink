@@ -301,7 +301,7 @@ pub fn test_double_chain_flood() {
 //passed
 
 pub fn test_star_flood() {
-    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star_with_pdr.toml");
 
     let flood_request = wg_2024::packet::FloodRequest {
         flood_id: 1,
@@ -463,7 +463,7 @@ pub fn test_drone_commands() {
 
 //Use star configuration and test busy network with a full route around the configuration, sending u64::max messages.
 pub fn test_busy_network() {
-    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star_with_pdr.toml");
 
     let packet = create_packet(vec![0, 1, 4, 7, 10, 3, 6, 9, 2, 5, 8, 1, 0]);
 

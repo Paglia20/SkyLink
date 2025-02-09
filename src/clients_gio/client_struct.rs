@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendMedia, WrongDestinationType};
+use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, WrongDestinationType};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
@@ -111,6 +111,7 @@ impl NetworkEdge for ClientStruct {
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(MissingRoute(self.get_src_id(), destination));
+                        println!("this missing");
                         self.add_unsent_fragment(fragment, session_id, destination);
                         self.network.remove_faulty_connection(self.node_id, first_dst);
                     }
@@ -155,6 +156,7 @@ impl NetworkEdge for ClientStruct {
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
+                        println!("recovered till here with {}", self.node_id);
                         self.send_fragment(fragment.clone(), *dst, packet_session_id);
                     }
                 }
@@ -177,6 +179,7 @@ impl NetworkEdge for ClientStruct {
             }
             None => {
                 self.send_event(MissingDestination(self.node_id, next_id))
+                //nack?
             }
         }
     }
@@ -283,7 +286,7 @@ impl NetworkEdgeErrors for ClientStruct {
             nack_type: nack,
         };
         if let Some(shr) = self.network.get_srh(&self.node_id, &dst){
-            let first_hop = shr.next_hop().unwrap_or(self.node_id);
+            let first_hop = shr.current_hop().unwrap_or(self.node_id);
             let packet = Packet{
                 routing_header: shr,
                 session_id: self.get_session_id(),
@@ -364,7 +367,15 @@ impl ClientStruct {
         if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
             match self.packet_send.get(&next_id) {
                 None => {
-                    self.send_event(MissingRoute(self.get_src_id(), next_id))
+                    self.network.remove_faulty_connection(self.node_id, next_id);
+                    self.send_event(MissingRoute(self.get_src_id(), next_id));
+                    //send a nack as a drone
+                    self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                    ///remove
+                    println!("error in routing sent to {} from {} caused by {}",
+                             packet.routing_header.source().unwrap(),
+                            self.node_id, next_id
+                    )
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
@@ -429,6 +440,11 @@ impl ClientStruct {
             },
             ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone
+                ///remove
+                println!("arrived an error in routing to {} from {} because of {}",
+                self.node_id, packet.routing_header.source().unwrap(), wrong_node
+                );
+
                 self.network.remove_node(wrong_node);
                 self.send_fragment_after_nack(packet.session_id, nack);
             },
@@ -453,9 +469,7 @@ impl ClientStruct {
     pub (crate) fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId) {
         match nack {
             EdgeNackType::UnexpectedMessage => {
-                //vuol dire che ha mandato un message al dst con state sbagliato.
                 self.network.update_state(src, 2);
-                //e il messaggio viene scartato credo
             }
         }
     }
@@ -465,7 +479,7 @@ impl ClientStruct {
         if let FloodResponse(flood_resp) = pack.pack_type {
             self.network.add_route(self.node_id, flood_resp.path_trace.clone());
 
-            // I have all routes to the nodes I already know, or flood_counter is sgravato, you are again able to flood
+            // I have all routes to the nodes I already know, or flood_counter is too big, you are again able to flood
             if self.network.has_all_routes(self.node_id) || self.flood_count >= 200 {
                 // Now I can flood again
                 self.is_flooding = false;
