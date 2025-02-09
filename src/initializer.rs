@@ -94,19 +94,20 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             // println!("Drone {} has {:?}", drone.id, drone_send);
 
             //create the thread of the drone, and add it to a Vec to be pushed afterward
-            //handles.push(thread::spawn(move || {
-            //    let mut drone = SkyLinkDrone::new(
-            //        drone.id,
-            //        node_event_send,
-            //        contr_recv,
-            //        drone_recv,
-            //        drone_send,
-            //        drone.pdr,
-            //    );
-//
-            //    drone.run();
-            //}));
             handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+          
+            /*handles.push(thread::spawn(move || {
+                let mut drone = SkyLinkDrone::new(
+                    drone.id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    drone.pdr,
+                );
+            
+                drone.run();
+            }));*/
 
             if drone.id == 1 {
                 println!("drone_chooser: {}", drone_chooser);
@@ -175,6 +176,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     match drone_chooser {
         0 => {
             thread::spawn(move || {
+                // println!("FungiDrone is {}", drone_id);
                 let mut drone = FungiDrone::new(
                     drone_id,
                     node_event_send,
@@ -188,6 +190,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         1 => {
             thread::spawn(move || {
+                // println!("RustyDrone is {}", drone_id);
                 let mut drone = rusty_drones::RustyDrone::new(
                     drone_id,
                     node_event_send,
@@ -201,6 +204,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         2 => {
             thread::spawn(move || {
+                // println!("RustasticDrone is {}", drone_id);
                 let mut drone = RustasticDrone::new(
                     drone_id,
                     node_event_send,
@@ -214,6 +218,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         3 => {
             thread::spawn(move || {
+                // println!("RustDoIt is {}", drone_id);
                 let mut drone = RustDoIt::new(
                     drone_id,
                     node_event_send,
@@ -227,6 +232,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         4 => {
             thread::spawn(move || {
+                // println!("RustDrone is {}", drone_id);
                 let mut drone = wg_2024_rust::drone::RustDrone::new(
                     drone_id,
                     node_event_send,
@@ -240,6 +246,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         5 => {
             thread::spawn(move || {
+                // println!("LockheedRustin is {}", drone_id);
                 let mut drone = LockheedRustin::new(
                     drone_id,
                     node_event_send,
@@ -253,6 +260,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         6 => {
             thread::spawn(move || {
+                // println!("GetDroned is {}", drone_id);
                 let mut drone = GetDroned::new(
                     drone_id,
                     node_event_send,
@@ -266,6 +274,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         7 => {
             thread::spawn(move || {
+                // println!("RollingDrone is {}", drone_id);
                 let mut drone = RollingDrone::new(
                     drone_id,
                     node_event_send,
@@ -279,6 +288,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         8 => {
             thread::spawn(move || {
+                // println!("d_r_o_n_e is {}", drone_id);
                 let mut drone = d_r_o_n_e_drone::MyDrone::new(
                     drone_id,
                     node_event_send,
@@ -292,6 +302,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         _ => {
             thread::spawn(move || {
+                // println!("dr_ones is {}", drone_id);
                 let mut drone = dr_ones::Drone::new(
                     drone_id,
                     node_event_send,

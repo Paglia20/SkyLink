@@ -407,9 +407,17 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             fragment_index: 0,
             nack_type: nack,
         };
+        
         match self.get_srh(dst) {
             None => {
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), dst));
+                let srh = SourceRoutingHeader::new(vec![dst], 1);
+                let packet = Packet{
+                    routing_header: srh,
+                    session_id: self.get_session_id(),
+                    pack_type: PacketType::Nack(new_nack),
+                };
+                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
             }
             Some(srh) => {
                 let first_hop = srh.next_hop().unwrap_or(self.get_src_id());
@@ -419,10 +427,11 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     session_id: self.get_session_id(),
                     pack_type: PacketType::Nack(new_nack),
                 };
-
+                
                 match self.get_packet_sender(&first_hop) {
                     None => {
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
+                        self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
                     }
                     Some(sender) => {
                         self.send_ack_and_nack(sender.clone(), packet);
@@ -494,4 +503,18 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn get_unresolved(&self) -> Vec<NodeId>;
     fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))>;
     fn get_server_type(&self) -> ServerType;
+}
+
+pub fn obtain_file_display_name(file_path: String) -> String {
+    let mut res = String::new();
+    for c in file_path.chars() {
+        if c == '/' {
+            res = String::new();
+        } else if c == '.' {
+            break;
+        } else {
+            res.push(c);
+        }
+    }
+    res
 }

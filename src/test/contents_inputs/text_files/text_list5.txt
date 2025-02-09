@@ -1,7 +1,7 @@
 src/test/contents_inputs/media_files/goat.png
 src/test/contents_inputs/media_files/leone.png
 src/test/contents_inputs/media_files/mario.png
-src/test/contents_inputs/media_files/dog.png
+src/test/contents_inputs/media_files/dog.jpg
 src/test/contents_inputs/media_files/dunk.png
-src/test/contents_inputs/media_files/esempio.png
+src/test/contents_inputs/media_files/esempio.jpg
 src/test/contents_inputs/media_files/bronto.png
