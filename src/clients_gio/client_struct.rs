@@ -343,10 +343,6 @@ impl ClientTrait for ClientStruct {
      fn send_event(&self, ce: ClientEvent) {
         match self.event_send.try_send(ce.clone()){
             Ok(_) => {
-                ///remove
-                if let SendMedia(..) = ce{
-                    println!("passato di qui");
-                }
             }
             Err(_err) => {
                 if DEBUG_MODE {
