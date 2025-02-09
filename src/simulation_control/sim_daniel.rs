@@ -229,7 +229,6 @@ impl MyApp {
         match drone_event {
             PacketDropped(packet) => {
                 let dropper = packet.routing_header.current_hop().unwrap();
-                //println!("packet dropped by {dropper}"); debug printing
                 let e = self.sim_contr.storage.dropped_packets.entry(dropper).or_insert(vec![]);
                 e.push(packet);
             }
@@ -320,7 +319,6 @@ impl MyApp {
             }
             ClientEvent::SendMedia(src, media_id, str, media) => {
                 // self.turn_on_notification(src);
-                println!("added to medias of {src}");
                 self.sim_contr.storage.add_to_medias(src, media_id, str, media);
             }
             ClientEvent::RegisterSuccessfully(src, dst) => {
@@ -441,9 +439,9 @@ impl MyApp {
                             if ui.button("test (graphically) media with 12").clicked() {
                                 /* questo andrà cambiato appena leo avrà fatto il server,
                                  è solo per vedere se ci piace il font delle media */
-                                let v = include_bytes!("../test/contents_inputs/media_files/esempio.png").to_vec();
+                                let v = include_bytes!("../test/contents_inputs/media_files/charmander.png").to_vec();
 
-                                self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "esempio.png".to_string(), v);
+                                self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "char.png".to_string(), v);
                             }
 
 
@@ -1345,7 +1343,7 @@ impl MyApp {
 
                                                                 for media in node_medias {
                                                                     if ui.button(format!("{} - {}", media.0.clone(), media.1.clone())).clicked() {
-                                                                        // Carica l'immagine quando viene cliccato
+                                                                        // load image
                                                                         if let Some(texture) = load_image(ctx, media.2.clone()) {
                                                                             node.content = Some(Media(texture));
                                                                         }
@@ -1353,6 +1351,11 @@ impl MyApp {
                                                                 }
                                                             } else {
                                                                 if let Some(Media(texture)) = node.content.clone() {
+
+                                                                    if ui.button("Chiudi Immagine").clicked() {
+                                                                        node.content = None;
+                                                                    }
+
                                                                     // obtain available space
                                                                     let available_size = ui.available_size();
 
@@ -1366,10 +1369,6 @@ impl MyApp {
 
                                                                     //immagine scalata
                                                                     ui.image((texture.id(), new_size));
-
-                                                                    if ui.button("Chiudi Immagine").clicked() {
-                                                                        node.content = None;
-                                                                    }
                                                                 }
                                                             }
 
@@ -1427,7 +1426,7 @@ impl MyApp {
                                                                         .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
                                                                         .show(ui, |ui| {
                                                                             for (id) in node_text_lists {
-                                                                                if ui.button(format!("{} - {}", id.0.clone(), id.1.clone())).clicked() {
+                                                                                if ui.button(format!("ID: {}\n{}", id.0.clone(), id.1.clone())).clicked() {
                                                                                     self.sim_contr.get_text_file(node.id, id.0);
                                                                                     node.content = Some(MediaToResolve)
                                                                                 }
@@ -1614,11 +1613,18 @@ impl MyApp {
                                                                                  .font(FontId::new(12.0, egui::FontFamily::Monospace))
                                                                                  .color(Color32::WHITE));
                                                                    ui.separator();
+                                                                   ui.vertical(|ui| {
+                                                                       egui::ScrollArea::vertical()
+                                                                           .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                           .show(ui, |ui| {
+                                                                               for i in register_clients {
+                                                                                   let s = format!("Client {}", i);
+                                                                                   ui.label(s);
+                                                                               }
+                                                                           });
+                                                                   });
 
-                                                                   for i in register_clients {
-                                                                       let s = format!("Client {}", i);
-                                                                       ui.label(s);
-                                                                   }
+
                                                                } else {
                                                                    ui.label(RichText::new("No Registered Clients:".to_string())
                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
@@ -1636,10 +1642,19 @@ impl MyApp {
                                                                         .color(Color32::WHITE));
                                                                     ui.separator();
 
-                                                                    for i in lists {
-                                                                        let s = format!("Text {} - {}", i.0, i.1);
-                                                                        ui.label(s);
-                                                                    }
+                                                                    ui.vertical(|ui| {
+                                                                        egui::ScrollArea::vertical()
+                                                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                            .show(ui, |ui| {
+                                                                                for i in lists {
+                                                                                    let s = format!("Text {}\n{}", i.0, i.1);
+                                                                                    ui.label(s);
+                                                                                    ui.separator();
+                                                                                }
+                                                                            });
+                                                                    });
+
+
                                                                 } else {
                                                                     ui.label(RichText::new("No Text Lists Available".to_string())
                                                                         .font(FontId::new(12.0, egui::FontFamily::Monospace))
@@ -1655,10 +1670,18 @@ impl MyApp {
                                                                         .color(Color32::WHITE));
                                                                     ui.separator();
 
-                                                                    for (id, name, _) in list {
-                                                                        let s = format!("Media {} - {}", id, name);
-                                                                        ui.label(s);
-                                                                    }
+                                                                    ui.vertical(|ui| {
+                                                                        egui::ScrollArea::vertical()
+                                                                            .auto_shrink([false; 2]) // Ensures it doesn't shrink horizontally or vertically
+                                                                            .show(ui, |ui| {
+                                                                                for (id, name, _) in list {
+                                                                                    let s = format!("Media {}\n{}", id, name);
+                                                                                    ui.label(s);
+                                                                                    ui.separator();
+                                                                                }
+                                                                            });
+                                                                    });
+
                                                                 } else {
                                                                     ui.label(RichText::new("No Media Possessed".to_string())
                                                                         .font(FontId::new(12.0, egui::FontFamily::Monospace))
@@ -1755,6 +1778,7 @@ fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
 fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle> {
     // Decodifica l'immagine usando il crate `image`
     let decoded_image = image::load_from_memory(&image_data).ok()?;
+
     let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
     let (width, height) = rgba_image.dimensions(); // Get the actual dimensions
 
@@ -1768,6 +1792,7 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
         size: [width as usize, height as usize], // Use the actual image size
         pixels,
     };
+
 
     // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
