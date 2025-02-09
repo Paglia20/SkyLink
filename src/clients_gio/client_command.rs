@@ -22,7 +22,10 @@ pub enum ClientCommand {
     ///WebClient only, Get a TextFile full of media references, hence the response will be a media references
     GetTextFile(u64),
     ///WebClient only, Get a Content from any server with that given id
-    GetContent(u64)
+    GetContent(u64),
+
+    InstantCrash,
+
 }
 
 #[derive(Debug, Clone)]

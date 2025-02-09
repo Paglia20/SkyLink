@@ -462,6 +462,12 @@ impl MyApp {
                             self.sim_contr.log.clear();
                         }
 
+                        ui.separator();
+                        if ui.button("Close Simulation").clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            self.sim_contr.crash_all();
+                        }
+
                         //load logo
                         if self.logo.is_none(){
                             self.logo = Some(load_texture(ctx,"src/simulation_control/texture_pngs/SkyLinkLogo.png"));
@@ -488,6 +494,7 @@ impl MyApp {
                                 ui.image((texture.id(), new_size));
                             }
                         }
+
                     }
                     ManageAdd => {
                         if ui.button("back").clicked() {

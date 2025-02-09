@@ -300,7 +300,7 @@ impl ClientTrait for ChatClient {
     fn run(&mut self) {
         let mut count = 0;
 
-        loop {
+        while self.client_base.is_running() {
             select_biased! {
                 recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
@@ -356,7 +356,9 @@ impl ClientTrait for ChatClient {
             ClientCommand::SendMSG(id, str) => {
                 self.send_chat_text(id, str);
             }
-
+            ClientCommand::InstantCrash => {
+                self.client_base.crash();
+            }
             //ignore other commands cause are webclients commands
             _ =>{
 
