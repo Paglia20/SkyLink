@@ -242,6 +242,9 @@ impl Server for MediaServer {
                         self.send_event(ServerEvent::FileNotReadable(self.get_src_id(), file, err.to_string()));
                     }
                 }
+            },
+            ServerCommand::InstantCrash => {
+                self.server_struct.is_running = false;
             }
         }
     }
@@ -274,10 +277,10 @@ impl Server for MediaServer {
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
-
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
+
     fn can_flood(&mut self) -> bool {
         self.server_struct.can_flood()
     }
@@ -292,6 +295,9 @@ impl Server for MediaServer {
     }
     fn add_destination_without_path(&mut self, dst: NodeId) {
         self.server_struct.add_destination_without_path(dst);
+    }
+    fn is_running(&self) -> bool {
+        self.server_struct.is_running
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()

@@ -9,7 +9,7 @@ pub enum ServerCommand {
     AddSender(NodeId, Sender<Packet>),
     Flood,
     AddFile(String),
-    // SendPacket(Packet), // Not sure yet if I want this or not
+    InstantCrash,
 }
 
 #[derive(Debug, Clone)]
