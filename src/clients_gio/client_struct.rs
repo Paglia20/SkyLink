@@ -156,6 +156,7 @@ impl NetworkEdge for ClientStruct {
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
+                        println!("recovered till here with {}", self.node_id);
                         self.send_fragment(fragment.clone(), *dst, packet_session_id);
                     }
                 }
@@ -178,6 +179,7 @@ impl NetworkEdge for ClientStruct {
             }
             None => {
                 self.send_event(MissingDestination(self.node_id, next_id))
+                //nack?
             }
         }
     }
@@ -284,7 +286,7 @@ impl NetworkEdgeErrors for ClientStruct {
             nack_type: nack,
         };
         if let Some(shr) = self.network.get_srh(&self.node_id, &dst){
-            let first_hop = shr.next_hop().unwrap_or(self.node_id);
+            let first_hop = shr.current_hop().unwrap_or(self.node_id);
             let packet = Packet{
                 routing_header: shr,
                 session_id: self.get_session_id(),
@@ -365,9 +367,15 @@ impl ClientStruct {
         if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
             match self.packet_send.get(&next_id) {
                 None => {
+                    self.network.remove_faulty_connection(self.node_id, next_id);
                     self.send_event(MissingRoute(self.get_src_id(), next_id));
                     //send a nack as a drone
                     self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id));
+                    ///remove
+                    println!("error in routing sent to {} from {} caused by {}",
+                             packet.routing_header.source().unwrap(),
+                            self.node_id, next_id
+                    )
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
@@ -432,6 +440,11 @@ impl ClientStruct {
             },
             ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone
+                ///remove
+                println!("arrived an error in routing to {} from {} because of {}",
+                self.node_id, packet.routing_header.source().unwrap(), wrong_node
+                );
+
                 self.network.remove_node(wrong_node);
                 self.send_fragment_after_nack(packet.session_id, nack);
             },
