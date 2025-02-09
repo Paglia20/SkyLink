@@ -378,8 +378,10 @@ fn create_servers(servers: Vec<config::Server>,
 
 
         let mut server_files = Vec::new();
-        for i in 0..files_per_server {
-            server_files.push(files.get(i + file_chooser).unwrap().clone());
+        if chooser != 2 {
+            for i in 0..files_per_server {
+                server_files.push(files.get(i + file_chooser).unwrap().clone());
+            }
         }
 
 
@@ -531,7 +533,8 @@ fn create_clients(clients: Vec<config::Client>,
 
                 }
 
-                chooser = !chooser
+                chooser = !chooser;
+                println!("chooser: {}", chooser);
             } else {
                 //create media client
 
@@ -563,8 +566,9 @@ fn create_clients(clients: Vec<config::Client>,
                 chooser = !chooser
             }
 
+            ///double check
             if media_server && !chooser {
-                chooser = true;
+                chooser = false;
                 // This avoids skipping of cycles if we can't create media clients.
             }
         }
