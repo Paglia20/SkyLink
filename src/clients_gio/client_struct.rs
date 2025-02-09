@@ -1,4 +1,4 @@
-use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, SendMedia, WrongDestinationType};
+use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, WrongDestinationType};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
@@ -453,9 +453,7 @@ impl ClientStruct {
     pub (crate) fn handle_edge_nack(&mut self, nack: EdgeNackType, src: NodeId) {
         match nack {
             EdgeNackType::UnexpectedMessage => {
-                //vuol dire che ha mandato un message al dst con state sbagliato.
                 self.network.update_state(src, 2);
-                //e il messaggio viene scartato credo
             }
         }
     }
@@ -465,7 +463,7 @@ impl ClientStruct {
         if let FloodResponse(flood_resp) = pack.pack_type {
             self.network.add_route(self.node_id, flood_resp.path_trace.clone());
 
-            // I have all routes to the nodes I already know, or flood_counter is sgravato, you are again able to flood
+            // I have all routes to the nodes I already know, or flood_counter is too big, you are again able to flood
             if self.network.has_all_routes(self.node_id) || self.flood_count >= 200 {
                 // Now I can flood again
                 self.is_flooding = false;
