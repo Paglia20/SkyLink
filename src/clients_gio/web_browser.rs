@@ -47,7 +47,7 @@ impl NetworkEdge for WebBrowser {
         if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
             flood_request
                 .path_trace
-                .push((self.client_base.node_id, NodeType::Client));
+                .push((self.client_base.get_src_id(), NodeType::Client));
 
             //I update the path_trace in the packet.
             packet.pack_type = FloodRequest(flood_request.clone());
@@ -57,7 +57,7 @@ impl NetworkEdge for WebBrowser {
             }
         }
         else {
-            if packet.routing_header.destination().unwrap() != self.client_base.node_id {
+            if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
                 // If it's not his packet, but he has to act as a drone (that never misses)
                 self.client_base.send_as_drone(packet);
 
@@ -68,10 +68,10 @@ impl NetworkEdge for WebBrowser {
                         let tot_num_frag = fragment.total_n_fragments as usize;
                         let session_id = packet.session_id;
                         let initiator_id = packet.routing_header.hops[0];
-                        let destination = self.client_base.node_id; //he is the destination
+                        let destination = self.client_base.get_src_id(); //he is the destination
                         let frag_index = fragment.fragment_index;
                         //add new frag
-                        let entry = self.client_base.fragments.entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                        let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
                         entry.2.push(fragment);
 
 
@@ -82,12 +82,12 @@ impl NetworkEdge for WebBrowser {
                         self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
                         // If all the frag have arrived recreate message
-                        let frags_clone = &self.client_base.fragments.get(&(packet.session_id, initiator_id)).unwrap().2;
+                        let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
                         if frags_clone.len() == tot_num_frag {
                             let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
                                 Err(e) => {
                                     if DEBUG_MODE {
-                                        println!("{e} with {}", self.client_base.node_id);
+                                        println!("{e} with {}", self.client_base.get_src_id());
                                     }
                                     self.send_event(ErrorReassembling(self.get_src_id()));
                                     return;
@@ -98,28 +98,30 @@ impl NetworkEdge for WebBrowser {
                             self.handle_message(message);
 
                             // empty the hashmap
-                            self.client_base.fragments.remove(&(packet.session_id, initiator_id));
+                            self.client_base.fragments().remove(&(packet.session_id, initiator_id));
                         }
                     }
                     Ack(ack) => {
                         self.send_event(ClientEvent::AckReceived(packet.clone()));
 
                         //the ack will have the source that was the destination of the initial packet
-                        match self.client_base.fragments.get_mut(&(packet.session_id, self.client_base.node_id)) {
+                        let src = self.client_base.get_src_id();
+                        match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
                             None => {}
                             Some((_, _, vec)) => {
                                 vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
                                 //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
                                 if vec.is_empty() {
-                                    self.client_base.fragments.remove_entry(&(packet.session_id, self.client_base.node_id));
+                                    let src = self.client_base.get_src_id();
+                                    self.client_base.fragments().remove_entry(&(packet.session_id, src));
                                 }
                             }
                         }
 
                         // I apply the positive feed on all nodes in the path
                         let nodes = packet.routing_header.hops;
-                        self.client_base.network.positive_feedback(nodes);
+                        self.client_base.network().positive_feedback(nodes);
                     }
 
                     PacketType::Nack(nack) => {
@@ -149,14 +151,10 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
-                        ///remove
-                        println!("arrived media response of id {id}");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
-                        self.send_event(SendMedia(self.get_src_id(), id, name, vec![]));
+                        self.send_event(SendMedia(self.get_src_id(), id, name, media));
                     }
                     MediaResponse::NotFound(id) => {
-                        ///remove
-                        println!("not found");
                         //i update the catalogue
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
@@ -181,8 +179,6 @@ impl NetworkEdge for WebBrowser {
                         }
                     }
                     TextResponse::MediaReferences(media_refs) => {
-                        ///remove
-                        println!("arrived media reference {:?}", media_refs);
                         for (media_id, (name, media_server_id)) in media_refs{
                             let mut is_new= false;
                             let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
@@ -216,9 +212,9 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeRequest { from } => {
                         let type_resp = TypeExchange::TypeResponse {
                             edge_type: EdgeType::Client(ClientType::WebBrowser),
-                            from: self.client_base.node_id,
+                            from: self.client_base.get_src_id(),
                         };
-                        let message = Message::new(self.client_base.node_id, self.get_session_id(), ContentType::TypeExchange(type_resp));
+                        let message = Message::new(self.client_base.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
 
                         self.send_message(message, from);
 
@@ -226,7 +222,7 @@ impl NetworkEdge for WebBrowser {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         if let EdgeType::Server(server_type) = edge_type{
                             if let ServerType::Content(ty) = server_type{
-                                self.client_base.network.update_state(from, 1);
+                                self.client_base.network().update_state(from, 1);
                                 // self.send_event(SendDestinations(self.client_base.node_id, from));
 
 
@@ -234,18 +230,18 @@ impl NetworkEdge for WebBrowser {
                                     //only if it's a text server I will notify the sc that is a dst.
                                     //this because the sc has to chose for a webclient only the text servers to witch I want to ask the lists.
                                     //he will manage the media itself with catalog!!
-                                    self.send_event(SendDestinations(self.client_base.node_id, from));
+                                    self.send_event(SendDestinations(self.client_base.get_src_id(), from));
                                 }
                             }
                             else {
-                                self.client_base.network.update_state(from, 2);
+                                self.client_base.network().update_state(from, 2);
                             }
                         } else {
                             //if it's a client
-                            self.client_base.network.update_state(from, 2);
+                            self.client_base.network().update_state(from, 2);
 
                             if NO_SERVER_MODE {
-                                self.send_event(SendDestinations(self.client_base.node_id, from));
+                                self.send_event(SendDestinations(self.client_base.get_src_id(), from));
                             }
                         }
                     }
@@ -340,12 +336,12 @@ impl ClientTrait for WebBrowser {
         let mut count = 0;
         loop {
             select_biased! {
-                recv(self.client_base.command_recv) -> cmd => {
+                recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
                         self.handle_command(command);
                     }
                 }
-                recv(self.client_base.packet_recv) -> pkt => {
+                recv(self.client_base.packet_recv()) -> pkt => {
                     if let Ok(packet) = pkt {
                         self.handle_packet(packet);
                     }
@@ -379,7 +375,7 @@ impl ClientTrait for WebBrowser {
                 self.remove_sender(node_id);
             }
             ClientCommand::AddSender(node_id, sender) => {
-                self.client_base.packet_send.insert(node_id, sender);
+                self.client_base.packet_send().insert(node_id, sender);
             }
             ClientCommand::Flood =>{
                 self.flood();
@@ -437,7 +433,8 @@ impl WebBrowser{
         if let Some(map) = self.available_text_lists.get(&text_file_id) {
             let destinations = map.0.clone();
             if !destinations.is_empty() {
-                if let Some(dst) = self.client_base.network.get_optimal_dest(&self.get_src_id(), &destinations) {
+                let src = self.client_base.get_src_id();
+                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
                     let content = ContentType::TextRequest(TextFile(text_file_id));
                     let msg = Message::new(src, session, content);
                     self.client_base.send_message(msg, dst);
@@ -468,7 +465,8 @@ impl WebBrowser{
 
         if let Some(destinations) = self.catalogue.get(&cont_id) {
             if !destinations.is_empty() {
-                if let Some(dst) = self.client_base.network.get_optimal_dest(&self.get_src_id(), &destinations) {
+                let src = self.client_base.get_src_id();
+                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
                     let content = ContentType::MediaRequest(Media(cont_id));
                     let msg = Message::new(src, session, content);
                     self.client_base.send_message(msg, dst);

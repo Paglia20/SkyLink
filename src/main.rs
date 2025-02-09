@@ -14,8 +14,8 @@ mod clients_sam;
 //for testing
 pub const CLIENT_GIO: bool = true; //if false run with sam's
 
-pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = true;
+pub const ALL_CHAT: bool = true;
+pub const ALL_CONTENT: bool = false;
 
 pub const DEBUG_MODE : bool = false;
 pub const NO_SERVER_MODE: bool = false; //provvisoria finchè non ci sono i server
@@ -23,7 +23,6 @@ pub const AUTOMATIC_FLOOD: bool = false; //fast as fuck boi
 
 
 fn main() {
-    // println!("Hello, world!");
     //change switch to change the run
     let switch = Switch::SimDaniel;
 
