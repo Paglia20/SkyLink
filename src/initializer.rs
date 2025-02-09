@@ -154,7 +154,7 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             network_graph,
         );
 
-       Some((sim_contr, handles))
+        Some((sim_contr, handles))
     } else {
         None
     }
