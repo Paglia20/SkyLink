@@ -1,4 +1,4 @@
-src/test/contents_inputs/media_files/esempio.png
+src/test/contents_inputs/media_files/esempio.jpg
 src/test/contents_inputs/media_files/bronto.png
 src/test/contents_inputs/media_files/charmander.png
 src/test/contents_inputs/media_files/deer.png
