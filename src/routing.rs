@@ -282,7 +282,7 @@ impl Network {
         let mut to_remove = Vec::new();
         for (id, (_, index)) in &self.node_map {
             let node = &self.graph[*index];
-            if node.dropped_count > node.forward_count + 100 {
+            if node.reliability() < 0.1 {
                 to_remove.push(*id);
             }
         }
