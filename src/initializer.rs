@@ -94,19 +94,19 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             // println!("Drone {} has {:?}", drone.id, drone_send);
 
             //create the thread of the drone, and add it to a Vec to be pushed afterward
-            handles.push(thread::spawn(move || {
-                let mut drone = SkyLinkDrone::new(
-                    drone.id,
-                    node_event_send,
-                    contr_recv,
-                    drone_recv,
-                    drone_send,
-                    drone.pdr,
-                );
-
-                drone.run();
-            }));
-            // handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+            // handles.push(thread::spawn(move || {
+            //     let mut drone = SkyLinkDrone::new(
+            //         drone.id,
+            //         node_event_send,
+            //         contr_recv,
+            //         drone_recv,
+            //         drone_send,
+            //         drone.pdr,
+            //     );
+            //
+            //     drone.run();
+            // }));
+            handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
 
             if drone_chooser >= 9 {
                 drone_chooser = 0;

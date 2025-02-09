@@ -151,10 +151,14 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
+                        ///remove
+                        println!("got media");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
                         self.send_event(SendMedia(self.get_src_id(), id, name, media));
                     }
                     MediaResponse::NotFound(id) => {
+                        ///remove
+                        println!("not found");
                         //i update the catalogue
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
@@ -459,13 +463,11 @@ impl WebBrowser{
 
     ///Retrieve a media file, consulting catalogue
     fn get_media(&mut self, cont_id: u64) {
-        println!("trying to get media");
         let src = self.client_base.get_src_id();
         let session = self.client_base.get_session_id();
 
         if let Some(destinations) = self.catalogue.get(&cont_id) {
             if !destinations.is_empty() {
-                let src = self.client_base.get_src_id();
                 if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
                     let content = ContentType::MediaRequest(Media(cont_id));
                     let msg = Message::new(src, session, content);
