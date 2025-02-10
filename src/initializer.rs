@@ -584,10 +584,9 @@ fn create_clients(clients: Vec<config::Client>,
 }
 
 fn check_config(conf: &Config) -> bool {
-    /// REMOVE
-    let o = check_bidirectional(conf);
+    /*let o = check_bidirectional(conf);
     let i = check_edges(conf);
-    println!("{o} - {i}");
+    println!("{o} - {i}");*/
     
     check_bidirectional(conf) && check_edges(conf)
 }
@@ -597,7 +596,7 @@ fn check_edges(conf: &Config) -> bool{
     let all_client_ids: Vec<NodeId> = conf.client.iter().map(|z| z.id).collect();
 
     if !NO_SERVER_MODE {
-        // Untill we don't have servers I don't check if they are rightfully connected.
+        // Until we don't have servers I don't check if they are rightfully connected.
 
         for server in &conf.server {
             if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
