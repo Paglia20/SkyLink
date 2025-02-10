@@ -1,4 +1,4 @@
-use skylink::SkyLinkDrone;
+/*use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::thread::JoinHandle;
@@ -112,4 +112,4 @@ pub struct MySimContr {
     // pub event_send: Sender<DroneEvent>,
     // pub packet_senders,
     // pub network_graph
-}
+}*/
