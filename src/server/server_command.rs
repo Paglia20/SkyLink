@@ -19,7 +19,7 @@ pub enum ServerEvent {
     PacketSent(Packet),
     PacketReceived(Packet),
     PacketSendingError(Packet),
-    AckReceived(Packet), // Packet with inside the ACK (so I can get the NodeId in SC).
+    AckReceived(Packet), // Packet with inside the ACK (so we can get the NodeIds in SC).
     NackReceived(Packet),
     
     MissingDestination(NodeId, NodeId), // First id is server one, second is missing destination.
@@ -34,12 +34,12 @@ pub enum ServerEvent {
     FileNotFound(NodeId, u64), // Server id and file_id requested but not owned.
     IncompleteFile(NodeId, u64), // Server id and file_id of file whose at least one media is still missing.
     FilesState(NodeId, Vec<(u64, String)>, Vec<(u64, String)>), // Server id, completed file and files with still missing medias.
-    FileNotReadable(NodeId, String, String), // Server ID and file name and error; Used when a '.read' fails.
-    MediaNotFound(NodeId, u64),
+    FileNotReadable(NodeId, String, String), // Server id and file name and error; Used when a '.read' fails.
+    MediaNotFound(NodeId, u64), // Server id and missing media id
     MediaState(NodeId, Vec<(u64, String)>), // server_id and ids and names of medias in it.
     
-    ClientRegistered(NodeId, NodeId), // Server ID and client ID
-    ClientAlreadyRegistered(NodeId, NodeId), // Server ID and client ID
+    ClientRegistered(NodeId, NodeId), // Server id and client id
+    ClientAlreadyRegistered(NodeId, NodeId), // Server id and client id
     
     WrongCommandGiven(NodeId, ServerCommand), // Server id and wrong command it received.
     ControllerShortcut(DroneEvent), // In case I have problems sending an ACK or NACK.

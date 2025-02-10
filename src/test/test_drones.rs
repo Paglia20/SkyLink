@@ -1,10 +1,10 @@
 #![cfg(test)]
 use rusty_tester::*;
 use std::time::Duration;
+use skylink::SkyLinkDrone;
 use lockheedrustin_drone::LockheedRustin;
 use rolling_drone::RollingDrone;
 use rusty_drones::RustyDrone;
-use skylink::SkyLinkDrone;
 use wg_2024_rust::drone::RustDrone;
 
 type Tested = SkyLinkDrone;

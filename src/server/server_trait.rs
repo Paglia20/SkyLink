@@ -37,7 +37,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.handle_packet(packet);
                     }
                 }
-                default => {}
             }
             if count > 255 {
                 // If I have some unchecked nodes I try to check them.
@@ -69,7 +68,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         };
         if !out && DEBUG_MODE{
             println!("{destination} state was not ok ");
-            // send nack?
         }
         out
     }
@@ -464,9 +462,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         self.flood();
         for (fragment, identifier) in to_process.into_iter() {
             self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
-            /*} else {
-                self.add_unsent_fragment(fragment, identifier.0, identifier.2);
-            }*/
         }
     }
     
@@ -499,12 +494,16 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn get_server_type(&self) -> ServerType;
 }
 
+// Function used by text and media files to obtain a string name usable for display.
 pub fn obtain_file_display_name(file_path: String) -> String {
     let mut res = String::new();
     for c in file_path.chars() {
+        // We keep creating a new string until we're inside the last word before the file type.
         if c == '/' {
             res = String::new();
         } else if c == '.' {
+            // When we reach '.', we've reached the end of the name, and we stop before reading the file type;
+            // Ignoring the file type allows for a uniform display, independent of what the file type actually is.
             break;
         } else {
             res.push(c);

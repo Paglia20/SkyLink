@@ -92,7 +92,7 @@ impl NetworkEdge for MediaServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        //self.type_checked(from);
+                        // self.type_checked(from);
                     }
                 }
             }
@@ -107,17 +107,22 @@ impl NetworkEdge for MediaServer {
         }
     }
 
-    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
+    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {
+        unimplemented!()
+    }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
-        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, _packet_session_id: u64, _nack: Nack) {
+        // self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+        unimplemented!()
     }
 
-    fn send_ack(&mut self, _: Packet, _: u64) {}
+    fn send_ack(&mut self, _: Packet, _: u64) {
+        unimplemented!()
+    }
 
     fn flood(&mut self) {
         self.start_flood();
@@ -137,13 +142,13 @@ impl NetworkEdge for MediaServer {
 
     fn remove_sender(&mut self, id: NodeId) {
         self.server_struct.packet_send.remove(&id);
-        // Currently unused I think;
     }
 }
 
 impl NetworkEdgeErrors for MediaServer {
-    fn check_type(&mut self, id: NodeId) {
-        self.server_check_type(id);
+    fn check_type(&mut self, _id: NodeId) {
+        // self.server_check_type(id);
+        unimplemented!()
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
@@ -341,9 +346,11 @@ impl Server for MediaServer {
 fn divide_text_file(file_str: String) -> Vec<String> {
     let mut res = Vec::new();
     let mut tmp_string = String::new();
+    // I want to divide the file in the references of the media, collected into a vector.
     for c in file_str.chars() {
         if c != '\r' && c != '\n' {
             tmp_string.push(c);
+            // When I find '\n' the row ends, so I save the string and go to the next one.
         } else if c == '\n' {
             // I save the name of the media.
             res.push(tmp_string);
