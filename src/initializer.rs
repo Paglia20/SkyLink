@@ -313,6 +313,11 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     }
 }
 
+/*
+ho deciso di scambiare il chooser dei server media e text per dare priorità alla creazione di media server
+
+*/
+
 fn create_servers(servers: Vec<config::Server>,
                   handles: &mut Vec<JoinHandle<()>>,
                   server_command_send: &mut HashMap<NodeId, Sender<ServerCommand>>,
@@ -323,38 +328,41 @@ fn create_servers(servers: Vec<config::Server>,
                   files: Vec<String>) -> (bool, bool) {
 
     let length = servers.len();
-    let mut chooser = 0;
     let (mut chat_servers, mut media_servers) = (false, false);
 
     // I simulate how the choosing later would go, to understand how to divide the files.
+    //i will use also these to create servers correctly.
     let mut text_count = 0;
     let mut media_count = 0;
-    let mut test_chooser = 0;
-    for _ in 0..length {
-        if length >= 2 && test_chooser == 0 {
-            text_count += 1;
-            test_chooser += 1;
-        } else if length >= 2 && test_chooser == 1 {
+    let mut chat_count = 0;
+    if ALL_CHAT {
+        chat_count = length;
+    } else if ALL_CONTENT {
+        media_count = (length + 1) / 2; // Più media se dispari
+        text_count = length / 2;
+    } else {
+        let full_sets = length / 3;
+        let remainder = length % 3;
+
+        text_count = full_sets;
+        media_count = full_sets;
+        chat_count = full_sets;
+
+        if remainder == 1 {
+            chat_count += 1;
+        } else if remainder == 2 {
             media_count += 1;
-            test_chooser += 1;
-        } else {
-            test_chooser = 0;
+            text_count += 1;
         }
     }
 
+    let chunk_size = (files.len() + text_count - 1) / text_count;
+    let text_files: Vec<Vec<String>> = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    // If I don't have media-text servers, I set it to 0.
-    let files_per_server = if length >= 2 {
-        files.len() / max(text_count, media_count)
-    } else {
-        0
-    };
-
-    if files_per_server < 1 && media_count > 0 && text_count > 0 {
-        panic!("Files per server must be > 1");
+    let mut media_files: Vec<Vec<String>> = vec![vec![]; media_count];
+    for (i, file) in files.iter().enumerate() {
+        media_files[i % media_count].push(file.clone());
     }
-    // I create an offset for each couple of content servers.
-    let mut file_chooser = 0;
 
     for server in servers.into_iter() {
         // Adding the sender to this server to the senders of the Sim Contr.
@@ -377,21 +385,14 @@ fn create_servers(servers: Vec<config::Server>,
         // println!("Server {} has {:?}", server.id, server_send);
 
 
-        let mut server_files = Vec::new();
-        if chooser != 2 {
-            for i in 0..files_per_server {
-                server_files.push(files.get(i + file_chooser).unwrap().clone());
-            }
-        }
-
-
         // Create the thread of the server,
         // and add it to a Vec to be pushed afterward.
 
-        // I also need to choose which server to pick, to do that we:
-        // - Check if we have more than 2 server available, since text and media server can't exist alone.
-        // - Check a chooser variable, which at each iteration of the for creates a different server type.
-        if length >= 2 && chooser == 0 {
+        // I also need to choose which server to pick, to do that we use the var calculated before.
+
+        if text_count != 0 {
+            text_count = text_count - 1;
+            let my_files = text_files[text_count].clone();
             handles.push(thread::spawn(move || {
                 let mut server = server::server_text::TextServer::new(
                     server.id,
@@ -399,13 +400,16 @@ fn create_servers(servers: Vec<config::Server>,
                     node_event_send,
                     server_recv,
                     server_send,
-                    server_files
+                    my_files,
                 );
                 server.run();
             }));
-            chooser += 1;
-        } else if length >= 2 && chooser == 1 {
-            network_graph.entry(server.id).and_modify(|x|x.0 = MediaServer);
+            continue;
+        }
+        if media_count != 0 {
+            media_count = media_count - 1;
+            let my_files = media_files[media_count].clone();
+            network_graph.entry(server.id).and_modify(|x| x.0 = MediaServer);
 
             handles.push(thread::spawn(move || {
                 let mut server = server::server_media::MediaServer::new(
@@ -414,15 +418,16 @@ fn create_servers(servers: Vec<config::Server>,
                     node_event_send,
                     server_recv,
                     server_send,
-                    server_files
+                    my_files
                 );
                 server.run();
             }));
             media_servers = true;
-            file_chooser += files_per_server;
-            chooser += 1;
-        } else {
-            network_graph.entry(server.id).and_modify(|x|x.0 = ChatServer);
+            continue;
+        }
+        if chat_count != 0 {
+            chat_count = chat_count - 1;
+            network_graph.entry(server.id).and_modify(|x| x.0 = ChatServer);
 
             handles.push(thread::spawn(move || {
                 let mut chat_server = ChatServer::new(
@@ -436,8 +441,10 @@ fn create_servers(servers: Vec<config::Server>,
                 chat_server.run();
             }));
             chat_servers = true;
-            chooser = 0;
+            continue;
         }
+
+        println!("An error was encountered calculating the servers")
     }
 
     (chat_servers, media_servers)
@@ -566,11 +573,6 @@ fn create_clients(clients: Vec<config::Client>,
                 chooser = !chooser
             }
 
-            ///double check
-            if media_server && !chooser {
-                chooser = false;
-                // This avoids skipping of cycles if we can't create media clients.
-            }
         }
     } else {
         panic!("Clients can't work without servers");
