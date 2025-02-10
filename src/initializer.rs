@@ -321,16 +321,18 @@ fn create_servers(servers: Vec<config::Server>,
     if ALL_CHAT {
         chat_count = length;
     } else if ALL_CONTENT {
-        media_count = (length + 1) / 2; // Sum the average if it's odd
+        media_count = (length + 1) / 2; // Sum the average if it's odd; I want more media servers rather than text if I have to choose.
         text_count = length / 2;
     } else {
         let full_sets = length / 3;
         let remainder = length % 3;
 
+        // If I have less than 3 servers, they all would be 0.
         text_count = full_sets;
         media_count = full_sets;
         chat_count = full_sets;
 
+        // With the remainder I can also manage the cases with less than 3 servers.
         if remainder == 1 {
             chat_count += 1;
         } else if remainder == 2 {
@@ -338,9 +340,14 @@ fn create_servers(servers: Vec<config::Server>,
             text_count += 1;
         }
     }
+    if chat_count + media_count + text_count == 0 {
+        panic!("No servers are created");
+    }
+    
     let mut text_files: Vec<Vec<String>> = Vec::new();
     let mut media_files: Vec<Vec<String>>  = Vec::new();
 
+    // I only need to divide the text_files if I have media and text servers.
     if text_count + media_count > 0 {
         let chunk_size = text_count;
         text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
@@ -378,8 +385,9 @@ fn create_servers(servers: Vec<config::Server>,
         // I also need to choose which server to pick, to do that we use the var calculated before.
 
         if text_count != 0 {
-            text_count = text_count - 1;
+            text_count -= 1;
             let my_files = text_files[text_count].clone();
+            
             handles.push(thread::spawn(move || {
                 let mut server = server::server_text::TextServer::new(
                     server.id,
@@ -393,8 +401,10 @@ fn create_servers(servers: Vec<config::Server>,
             }));
             
         } else if media_count != 0 {
-            media_count = media_count - 1;
+            media_count -= 1;
             let my_files = media_files[media_count].clone();
+            
+            // I create the server as text_server for default, and change its type after.
             network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::MediaServer);
 
             handles.push(thread::spawn(move || {
@@ -411,7 +421,9 @@ fn create_servers(servers: Vec<config::Server>,
             media_servers = true;
             
         } else if chat_count != 0 {
-            chat_count = chat_count - 1;
+            chat_count -= 1;
+
+            // I create the server as text_server for default, and change its type after.
             network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::ChatServer);
 
             handles.push(thread::spawn(move || {
