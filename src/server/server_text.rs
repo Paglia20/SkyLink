@@ -4,7 +4,7 @@ use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::server::server_trait::{obtain_file_display_name, Server};
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodRequest, FloodResponse, Fragment, Nack, NackType, Packet};
@@ -17,7 +17,6 @@ pub struct TextServer {
     server_struct: ServerStruct,
     text_files: HashMap<u64, TextFile>,
     next_file_id: u64,
-    media_servers: HashSet<NodeId>,
 }
 
 impl NetworkEdge for TextServer {
@@ -55,14 +54,6 @@ impl NetworkEdge for TextServer {
                                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TextResponse(resp));
                                     self.send_message(msg, source_id);
                                     self.send_event(ServerEvent::IncompleteFile(self.get_src_id(), file_id));
-
-                                    // I ask again for the medias of all others media servers.
-                                    let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaRequest(MediaRequest::MediaList));
-                                    for dst in self.media_servers.clone().into_iter() {
-                                        self.send_message(message.clone(), dst);
-                                    }
-                                    // If I'm not already flooding, I might start a new flood in search of media servers.
-                                    self.flood();
                                 } else {
                                     // If the requested text file is ready, I created the response from it
                                     // MediaReferences (HashMap<u64, (String, Vec<NodeId>)>)
@@ -149,8 +140,6 @@ impl NetworkEdge for TextServer {
                             EdgeType::Server(ServerType::Content(ContentServerType::Media)) => {
                                 // I set it as a media server contact.
                                 self.update_node_state(from, 1);
-                                self.media_servers.insert(from);
-                                
                                 // Since I found a media server, I ask for his medias.
                                 let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaRequest(MediaRequest::MediaList));
                                 self.send_message(message, from);
@@ -219,7 +208,7 @@ impl NetworkEdge for TextServer {
 }
 
 impl NetworkEdgeErrors for TextServer {
-    fn check_type(&mut self, _id: NodeId) {
+    fn check_type(&mut self, id: NodeId) {
         // self.server_check_type(id);
         unimplemented!()
     }
@@ -287,7 +276,6 @@ impl Server for TextServer {
             server_struct,
             text_files,
             next_file_id: starting_id,
-            media_servers: HashSet::new(),
         }
     }
     fn remove_faulty_connection(&mut self, node: NodeId) {
