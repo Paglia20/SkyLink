@@ -170,6 +170,7 @@ impl Network {
                 self.graph[index].dropped_count += 1;
             }
         }
+        self.check_for_100();
     }
     pub fn update_state(&mut self, dst: NodeId, new_state: u8) {
         if let Some((state,_ )) = self.node_map.get_mut(&dst) {
@@ -274,6 +275,22 @@ impl Network {
                 // The state is unknown.
                 self.node_map.insert(dst_id, (0u8, index));
             }
+        }
+    }
+    ///double check
+    pub fn check_for_100(&mut self) {
+        let mut to_remove = Vec::new();
+        for (id, (_, index)) in &self.node_map {
+            let node = &self.graph[*index];
+            if node.reliability() < 0.03 {
+                to_remove.push(*id);
+            }
+            //should be 0.01 but i think it's good to keep it slightly higher
+        }
+
+        for id in to_remove {
+            self.remove_node(id);
+            println!("ATT: REMOVED {id}")
         }
     }
 }
