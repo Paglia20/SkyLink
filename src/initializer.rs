@@ -348,11 +348,11 @@ fn create_servers(servers: Vec<config::Server>,
     let mut media_files: Vec<Vec<String>>  = Vec::new();
 
     // I only need to divide the text_files if I have media and text servers.
-    if text_count + media_count > 0 {
-        let chunk_size = text_count;
+    if text_count + media_count > 1 {
+        let chunk_size = (files.len() + text_count - 1) / text_count;
         text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-        let chunk_size = media_count;
+        let chunk_size = (files.len() + media_count - 1) / media_count;
         media_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
 
