@@ -4,20 +4,17 @@ use crate::simulation_control::sim_control::Cause::Error;
 use crate::simulation_control::sim_daniel::ContentIdentifier::{Chat, Media, MediaToResolve, RegisterOrList, TextList};
 use crate::simulation_control::sim_daniel::NodeWindowScene::{AddSender, Crash, RemoveSender, SetPDR, ShowAuxiliaryLists, ShowContents, ShowDestinations, Start};
 use crate::simulation_control::sim_daniel::Scene::*;
-use crate::test::test_bench::create_packet;
 use eframe::egui;
 use egui::{Color32, FontId, RichText, TextureHandle, Vec2};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::{HashMap, HashSet};
 use std::vec;
 use wg_2024::controller::DroneEvent::{ControllerShortcut, PacketDropped};
-use wg_2024::network::NodeId;
-use wg_2024::packet::{NodeType};
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{Fragment, NodeType, Packet, PacketType};
 use wg_2024::packet::NodeType::*;
-use wg_2024::packet::PacketType::*;
 use egui_plot::{Bar, BarChart, Plot};
 use wg_2024::controller::DroneEvent;
-use crate::clients_gio::client_command::ClientEvent::SendMedia;
 use crate::DEBUG_MODE;
 use crate::server::server_command::ServerEvent;
 
@@ -234,13 +231,13 @@ impl MyApp {
             }
             ControllerShortcut(packet) => {
                 match packet.clone().pack_type {
-                    MsgFragment(_) => {
+                    PacketType::MsgFragment(_) => {
                         self.sim_contr.log.push_back(LogEntry::new(
                             Error,
                             packet.routing_header.hops[packet.routing_header.hop_index],
                             "Shortcut used for unusual packet type: fragment".to_string()))
                     }
-                    FloodRequest(_) => {
+                    PacketType::FloodRequest(_) => {
                         self.sim_contr.log.push_back(LogEntry::new(
                             Error,
                             packet.routing_header.hops[packet.routing_header.hop_index],
@@ -330,7 +327,9 @@ impl MyApp {
             ClientEvent::MissingDestForMedia(src, media) => {
                 self.sim_contr.storage.missing_media(src, media);
             }
-            _ => {/* degli altri niente */}
+            _ => {
+                // Nothing for the others.
+            }
         }
     }
 
@@ -427,20 +426,15 @@ impl MyApp {
 
 
                             if ui.button("test (graphically) chat with 0 and 11!").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle chat */
 
-                                self.sim_contr.storage.add_chat_text(0, 11, "diomerda".to_string());
-                                self.sim_contr.storage.add_chat_text(11, 0, "a te!".to_string());
-                                self.sim_contr.storage.add_chat_text(11, 0, "spero tu stia bene!".to_string());
-                                self.sim_contr.storage.add_chat_text(0, 11, "si sto bene!".to_string());
+                                self.sim_contr.storage.add_chat_text(0, 11, "Hi! How are you?".to_string());
+                                self.sim_contr.storage.add_chat_text(11, 0, "Fine thanks".to_string());
+                                self.sim_contr.storage.add_chat_text(11, 0, "Me too! Nice weather today".to_string());
+                                self.sim_contr.storage.add_chat_text(0, 11, "Charizard use flamethrower!".to_string());
                             }
 
                             if ui.button("test (graphically) media with 12").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle media */
                                 let v = include_bytes!("../test/contents_inputs/media_files/charmander.png").to_vec();
-
                                 self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "char.png".to_string(), v);
                             }
 
@@ -552,11 +546,11 @@ impl MyApp {
                                 .map(|(&id, vec)| {
                                     let length = vec.len() as f64;
                                     Bar::new(id as f64, length / max_value_drop * 10.0)
-                                        .width(0.8) // Normalizzazione
+                                        .width(0.8) // Normalization
                                 })
                                 .collect();
 
-                            let chart = BarChart::new(bars).name("Normalised lenght");
+                            let chart = BarChart::new(bars).name("Normalized length");
 
                             Plot::new("Histogram Drop")
                                 .view_aspect(2.0)
@@ -611,13 +605,13 @@ impl MyApp {
                                 .map(|(&id, vec)| {
                                     let length = *vec as f64;
                                     Bar::new(id as f64, length / max_value_flood * 10.0)
-                                        .width(0.8) // Normalizzazione
+                                        .width(0.8) // Normalization
                                         .fill(Color32::BLUE)
 
                                 })
                                 .collect();
 
-                            let chart = BarChart::new(bars).name("Normalised lenght");
+                            let chart = BarChart::new(bars).name("Normalized length");
 
                             Plot::new("Histogram Flood")
                                 .view_aspect(2.0)
@@ -646,7 +640,7 @@ impl MyApp {
     pub fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
-                ui.set_width(ui.available_width()); // Adatta il pannello alla larghezza disponibile
+                ui.set_width(ui.available_width()); // Adapts the panel to the available length.
                 ui.set_height(ui.available_height());
 
                 // Title
@@ -681,16 +675,16 @@ impl MyApp {
                         numbers_positions.push(egui::pos2(x_num, y_num));
                     }
                 } else {
-                    // Calcolo della griglia
+                    // I calculate the grid.
                     let total_items = self.nodes.len();
                     let grid_size = (total_items as f32).sqrt().ceil() as usize;
-                    let grid_spacing = 150.0; // Spaziatura tra i nodi,
+                    let grid_spacing = 150.0; // Spacing between nodes.
                     let grid_width = grid_size as f32 * grid_spacing;
                     let grid_height = grid_size as f32 * grid_spacing;
                     let grid_origin = egui::pos2(
                         center.x - grid_width / 2.3,
                         center.y - grid_height / 3.0,
-                    ); // Punto di partenza per la griglia (in alto a sinistra)
+                    ); // Starting point for the grid (top left).
 
                     for i in 0..total_items {
                         let row = i / grid_size;
@@ -718,7 +712,7 @@ impl MyApp {
                 }
 
                 for node in &mut self.nodes {
-                    if node.texture.is_none() { // Carica la texture solo se non è già stata caricata
+                    if node.texture.is_none() { // Uploads the textures.
                         node.texture = match node.node_type {
                             NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone_mod.png")),
                             NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
@@ -750,10 +744,10 @@ impl MyApp {
                             texture.id(),
                             rect,
                             egui::Rect::from_min_max(
-                                egui::pos2(0.0, 0.0), // UV in alto a sinistra
-                                egui::pos2(1.0, 1.0), // UV in basso a destra
+                                egui::pos2(0.0, 0.0), // UV in top left.
+                                egui::pos2(1.0, 1.0), // UV in bottom right.
                             ),
-                           circle_color, // Colore (modifica per trasparenza o effetti)
+                           circle_color, // Color (modifies per transparent or effects)
                         ));
 
                         if value.notify {
@@ -762,7 +756,7 @@ impl MyApp {
                         }
                     }
 
-                    // Disegna il testo
+                    // Draws the text.
                     painter.text(
                         numbers_positions[index],
                         egui::Align2::CENTER_CENTER,
@@ -771,7 +765,7 @@ impl MyApp {
                         Color32::WHITE,
                     );
 
-                    // Gestisci il clic
+                    // Managed the click.
                     if response.clicked() {
                         value.selected = true;
                     }
@@ -816,11 +810,11 @@ impl MyApp {
                                     }
 
                                     if ui.button("Close").clicked() {
-                                        node.selected = false; // Chiudi il popup
+                                        node.selected = false; // Closes the popup.
                                     }
 
                                     ui.separator();
-                                    // Qui puoi aggiungere ulteriori informazioni o controlli
+                                    // Here you can add more info or checks.
                                     self.sender_id = 0;
                                     ui.label( RichText::new("Log:".to_string())
                                                   .font(FontId::new(14.0, egui::FontFamily::Monospace))
@@ -833,7 +827,7 @@ impl MyApp {
                                                 for s in &self.sim_contr.log {
                                                     if s.get_id() == node.id {
                                                         ui.label(RichText::new(format!("{}", s))
-                                                                     .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                     .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Monospaced font
                                                                      .color(Color32::LIGHT_GRAY),
                                                         );
                                                         ui.separator();
@@ -928,7 +922,7 @@ impl MyApp {
                                                 .default_width(200.0) // Limit side panel width
                                                 .show_inside(ui, |ui| {
                                                     ui.label(RichText::new(format!("Log of {}:", node.id))
-                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                 .font(FontId::new(15.0, egui::FontFamily::Monospace)) // Monospaced font
                                                                  .color(Color32::WHITE),);
                                                     ui.separator();
 
@@ -939,7 +933,7 @@ impl MyApp {
                                                                 if s.get_id() == node.id {
                                                                     ui.label(
                                                                         RichText::new(format!("{}", s))
-                                                                            .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                            .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Monospaced font
                                                                             .color(Color32::LIGHT_RED),
                                                                     );
                                                                     ui.separator();
@@ -990,9 +984,9 @@ impl MyApp {
                                                     }
 
 
-                                                    if ui.button("Chiudi").clicked() {
+                                                    if ui.button("Close").clicked() {
                                                         node.content = None;
-                                                        node.selected = false; // Close the window
+                                                        node.selected = false; // Close the window.
                                                     }
 
                                                     if let Some(texture) = node.texture.clone() {
@@ -1007,7 +1001,7 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
+                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1076,17 +1070,17 @@ impl MyApp {
                                                                     ui.separator();
                                                                     if let Some(chat) = self.sim_contr.storage.retrieve_chat(node.id, dst){
                                                                         for (id, str) in chat {
-                                                                            // Layout per i messaggi
+                                                                            // Layout for all the messages.
                                                                             ui.horizontal(|ui| {
                                                                                 if id == node.id {
-                                                                                    // Messaggio inviato da questo nodo (destro)
+                                                                                    // Message sent from right Node.
                                                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                                                         ui.group(|ui| {
                                                                                             ui.label(str);
                                                                                         });
                                                                                     });
                                                                                 } else {
-                                                                                    // Messaggio ricevuto da un altro nodo (sinistro)
+                                                                                    // Message received from left Node.
                                                                                     ui.group(|ui| {
                                                                                         ui.label(format!("{id}: {str}"));
                                                                                     });
@@ -1109,20 +1103,20 @@ impl MyApp {
                                                                 }
                                                             }
 
-                                                            if ui.button("Chiudi").clicked() {
+                                                            if ui.button("Close").clicked() {
                                                                 node.content = None;
-                                                                node.node_window_scenes = Start; // Close the window
+                                                                node.node_window_scenes = Start; // Close the window.
                                                             }
                                                         }
 
                                                         ShowDestinations => {
                                                             let node_dst = match self.sim_contr.storage.destinations.get(&node.id){
-                                                                Some(dsts) => dsts.clone(),
+                                                                Some(destinations) => destinations.clone(),
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
                                                                 ui.label( RichText::new("My Servers are: ".to_string())
-                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Monospaced font.
                                                                               .color(Color32::GRAY),);
                                                                 ui.separator();
                                                                 for (id) in node_dst {
@@ -1149,15 +1143,15 @@ impl MyApp {
                                                                 }
                                                             }
 
-                                                            if ui.button("Chiudi").clicked() {
+                                                            if ui.button("Close").clicked() {
                                                                 node.content = None;
-                                                                node.node_window_scenes = Start; // Close the window
+                                                                node.node_window_scenes = Start; // Close the window.
                                                             }
                                                         }
 
                                                         ShowAuxiliaryLists => {
                                                             let node_reg = match self.sim_contr.storage.registrations.get(&node.id){
-                                                                Some(dsts) => dsts.clone(),
+                                                                Some(destinations) => destinations.clone(),
                                                                 None => Vec::new()
                                                             };
                                                             ui.label("Registered to Servers ".to_string());
@@ -1214,7 +1208,7 @@ impl MyApp {
                                                             for s in &self.sim_contr.log {
                                                                 if s.get_id() == node.id {
                                                                     ui.label(RichText::new(format!("{}", s))
-                                                                                 .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                                 .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Monospaced font.
                                                                                  .color(Color32::LIGHT_BLUE),
                                                                     );
                                                                     ui.separator();
@@ -1270,9 +1264,9 @@ impl MyApp {
                                                     }
 
 
-                                                    if ui.button("Chiudi").clicked() {
+                                                    if ui.button("Close").clicked() {
                                                         node.content = None;
-                                                        node.selected = false; // Close the window
+                                                        node.selected = false; // Close the window.
                                                     }
 
                                                     if let Some(texture) = node.texture.clone() {
@@ -1287,7 +1281,7 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
+                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1359,7 +1353,7 @@ impl MyApp {
                                                             } else {
                                                                 if let Some(Media(texture)) = node.content.clone() {
 
-                                                                    if ui.button("Chiudi Immagine").clicked() {
+                                                                    if ui.button("Close image").clicked() {
                                                                         node.content = None;
                                                                     }
 
@@ -1374,20 +1368,20 @@ impl MyApp {
                                                                         egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                                     };
 
-                                                                    //immagine scalata
+                                                                    // Scaled image.
                                                                     ui.image((texture.id(), new_size));
                                                                 }
                                                             }
 
-                                                            if ui.button("Chiudi").clicked() {
+                                                            if ui.button("Close").clicked() {
                                                                 node.content = None;
-                                                                node.node_window_scenes = Start; // Chiudi la finestra
+                                                                node.node_window_scenes = Start; // Close the window.
                                                             }
                                                         },
 
                                                         ShowDestinations => {
                                                             let node_dst = match self.sim_contr.storage.destinations.get(&node.id){
-                                                                Some(dsts) => dsts.clone(),
+                                                                Some(destinations) => destinations.clone(),
                                                                 None => HashSet::new()
                                                             };
                                                             if node.content.is_none() {
@@ -1407,9 +1401,9 @@ impl MyApp {
                                                                 }
                                                             }
 
-                                                            if ui.button("Chiudi").clicked() {
+                                                            if ui.button("Close").clicked() {
                                                                 node.content = None;
-                                                                node.node_window_scenes = Start; // Close the window
+                                                                node.node_window_scenes = Start; // Close the window.
                                                             }
                                                         },
 
@@ -1418,9 +1412,9 @@ impl MyApp {
                                                                 Some(texts) => texts.clone(),
                                                                 None => vec![],
                                                             };
-                                                            if ui.button("Chiudi").clicked() {
+                                                            if ui.button("Close").clicked() {
                                                                 node.content = None;
-                                                                node.node_window_scenes = Start; // Close the window
+                                                                node.node_window_scenes = Start; // Close the window.
                                                             }
                                                             ui.add_space(10.0);
 
@@ -1568,7 +1562,7 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
+                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1773,23 +1767,23 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
 }
 
 fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
-    // Legge l'immagine dal file system
+    // Reads image from file system.
     let image = image::open(path).expect(format!{"Failed to load image {path}"}.as_str()).to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
 
-    // Converte l'immagine in un formato compatibile con egui
+    // Converts image in a format compatible with the gui.
     let color_image = eframe::epaint::ColorImage::from_rgba_unmultiplied(size, image.as_flat_samples().as_slice());
     ctx.load_texture(path, color_image, egui::TextureOptions::default())
 }
 
 fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle> {
-    // Decodifica l'immagine usando il crate `image`
+    // Decodes image using `image` crate
     let decoded_image = image::load_from_memory(&image_data).ok()?;
 
-    let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
+    let rgba_image = decoded_image.to_rgba8(); // Converts to RGBA
     let (width, height) = rgba_image.dimensions(); // Get the actual dimensions
 
-    // Crea una texture da RGBA bytes
+    // Creates a texture from RGBA bytes
     let pixels: Vec<Color32> = rgba_image
         .pixels()
         .map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
@@ -1801,6 +1795,19 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
     };
 
 
-    // Carica la texture nel contesto di egui
-    Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
+    // Loads the texture in e-gui context
+    Some(ctx.load_texture("image", texture, egui::TextureOptions::default()))
+}
+
+fn create_packet(hops: Vec<NodeId>) -> Packet {
+    Packet {
+        pack_type: PacketType::MsgFragment(Fragment {
+            fragment_index: 0,
+            total_n_fragments: 1,
+            length: 128,
+            data: [1; 128],
+        }),
+        routing_header: SourceRoutingHeader { hop_index: 1, hops },
+        session_id: 1,
+    }
 }

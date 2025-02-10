@@ -169,7 +169,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     match drone_chooser {
         0 => {
             thread::spawn(move || {
-                // println!("FungiDrone is {}", drone_id);
                 let mut drone = FungiDrone::new(
                     drone_id,
                     node_event_send,
@@ -183,7 +182,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         1 => {
             thread::spawn(move || {
-                // println!("RustyDrone is {}", drone_id);
                 let mut drone = rusty_drones::RustyDrone::new(
                     drone_id,
                     node_event_send,
@@ -197,7 +195,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         2 => {
             thread::spawn(move || {
-                // println!("RustasticDrone is {}", drone_id);
                 let mut drone = RustasticDrone::new(
                     drone_id,
                     node_event_send,
@@ -211,7 +208,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         3 => {
             thread::spawn(move || {
-                // println!("RustDoIt is {}", drone_id);
                 let mut drone = RustDoIt::new(
                     drone_id,
                     node_event_send,
@@ -225,7 +221,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         4 => {
             thread::spawn(move || {
-                // println!("RustDrone is {}", drone_id);
                 let mut drone = wg_2024_rust::drone::RustDrone::new(
                     drone_id,
                     node_event_send,
@@ -239,7 +234,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         5 => {
             thread::spawn(move || {
-                // println!("LockheedRustin is {}", drone_id);
                 let mut drone = LockheedRustin::new(
                     drone_id,
                     node_event_send,
@@ -253,7 +247,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         6 => {
             thread::spawn(move || {
-                // println!("GetDroned is {}", drone_id);
                 let mut drone = GetDroned::new(
                     drone_id,
                     node_event_send,
@@ -267,7 +260,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         7 => {
             thread::spawn(move || {
-                // println!("RollingDrone is {}", drone_id);
                 let mut drone = RollingDrone::new(
                     drone_id,
                     node_event_send,
@@ -281,7 +273,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         8 => {
             thread::spawn(move || {
-                // println!("d_r_o_n_e is {}", drone_id);
                 let mut drone = d_r_o_n_e_drone::MyDrone::new(
                     drone_id,
                     node_event_send,
@@ -295,7 +286,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
         },
         _ => {
             thread::spawn(move || {
-                // println!("dr_ones is {}", drone_id);
                 let mut drone = dr_ones::Drone::new(
                     drone_id,
                     node_event_send,
@@ -310,10 +300,6 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     }
 }
 
-/*
-ho deciso di scambiare il chooser dei server media e text per dare priorità alla creazione di media server
-
-*/
 
 fn create_servers(servers: Vec<config::Server>,
                   handles: &mut Vec<JoinHandle<()>>,
@@ -328,14 +314,14 @@ fn create_servers(servers: Vec<config::Server>,
     let (mut chat_servers, mut media_servers) = (false, false);
 
     // I simulate how the choosing later would go, to understand how to divide the files.
-    //i will use also these to create servers correctly.
+    // I will use also these to create servers correctly.
     let mut text_count = 0;
     let mut media_count = 0;
     let mut chat_count = 0;
     if ALL_CHAT {
         chat_count = length;
     } else if ALL_CONTENT {
-        media_count = (length + 1) / 2; // Più media se dispari
+        media_count = (length + 1) / 2; // Sum the average if it's odd
         text_count = length / 2;
     } else {
         let full_sets = length / 3;
@@ -483,34 +469,9 @@ fn create_clients(clients: Vec<config::Client>,
                 .collect();
 
             //create the thread of the Client, and add it to a Vec to be pushed afterward
-            if ALL_CONTENT {
-                if CLIENT_GIO {
-                    handles.push(thread::spawn(move || {
-                        let mut client = clients_gio::web_browser::WebBrowser::new(
-                            client.id,
-                            contr_recv,
-                            node_event_send,
-                            client_recv,
-                            client_send,
-                        );
-                        client.run();
-                    }));
-                } else {
-                    //SAM MODE
-                    handles.push(thread::spawn(move || {
-                        let mut client = clients_sam::sam_web_browser_system::WebBrowser::new(
-                            client.id,
-                            contr_recv,
-                            node_event_send,
-                            client_recv,
-                            client_send,
-                        );
-                        client.run();
-                    }));
-                }
-                
-                // I want chat clients only if a chat server exists, and I can have at least two clients.
-            } else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
+            
+            // I want chat clients only if a chat server exists, and I can have at least two clients.
+            if (length >= 2 && chat_server && chooser) || ALL_CHAT {
                 network_graph.entry(client.id).and_modify(|x|x.0 = NodeNature::ChatClient);
                 if CLIENT_GIO {
                     handles.push(thread::spawn(move || {
@@ -655,7 +616,7 @@ fn check_bidirectional(conf: &Config) -> bool{
             // Search target node in drones.
             check_in_drones(conf, client.id, conn, &mut valid);
 
-            // We don't need to search it elsewhere becase only drones can be connected to clients.
+            // We don't need to search it elsewhere because only drones can be connected to clients.
 
             // If we find a non-bidirectional connection, we return false.
             if !valid {
@@ -687,39 +648,36 @@ fn check_bidirectional(conf: &Config) -> bool{
 
 fn check_in_drones(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
     for target in &conf.drone {
-        if target.id == conn {
-            if target.connected_node_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+        if check_edge_id(src, conn, valid, target.id, target.connected_node_ids.clone()) {
+            break
         }
     }
 }
 
 fn check_in_clients(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
-    for target in &conf.client {
-        if target.id == conn {
-            if target.connected_drone_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+    for client in &conf.client {
+        if check_edge_id(src, conn, valid, client.id, client.connected_drone_ids.clone()) {
+            break
         }
     }
 }
 
 fn check_in_server(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
-    for target in &conf.server {
-        if target.id == conn {
-            if target.connected_drone_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+    for server in &conf.server {
+        if check_edge_id(src, conn, valid, server.id, server.connected_drone_ids.clone()) {
+            break
         }
     }
+}
+
+fn check_edge_id(src: NodeId, conn: NodeId, valid: &mut bool, node_id: NodeId, connected_drone_ids: Vec<NodeId>) -> bool{
+    if node_id == conn {
+        if connected_drone_ids.contains(&src) {
+            *valid = true;
+            return true;
+        } else {
+            println!("Input File invalid for not double connection between: {} - {}", node_id, src);
+        }
+    }
+    false
 }
