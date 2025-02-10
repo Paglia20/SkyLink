@@ -15,7 +15,7 @@ mod clients_sam;
 pub const CLIENT_GIO: bool = true; // If false run with sam's
 
 pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = false;
+pub const ALL_CONTENT: bool = true;
 
 pub const DEBUG_MODE : bool = false;
 pub const NO_SERVER_MODE: bool = false; // Temporary why servers aren't finished.
@@ -27,12 +27,15 @@ fn main() {
     // let switch = Switch::Test;
 
     // Topology
-    let topology = "inputs/input_star_with_pdr_mixed_topology.toml";
+    let topology = "inputs/input.toml";
+    let topology2 = "inputs/input_3_peat.toml";
+    let topology3 = "inputs/input_flood.toml";
+
 
     match switch {
         Switch::SimDaniel => {
             println!("running {topology}");
-            if let Some((sim_contr, handles)) = initialize(topology) {
+            if let Some((sim_contr, handles)) = initialize(topology3) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();
