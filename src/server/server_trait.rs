@@ -25,7 +25,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             self.flood();
         }
         let mut count = 0;
-        loop {
+        while self.is_running() {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
@@ -37,12 +37,10 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.handle_packet(packet);
                     }
                 }
-                default => {}
             }
             if count > 255 {
                 // If I have some unchecked nodes I try to check them.
                 for i in self.get_unresolved().into_iter() {
-                    ///REMOVE
                     // println!("Unresolved {}", i);
                     self.server_check_type(i);
                 }
@@ -70,7 +68,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         };
         if !out && DEBUG_MODE{
             println!("{destination} state was not ok ");
-            // send nack?
         }
         out
     }
@@ -115,7 +112,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn server_send_single_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         match self.get_srh(destination) {
             None => {
-                ///REMOVE
                 // println!("Server {} doesn't have a path to {}", self.get_src_id(), destination);
 
                 // I first check if I have any path to the destination
@@ -125,7 +121,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 self.add_unsent_fragment(fragment, session_id, destination);
             }
             Some(srh) => {
-                /// REMOVE
                 // println!("Server {} has a path to {}", self.get_src_id(), destination);
 
                 let first_hop = srh.hops[1];
@@ -147,8 +142,8 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         }
                     }
                     None => {
-                        ///REMOVE
-                        println!("Server {} isn't connected with {}", self.get_src_id(), first_hop);
+                        // println!("Server {} isn't connected with {}", self.get_src_id(), first_hop);
+                        
                         // If I want to pass for a node that I don't have as a neighbour, I need to remove
                         // channels who contain it.
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
@@ -171,7 +166,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     None => {
                         // In case I don't have the neighbour, I send a Nack back.
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), *next_id));
-                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id), packet.session_id);
                     }
                     Some(sender) => {
                         match sender.try_send(packet.clone()) {
@@ -180,7 +175,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                                 self.send_event(ServerEvent::PacketSendingError(packet.clone()));
                                 match packet.pack_type.clone() {
                                     PacketType::MsgFragment(_) => {
-                                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id));
+                                        self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(*next_id), packet.session_id);
                                     },
                                     PacketType::FloodRequest(_) => {
                                         unreachable!()
@@ -199,7 +194,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                 }
             },
             None => {
-                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::UnexpectedRecipient(self.get_src_id()));
+                self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::UnexpectedRecipient(self.get_src_id()), packet.session_id);
             }
         }
     }
@@ -297,9 +292,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
             PacketType::FloodResponse(flood_resp) => {
                 let dst = packet.routing_header.source().unwrap();
                 if self.save_flood_response(flood_resp) {
-                    ///REMOVE
-
-                    println!("server {} sent type request to {}", self.get_src_id(), dst);
+                    // println!("server {} sent type request to {}", self.get_src_id(), dst);
 
                     
                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(TypeExchange::TypeRequest {from: self.get_src_id()}));
@@ -390,7 +383,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     
     fn server_check_type(&mut self, dst: NodeId) {
         if self.can_type_check(dst) {
-            ///REMOVE
             // println!("Server 14 needs to check state of {}", dst);
             let req = TypeExchange::TypeRequest { from: self.get_src_id() };
             let message = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TypeExchange(req));
@@ -402,27 +394,36 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         }
     }
     
-    fn server_send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+    fn server_send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
         let new_nack = Nack{
             fragment_index: 0,
             nack_type: nack,
         };
+        
         match self.get_srh(dst) {
             None => {
                 self.send_event(ServerEvent::MissingDestination(self.get_src_id(), dst));
+                let srh = SourceRoutingHeader::new(vec![dst], 1);
+                let packet = Packet{
+                    routing_header: srh,
+                    session_id,
+                    pack_type: PacketType::Nack(new_nack),
+                };
+                self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
             }
             Some(srh) => {
                 let first_hop = srh.next_hop().unwrap_or(self.get_src_id());
 
                 let packet = Packet{
                     routing_header: srh,
-                    session_id: self.get_session_id(),
+                    session_id,
                     pack_type: PacketType::Nack(new_nack),
                 };
-
+                
                 match self.get_packet_sender(&first_hop) {
                     None => {
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), dst));
+                        self.send_event(ServerEvent::ControllerShortcut(DroneEvent::ControllerShortcut(packet)));
                     }
                     Some(sender) => {
                         self.send_ack_and_nack(sender.clone(), packet);
@@ -461,9 +462,6 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         self.flood();
         for (fragment, identifier) in to_process.into_iter() {
             self.server_send_single_fragment(fragment.clone(), identifier.2, identifier.0);
-            /*} else {
-                self.add_unsent_fragment(fragment, identifier.0, identifier.2);
-            }*/
         }
     }
     
@@ -484,6 +482,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn can_type_check(&mut self, dst: NodeId) -> bool;
     fn type_checked(&mut self, src: NodeId);
     fn add_destination_without_path(&mut self, dst: NodeId);
+    fn is_running(&self) -> bool;
     fn get_command_recv(&self) -> Receiver<ServerCommand>;
     fn get_packet_recv(&self) -> Receiver<Packet>;
     fn get_fragments_hm(&mut self) -> &mut HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>;
@@ -493,4 +492,22 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
     fn get_unresolved(&self) -> Vec<NodeId>;
     fn get_fragment_to_process(&self) -> Vec<(Fragment, (u64, NodeId, NodeId))>;
     fn get_server_type(&self) -> ServerType;
+}
+
+// Function used by text and media files to obtain a string name usable for display.
+pub fn obtain_file_display_name(file_path: String) -> String {
+    let mut res = String::new();
+    for c in file_path.chars() {
+        // We keep creating a new string until we're inside the last word before the file type.
+        if c == '/' {
+            res = String::new();
+        } else if c == '.' {
+            // When we reach '.', we've reached the end of the name, and we stop before reading the file type;
+            // Ignoring the file type allows for a uniform display, independent of what the file type actually is.
+            break;
+        } else {
+            res.push(c);
+        }
+    }
+    res
 }

@@ -19,6 +19,9 @@ use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
 use crate::message::ChatRequest::{ClientList, Register, SendMessage};
 use crate::message::ContentType::*;
+use rodio::{Decoder, OutputStream, Sink};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read};
 
 type ChatMsg = (NodeId, String);
 
@@ -37,6 +40,8 @@ pub struct ChatClient {
     ///Chat client specks
     ///All Servers a Client is registered to
     registered_to: HashSet<NodeId>,
+
+    sound: Vec<u8>,
 }
 
 impl NetworkEdge for ChatClient {
@@ -166,6 +171,8 @@ impl NetworkEdge for ChatClient {
                         //here is from the src of the text, so first parameter supplied is from!
                         self.send_event(ReceivedChatText(from, self.client_base.get_src_id(), message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
+
+                        self.play_notification_sound();
                     }
                     ChatResponse::ClientNotFound(node) => {
                         //update contact list
@@ -195,11 +202,8 @@ impl NetworkEdge for ChatClient {
                     TypeExchange::TypeResponse { from, edge_type } => {
                         match edge_type{
                             EdgeType::Server(ServerType::Chat) => {
-                                println!("type res chat arrived in {} of {from}", self.client_base.get_src_id());
 
                                 self.client_base.network().update_state(from, 1);
-                                
-                                println!("state of {} is {} (Should be 1)", from, self.client_base.network().get_state(&from).unwrap());
                                 self.send_event(SendDestinations(self.client_base.get_src_id(), from));
                             },
 
@@ -274,8 +278,8 @@ impl NetworkEdgeErrors for ChatClient {
         self.client_base.send_nack_message(dst, nack);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.client_base.send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -287,11 +291,17 @@ impl ClientTrait for ChatClient {
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
+        //load notification
+        let mut file = File::open("src/clients_gio/notification.mp3").unwrap();
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).unwrap();
+
         ChatClient {
             client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
             contact_list: HashMap::new(),
             all_messages: HashMap::new(),
             registered_to: HashSet::new(),
+            sound: buffer,
         }
     }
 
@@ -300,7 +310,7 @@ impl ClientTrait for ChatClient {
     fn run(&mut self) {
         let mut count = 0;
 
-        loop {
+        while self.client_base.is_running() {
             select_biased! {
                 recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
@@ -356,10 +366,12 @@ impl ClientTrait for ChatClient {
             ClientCommand::SendMSG(id, str) => {
                 self.send_chat_text(id, str);
             }
+            ClientCommand::InstantCrash => {
+                self.client_base.crash();
+            }
 
-            //ignore other commands cause are webclients commands
             _ =>{
-
+                //ignore other commands cause are webclients commands
             }
         }
     }
@@ -442,5 +454,18 @@ impl ChatClient {
             self.send_event(ClientEvent::MissingContacts(src,id))
         }
 
+    }
+
+    fn play_notification_sound(&self) {
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+
+
+        let cursor = Cursor::new(self.sound.clone());
+        let source = Decoder::new(BufReader::new(cursor)).unwrap();
+
+        // Riproduce il suono
+        sink.append(source);
+        sink.sleep_until_end();
     }
 }

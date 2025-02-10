@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
-use wg_2024::controller::DroneCommand::{AddSender, RemoveSender};
+use wg_2024::controller::DroneCommand::{AddSender, Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::drone::*;
@@ -22,16 +22,18 @@ pub struct SimulationControl {
     client_command_senders: HashMap<NodeId, Sender<ClientCommand>>,
     server_command_senders: HashMap<NodeId, Sender<ServerCommand>>,
 
-    pub(crate) drone_event_recv: Receiver<DroneEvent>,
-    pub(crate) client_event_recv: Receiver<ClientEvent>,
-    pub(crate) server_event_recv: Receiver<ServerEvent>,
+    pub drone_event_recv: Receiver<DroneEvent>,
+    pub client_event_recv: Receiver<ClientEvent>,
+    pub server_event_recv: Receiver<ServerEvent>,
+
 
     pub channel_for_drone: Sender<DroneEvent>,
     pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>,
     pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
     pub(crate) log: VecDeque<LogEntry>,
 
-    pub(crate) storage: SimulationStorage,
+
+    pub storage: SimulationStorage,
 
 }
 
@@ -229,8 +231,6 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
-            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
-            // todo!() daniel
             ServerEvent::LostFragment(_session_id, node_id, fragment_index) => {
                 let new_log = LogEntry{
                     cause: Error,
@@ -315,7 +315,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: Error,
                     node_id: server_id,
-                    message: format!("COMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}", completed_files, incomplete_files)
+                    message: format!("\nCOMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}\n", completed_files, incomplete_files)
                 };
                 self.log.push_back(new_log);
             }
@@ -340,7 +340,7 @@ impl SimulationControl {
                     cause: Error,
                     node_id: server_id,
                     message: format!(
-                        "{}",
+                        "\n{}\n",
                         medias_ids_and_names.iter()
                             .map(|(num, text)| format!("media id: {}, media name: {}", num, text))
                             .collect::<Vec<String>>()
@@ -566,6 +566,18 @@ impl SimulationControl {
 
         } else {
             println!("drone {} not found in the network.", id);
+        }
+    }
+
+    pub(crate) fn crash_all(&mut self) {
+        for (_, sender) in &self.drone_command_senders {
+            sender.try_send(Crash).unwrap()
+        }
+        for (_, sender) in &self.server_command_senders {
+            sender.try_send(ServerCommand::InstantCrash).unwrap()
+        }
+        for (_, sender) in &self.client_command_senders {
+            sender.try_send(ClientCommand::InstantCrash).unwrap()
         }
     }
 
@@ -1186,30 +1198,6 @@ impl Debug for LogEntry {
         write!(f, "id: {}", self.node_id)
     }
 }
-
-
-
-
-
-
-/*
-
-let mut first = true;
-for connection in node.connections.clone() {
-if !first {
-connections.push_str(", ");
-}
-first = false;
-connections.push_str(&connection.to_string());
-}
-
-ui.label(RichText::new(format!("Connected to: {}", connections))
-                .font(FontId::new(15.0, egui::FontFamily::Monospace))
-                .color(Color32::WHITE),);
-
- */
-
-
 
 
 

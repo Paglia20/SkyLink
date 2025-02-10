@@ -85,7 +85,7 @@ impl NetworkEdge for ChatServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        self.type_checked(from);
+                        // self.type_checked(from);
                     }
                 }
             }
@@ -101,17 +101,22 @@ impl NetworkEdge for ChatServer {
 
     }
 
-    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
+    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {
+        unimplemented!()
+    }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack)  {
-        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, _packet_session_id: u64, _nack: Nack)  {
+        // self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+        unimplemented!()
     }
 
-    fn send_ack(&mut self, _: Packet, _: u64) {}
+    fn send_ack(&mut self, _: Packet, _: u64) {
+        unimplemented!()
+    }
 
     fn flood(&mut self) {
         self.start_flood();
@@ -131,13 +136,13 @@ impl NetworkEdge for ChatServer {
 
     fn remove_sender(&mut self, id: NodeId) {
         self.server_struct.packet_send.remove(&id);
-        // Currently unused I think;
     }
 }
 
 impl NetworkEdgeErrors for ChatServer {
-    fn check_type(&mut self, id: NodeId) {
-        self.server_check_type(id);
+    fn check_type(&mut self, _id: NodeId) {
+        // self.server_check_type(id);
+        unimplemented!()
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
@@ -148,8 +153,8 @@ impl NetworkEdgeErrors for ChatServer {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.server_send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.server_send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -181,6 +186,9 @@ impl Server for ChatServer {
             }
             ServerCommand::Flood =>{
                 self.flood();
+            },
+            ServerCommand::InstantCrash => {
+                self.server_struct.is_running = false;
             }
             ServerCommand::AddFile(file) => {
                 // I notify the sim controller that I shouldn't have received this command.
@@ -210,14 +218,12 @@ impl Server for ChatServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
-        /// REMOVE
-        println!("update_node_state: source_id={:?}, value={:?}", source_id, value);
+        // println!("update_node_state: source_id={:?}, value={:?}", source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
-
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
@@ -235,6 +241,9 @@ impl Server for ChatServer {
     }
     fn add_destination_without_path(&mut self, dst: NodeId) {
         self.server_struct.add_destination_without_path(dst);
+    }
+    fn is_running(&self) -> bool {
+        self.server_struct.is_running
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()

@@ -1,10 +1,8 @@
 use crate::sim_control::SimulationControl;
-use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
-use std::cmp::max;
 use fungi_drone::FungiDrone;
 use getdroned::GetDroned;
 use lockheedrustin_drone::LockheedRustin;
@@ -17,7 +15,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, DEBUG_MODE, NO_SERVER_MODE};
+use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, NO_SERVER_MODE};
 use crate::clients_sam;
 use crate::clients_gio;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
@@ -27,7 +25,6 @@ use crate::server::server_trait::*;
 use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_daniel::NodeNature;
-use crate::simulation_control::sim_daniel::NodeNature::*;
 
 
 pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)> {
@@ -94,19 +91,20 @@ pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)
             // println!("Drone {} has {:?}", drone.id, drone_send);
 
             //create the thread of the drone, and add it to a Vec to be pushed afterward
-            // handles.push(thread::spawn(move || {
-            //     let mut drone = SkyLinkDrone::new(
-            //         drone.id,
-            //         node_event_send,
-            //         contr_recv,
-            //         drone_recv,
-            //         drone_send,
-            //         drone.pdr,
-            //     );
-            //
-            //     drone.run();
-            // }));
             handles.push(create_drone(drone_chooser, drone.id, node_event_send, contr_recv, drone_recv, drone_send, drone.pdr));
+          
+            /*handles.push(thread::spawn(move || {
+                let mut drone = SkyLinkDrone::new(
+                    drone.id,
+                    node_event_send,
+                    contr_recv,
+                    drone_recv,
+                    drone_send,
+                    drone.pdr,
+                );
+            
+                drone.run();
+            }));*/
 
             if drone_chooser >= 9 {
                 drone_chooser = 0;
@@ -302,6 +300,7 @@ fn create_drone(drone_chooser: u8, drone_id: NodeId, node_event_send: Sender<Dro
     }
 }
 
+
 fn create_servers(servers: Vec<config::Server>,
                   handles: &mut Vec<JoinHandle<()>>,
                   server_command_send: &mut HashMap<NodeId, Sender<ServerCommand>>,
@@ -312,38 +311,45 @@ fn create_servers(servers: Vec<config::Server>,
                   files: Vec<String>) -> (bool, bool) {
 
     let length = servers.len();
-    let mut chooser = 0;
     let (mut chat_servers, mut media_servers) = (false, false);
 
     // I simulate how the choosing later would go, to understand how to divide the files.
+    // I will use also these to create servers correctly.
     let mut text_count = 0;
     let mut media_count = 0;
-    let mut test_chooser = 0;
-    for _ in 0..length {
-        if length >= 2 && test_chooser == 0 {
-            text_count += 1;
-            test_chooser += 1;
-        } else if length >= 2 && test_chooser == 1 {
+    let mut chat_count = 0;
+    if ALL_CHAT {
+        chat_count = length;
+    } else if ALL_CONTENT {
+        media_count = (length + 1) / 2; // Sum the average if it's odd
+        text_count = length / 2;
+    } else {
+        let full_sets = length / 3;
+        let remainder = length % 3;
+
+        text_count = full_sets;
+        media_count = full_sets;
+        chat_count = full_sets;
+
+        if remainder == 1 {
+            chat_count += 1;
+        } else if remainder == 2 {
             media_count += 1;
-            test_chooser += 1;
-        } else {
-            test_chooser = 0;
+            text_count += 1;
         }
     }
+    let mut text_files: Vec<Vec<String>> = Vec::new();
+    let mut media_files: Vec<Vec<String>>  = Vec::new();
 
+    if text_count + media_count > 0 {
+        let chunk_size = (files.len() + text_count - 1) / text_count;
+        text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    // If I don't have media-text servers, I set it to 0.
-    let files_per_server = if length >= 2 {
-        files.len() / max(text_count, media_count)
-    } else {
-        0
-    };
-
-    if files_per_server < 1 && media_count > 0 && text_count > 0 {
-        panic!("Files per server must be > 1");
+        media_files= vec![vec![]; media_count];
+        for (i, file) in files.iter().enumerate() {
+            media_files[i % media_count].push(file.clone());
+        }
     }
-    // I create an offset for each couple of content servers.
-    let mut file_chooser = 0;
 
     for server in servers.into_iter() {
         // Adding the sender to this server to the senders of the Sim Contr.
@@ -353,7 +359,7 @@ fn create_servers(servers: Vec<config::Server>,
         // Give the server a copy of the sender of events to the Sim Contr.
         let node_event_send = server_event_send.clone();
 
-        network_graph.insert(server.id, (TextServer, HashSet::from_iter(server.connected_drone_ids.clone())));
+        network_graph.insert(server.id, (NodeNature::TextServer, HashSet::from_iter(server.connected_drone_ids.clone())));
 
         // Take the channels necessary to this client.
         let server_recv = packet_receivers.remove(&server.id).unwrap();
@@ -366,19 +372,14 @@ fn create_servers(servers: Vec<config::Server>,
         // println!("Server {} has {:?}", server.id, server_send);
 
 
-        let mut server_files = Vec::new();
-        for i in 0..files_per_server {
-            server_files.push(files.get(i + file_chooser).unwrap().clone());
-        }
-
-
         // Create the thread of the server,
         // and add it to a Vec to be pushed afterward.
 
-        // I also need to choose which server to pick, to do that we:
-        // - Check if we have more than 2 server available, since text and media server can't exist alone.
-        // - Check a chooser variable, which at each iteration of the for creates a different server type.
-        if length >= 2 && chooser == 0 {
+        // I also need to choose which server to pick, to do that we use the var calculated before.
+
+        if text_count != 0 {
+            text_count = text_count - 1;
+            let my_files = text_files[text_count].clone();
             handles.push(thread::spawn(move || {
                 let mut server = server::server_text::TextServer::new(
                     server.id,
@@ -386,13 +387,15 @@ fn create_servers(servers: Vec<config::Server>,
                     node_event_send,
                     server_recv,
                     server_send,
-                    server_files
+                    my_files,
                 );
                 server.run();
             }));
-            chooser += 1;
-        } else if length >= 2 && chooser == 1 {
-            network_graph.entry(server.id).and_modify(|x|x.0 = MediaServer);
+            
+        } else if media_count != 0 {
+            media_count = media_count - 1;
+            let my_files = media_files[media_count].clone();
+            network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::MediaServer);
 
             handles.push(thread::spawn(move || {
                 let mut server = server::server_media::MediaServer::new(
@@ -401,15 +404,15 @@ fn create_servers(servers: Vec<config::Server>,
                     node_event_send,
                     server_recv,
                     server_send,
-                    server_files
+                    my_files
                 );
                 server.run();
             }));
             media_servers = true;
-            file_chooser += files_per_server;
-            chooser += 1;
-        } else {
-            network_graph.entry(server.id).and_modify(|x|x.0 = ChatServer);
+            
+        } else if chat_count != 0 {
+            chat_count = chat_count - 1;
+            network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::ChatServer);
 
             handles.push(thread::spawn(move || {
                 let mut chat_server = ChatServer::new(
@@ -423,7 +426,9 @@ fn create_servers(servers: Vec<config::Server>,
                 chat_server.run();
             }));
             chat_servers = true;
-            chooser = 0;
+            
+        } else {
+            println!("An error was encountered calculating the servers")
         }
     }
 
@@ -464,34 +469,9 @@ fn create_clients(clients: Vec<config::Client>,
                 .collect();
 
             //create the thread of the Client, and add it to a Vec to be pushed afterward
-            if ALL_CONTENT {
-                if CLIENT_GIO {
-                    handles.push(thread::spawn(move || {
-                        let mut client = clients_gio::web_browser::WebBrowser::new(
-                            client.id,
-                            contr_recv,
-                            node_event_send,
-                            client_recv,
-                            client_send,
-                        );
-                        client.run();
-                    }));
-                } else {
-                    //SAM MODE
-                    handles.push(thread::spawn(move || {
-                        let mut client = clients_sam::sam_web_browser_system::WebBrowser::new(
-                            client.id,
-                            contr_recv,
-                            node_event_send,
-                            client_recv,
-                            client_send,
-                        );
-                        client.run();
-                    }));
-                }
-            }
-
-            else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
+            
+            // I want chat clients only if a chat server exists, and I can have at least two clients.
+            if (length >= 2 && chat_server && chooser) || ALL_CHAT {
                 network_graph.entry(client.id).and_modify(|x|x.0 = NodeNature::ChatClient);
                 if CLIENT_GIO {
                     handles.push(thread::spawn(move || {
@@ -504,7 +484,7 @@ fn create_clients(clients: Vec<config::Client>,
                         );
                         client.run();
                     }));
-                }else {
+                } else {
                     //SAM MODE
                     handles.push(thread::spawn(move || {
                         let mut client = clients_sam::sam_client_chat_system::ChatClient::new(
@@ -516,14 +496,15 @@ fn create_clients(clients: Vec<config::Client>,
                         );
                         client.run();
                     }));
-
-
                 }
 
-                chooser = !chooser
-            } else {
-                //create media client
+                // In case I don't have media servers, I don't change chooser, to create another chat client.
+                if media_server {
+                    chooser = !chooser;
+                }
 
+                // Media servers can work without other clients, but still need a media server.
+            } else if media_server || ALL_CONTENT {
                 if CLIENT_GIO {
                     handles.push(thread::spawn(move || {
                         let mut client = clients_gio::web_browser::WebBrowser::new(
@@ -549,13 +530,14 @@ fn create_clients(clients: Vec<config::Client>,
                     }));
                 }
 
-                chooser = !chooser
+                // In case I don't have chat servers, I don't change chooser, to create another media client.
+                if chat_server {
+                    chooser = !chooser;
+                }
+            } else {
+                panic!("Wrong client-server configuration for clients to work");
             }
-
-            if media_server && !chooser {
-                chooser = true;
-                // This avoids skipping of cycles if we can't create media clients.
-            }
+            
         }
     } else {
         panic!("Clients can't work without servers");
@@ -563,6 +545,10 @@ fn create_clients(clients: Vec<config::Client>,
 }
 
 fn check_config(conf: &Config) -> bool {
+    /*let o = check_bidirectional(conf);
+    let i = check_edges(conf);
+    println!("{o} - {i}");*/
+    
     check_bidirectional(conf) && check_edges(conf)
 }
 
@@ -571,20 +557,16 @@ fn check_edges(conf: &Config) -> bool{
     let all_client_ids: Vec<NodeId> = conf.client.iter().map(|z| z.id).collect();
 
     if !NO_SERVER_MODE {
-        // Untill we don't have servers I don't check if they are rightfully connected.
+        // Until we don't have servers I don't check if they are rightfully connected.
 
         for server in &conf.server {
             if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
-                if DEBUG_MODE {
-                    println!("server {} has not enough connections, or has itself as one", server.id)
-                }
+                println!("server {} has not enough connections, or has itself as one", server.id);
                 return false
             }
             for connection in &server.connected_drone_ids {
                 if all_client_ids.contains(connection) || all_server_ids.contains(connection) {
-                    if DEBUG_MODE {
-                        println!("server {} is wrongly connected to {connection}", server.id)
-                    }
+                    println!("server {} is wrongly connected to {connection}", server.id);
                     return false;
                 }
             }
@@ -597,9 +579,8 @@ fn check_edges(conf: &Config) -> bool{
         }
         for connection in &client.connected_drone_ids {
             if all_client_ids.contains(connection) || all_server_ids.contains(connection)  {
-                if DEBUG_MODE{
-                    println!("client {} is wrongly connected to {connection}", client.id)
-                }
+                println!("client {} is wrongly connected to {connection}", client.id);
+
                 return false;
             }
         }
@@ -635,7 +616,7 @@ fn check_bidirectional(conf: &Config) -> bool{
             // Search target node in drones.
             check_in_drones(conf, client.id, conn, &mut valid);
 
-            // We don't need to search it elsewhere becase only drones can be connected to clients.
+            // We don't need to search it elsewhere because only drones can be connected to clients.
 
             // If we find a non-bidirectional connection, we return false.
             if !valid {
@@ -667,39 +648,36 @@ fn check_bidirectional(conf: &Config) -> bool{
 
 fn check_in_drones(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
     for target in &conf.drone {
-        if target.id == conn {
-            if target.connected_node_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+        if check_edge_id(src, conn, valid, target.id, target.connected_node_ids.clone()) {
+            break
         }
     }
 }
 
 fn check_in_clients(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
-    for target in &conf.client {
-        if target.id == conn {
-            if target.connected_drone_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+    for client in &conf.client {
+        if check_edge_id(src, conn, valid, client.id, client.connected_drone_ids.clone()) {
+            break
         }
     }
 }
 
 fn check_in_server(conf: &Config, src:NodeId, conn: NodeId, valid: &mut bool){
-    for target in &conf.server {
-        if target.id == conn {
-            if target.connected_drone_ids.contains(&src) {
-                *valid = true;
-                break;
-            } else {
-                println!("Input File invalid for not double connection between: {} - {}",target.id, src);
-            }
+    for server in &conf.server {
+        if check_edge_id(src, conn, valid, server.id, server.connected_drone_ids.clone()) {
+            break
         }
     }
+}
+
+fn check_edge_id(src: NodeId, conn: NodeId, valid: &mut bool, node_id: NodeId, connected_drone_ids: Vec<NodeId>) -> bool{
+    if node_id == conn {
+        if connected_drone_ids.contains(&src) {
+            *valid = true;
+            return true;
+        } else {
+            println!("Input File invalid for not double connection between: {} - {}", node_id, src);
+        }
+    }
+    false
 }

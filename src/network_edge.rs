@@ -12,7 +12,6 @@ pub trait NetworkEdge {
     fn fragment_message(message: &Message) -> Vec<Fragment> {
         let all_bytes = message.stringify_content().into_bytes();
         let total_n_fragments = (all_bytes.len() as u64).div_ceil(128);
-        // I divide rounding up with div_ceil
 
         let mut out = Vec::new();
         for (frag_id, chunk) in all_bytes.chunks(128).enumerate() {
@@ -185,7 +184,7 @@ pub trait NetworkEdgeErrors: NetworkEdge {
 
     fn send_nack_message(&mut self, dst: NodeId, nack: Message); //for edges nack
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType);  //for drone nack
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64);  //for drone nack
 
     fn create_nack(&mut self, nack_type: EdgeNackType) -> Message {
         Message{

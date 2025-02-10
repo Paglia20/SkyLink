@@ -1,14 +1,13 @@
 /*
-it's just a proposal:
-the idea behind is to have high efficient access to the graph thanks to the hashmap.
-the hashmap has a key role also because it provides info about the state(as it was before).
-the state follow the following rule:
+The idea behind is to have high efficient access to the graph thanks to the Hashmap.
+The HashMap has a key role also because it provides info about the state.
+The state follow the following rule:
 (0) - an edge that is still to be resolved.
 (1) - an edge you CAN contact
 (2) - an edge you cannot contact
 
 
-state will be accessed likely only by the edges, while nodeIndex is for the access to the graph (that is done automatically).
+state will be accessed likely only by the edges, while nodeIndex is for the access to the graph (that is done automatically);
 hence, state checks will still be performed by the edges!
 */
 
@@ -98,8 +97,7 @@ impl Network {
             prev_index = Some(node_index);
         }
     }
-
-
+    
     pub fn get_indexes_from_vec(&self, ids: Vec<NodeId>) -> Option<Vec<NodeIndex>> {
         ids.iter()
             .map(|id| self.node_map.get(id).map(|&(_, idx)| idx))
@@ -114,7 +112,7 @@ impl Network {
     }
 
 
-    ///find the best path to dst from start
+    /// Find the best path to dst from start
     pub fn best_path(&self, start: &NodeId, end: &NodeId) -> Option<(Vec<NodeId>, f64)> {
         let start_index = self.node_map.get(start)?.1;
         let end_index = self.node_map.get(end)?.1;
@@ -170,6 +168,7 @@ impl Network {
                 self.graph[index].dropped_count += 1;
             }
         }
+        self.check_for_100();
     }
     pub fn update_state(&mut self, dst: NodeId, new_state: u8) {
         if let Some((state,_ )) = self.node_map.get_mut(&dst) {
@@ -274,6 +273,21 @@ impl Network {
                 // The state is unknown.
                 self.node_map.insert(dst_id, (0u8, index));
             }
+        }
+    }
+    ///double check
+    pub fn check_for_100(&mut self) {
+        let mut to_remove = Vec::new();
+        for (id, (_, index)) in &self.node_map {
+            let node = &self.graph[*index];
+            if node.reliability() < 0.02 {
+                to_remove.push(*id);
+            }
+            // Should be 0.01, but it's probably good to keep it slightly higher.
+        }
+
+        for id in to_remove {
+            self.remove_node(id);
         }
     }
 }

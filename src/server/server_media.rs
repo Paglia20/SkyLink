@@ -1,7 +1,7 @@
 use crate::message::{ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, TextResponse, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
-use crate::server::server_trait::Server;
+use crate::server::server_trait::{obtain_file_display_name, Server};
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -14,6 +14,7 @@ use crate::server::server_struct::ServerStruct;
 pub struct MediaServer {
     server_struct: ServerStruct,
     media_files: HashMap<u64, (String, Vec<u8>)>,
+    media_is_known: HashMap<String, u64>,
     next_file_id: u64,
 }
 
@@ -33,22 +34,22 @@ impl NetworkEdge for MediaServer {
                 let source_id = message.source_id;
                 match media_request {
                     MediaRequest::MediaList => {
-
+                        // MediaList(Vec<(u64, String)>)
                         let resp = MediaResponse::MediaList(self
-                            .media_files
+                            .media_is_known
                             .iter()
-                            .map(|(x,y)| (*x, y.0.clone()))
-                            .collect()
+                            .map(|(x,y)| (*y, x.clone()))
+                            .collect::<Vec<_>>()
                         );
 
                         let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaResponse(resp));
                         self.send_message(msg, source_id);
                     },
                     MediaRequest::Media(media_id) => {
-                        ///remove
-                        println!("arrived media request");
+                        // println!("arrived media request");
                         match self.media_files.get(&media_id) {
                             Some(entry) => {
+                                // Media(u64, String, Vec<u8>)
                                 let resp = MediaResponse::Media(media_id, entry.0.clone(), entry.1.clone());
                                 let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::MediaResponse(resp));
                                 self.send_message(msg, source_id);
@@ -91,7 +92,7 @@ impl NetworkEdge for MediaServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        //self.type_checked(from);
+                        // self.type_checked(from);
                     }
                 }
             }
@@ -106,17 +107,22 @@ impl NetworkEdge for MediaServer {
         }
     }
 
-    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
+    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {
+        unimplemented!()
+    }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
-        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, _packet_session_id: u64, _nack: Nack) {
+        // self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+        unimplemented!()
     }
 
-    fn send_ack(&mut self, _: Packet, _: u64) {}
+    fn send_ack(&mut self, _: Packet, _: u64) {
+        unimplemented!()
+    }
 
     fn flood(&mut self) {
         self.start_flood();
@@ -136,13 +142,13 @@ impl NetworkEdge for MediaServer {
 
     fn remove_sender(&mut self, id: NodeId) {
         self.server_struct.packet_send.remove(&id);
-        // Currently unused I think;
     }
 }
 
 impl NetworkEdgeErrors for MediaServer {
-    fn check_type(&mut self, id: NodeId) {
-        self.server_check_type(id);
+    fn check_type(&mut self, _id: NodeId) {
+        // self.server_check_type(id);
+        unimplemented!()
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
@@ -153,8 +159,8 @@ impl NetworkEdgeErrors for MediaServer {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.server_send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.server_send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -170,6 +176,7 @@ impl Server for MediaServer {
         let server_struct = ServerStruct::new(node_id, command_recv, event_send, packet_recv, packet_send);
         let mut starting_id:u64 = 0;
         let mut media_files = HashMap::new();
+        let mut media_is_known = HashMap::new();
         for e in files.into_iter() {
             // I read the file as a string
             match fs::read_to_string(e.clone()) {
@@ -177,19 +184,27 @@ impl Server for MediaServer {
                     // I divide the string to obtain the name of the medias contained in it.
                     let medias_name = divide_text_file(file_str.clone());
                     for s in medias_name.into_iter() {
-                        match fs::read(s.clone()){ // I try to read the file as bytes.
-                            Ok(file_data) => {
-                                // I created a unique id that distinguish that media, used by clients to easier computation.
-                                // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
-                                // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
-                                let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
-                                    starting_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
-                                starting_id += 1;
-                                media_files.insert(file_id, (s, file_data));
-                            }
-                            Err(err) => {
-                                // I notify the SC and discard the file.
-                                server_struct.send_event(ServerEvent::FileNotReadable(node_id, s, err.to_string()));
+                        let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) +
+                            starting_id * u64::from_be_bytes([0,0,0,0,0,1,0,0]);
+                        // I created a unique id that distinguish that media, used by clients to easier computation.
+                        // The left-most byte is our nodeId, and the rest is dedicated to the file numeration;
+                        // Since we should have less text files than media ones, the two right-most bytes are dedicated to text files' ids.
+                        
+                        let media_name = obtain_file_display_name(s.clone());
+                        if !media_is_known.contains_key(&media_name) {
+                            // I check if I've already read that file, from a previous text_file.
+                            match fs::read(s.clone()){ // I try to read the file as bytes.
+                                Ok(file_data) => {
+                                    // If I manage to use the file I save it, and increment the starting_id
+                                    // to allow a different id for the next file.
+                                    starting_id += 1;
+                                    media_is_known.insert(media_name.clone(), file_id);
+                                    media_files.insert(file_id, (media_name, file_data));
+                                }
+                                Err(err) => {
+                                    // I notify the SC and discard the file.
+                                    server_struct.send_event(ServerEvent::FileNotReadable(node_id, s, err.to_string()));
+                                }
                             }
                         }
                     }
@@ -208,6 +223,7 @@ impl Server for MediaServer {
         MediaServer {
             server_struct,
             media_files,
+            media_is_known,
             next_file_id: starting_id,
         }
     }
@@ -242,6 +258,9 @@ impl Server for MediaServer {
                         self.send_event(ServerEvent::FileNotReadable(self.get_src_id(), file, err.to_string()));
                     }
                 }
+            },
+            ServerCommand::InstantCrash => {
+                self.server_struct.is_running = false;
             }
         }
     }
@@ -267,17 +286,16 @@ impl Server for MediaServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
-        /// REMOVE
-        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
+        // println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
-
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
+
     fn can_flood(&mut self) -> bool {
         self.server_struct.can_flood()
     }
@@ -292,6 +310,9 @@ impl Server for MediaServer {
     }
     fn add_destination_without_path(&mut self, dst: NodeId) {
         self.server_struct.add_destination_without_path(dst);
+    }
+    fn is_running(&self) -> bool {
+        self.server_struct.is_running
     }
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
         self.server_struct.command_recv.clone()
@@ -325,9 +346,11 @@ impl Server for MediaServer {
 fn divide_text_file(file_str: String) -> Vec<String> {
     let mut res = Vec::new();
     let mut tmp_string = String::new();
+    // I want to divide the file in the references of the media, collected into a vector.
     for c in file_str.chars() {
         if c != '\r' && c != '\n' {
             tmp_string.push(c);
+            // When I find '\n' the row ends, so I save the string and go to the next one.
         } else if c == '\n' {
             // I save the name of the media.
             res.push(tmp_string);

@@ -358,7 +358,7 @@ impl NetworkEdgeErrors for SamClientBase {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
         let new_nack = Nack {
             fragment_index: 0,
             nack_type: nack,

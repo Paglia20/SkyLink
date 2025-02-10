@@ -17,8 +17,12 @@ use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment}
 use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
 use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::server::server_type::{ContentServerType, ServerType};
+use base64::{engine::general_purpose, Engine};
+use std::fs::write;
+use open;
 
 type ArrivedMedia = (String, Vec<u8>);
+const OPEN_AUTO_MEDIA:bool = true;
 
 pub struct WebBrowser{
     ///Common Client base
@@ -56,84 +60,82 @@ impl NetworkEdge for WebBrowser {
                 self.edge_send_flood_response(flood_request);
             }
         }
-        else {
-            if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
-                // If it's not his packet, but he has to act as a drone (that never misses)
-                self.client_base.send_as_drone(packet);
+        else if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
+            // If it's not his packet, but he has to act as a drone (that never misses)
+            self.client_base.send_as_drone(packet);
 
-            } else {
-                // We can take for granted he is the destination
-                match packet.pack_type.clone() {
-                    MsgFragment(fragment) => {
-                        let tot_num_frag = fragment.total_n_fragments as usize;
-                        let session_id = packet.session_id;
-                        let initiator_id = packet.routing_header.hops[0];
-                        let destination = self.client_base.get_src_id(); //he is the destination
-                        let frag_index = fragment.fragment_index;
-                        //add new frag
-                        let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
-                        entry.2.push(fragment);
+        } else {
+            // We can take for granted he is the destination
+            match packet.pack_type.clone() {
+                MsgFragment(fragment) => {
+                    let tot_num_frag = fragment.total_n_fragments as usize;
+                    let session_id = packet.session_id;
+                    let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.client_base.get_src_id(); //he is the destination
+                    let frag_index = fragment.fragment_index;
+                    //add new frag
+                    let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                    entry.2.push(fragment);
 
 
-                        //for each arrived frag, send back an ack
-                        self.send_ack(packet.clone(), frag_index);
+                    //for each arrived frag, send back an ack
+                    self.send_ack(packet.clone(), frag_index);
 
-                        //notify sc i got a packet
-                        self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                    //notify sc i got a packet
+                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
 
-                        // If all the frag have arrived recreate message
-                        let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
-                        if frags_clone.len() == tot_num_frag {
-                            let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
-                                Err(e) => {
-                                    if DEBUG_MODE {
-                                        println!("{e} with {}", self.client_base.get_src_id());
-                                    }
-                                    self.send_event(ErrorReassembling(self.get_src_id()));
-                                    return;
+                    // If all the frag have arrived recreate message
+                    let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
+                    if frags_clone.len() == tot_num_frag {
+                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{e} with {}", self.client_base.get_src_id());
                                 }
-                                Ok(mess) => { mess }
-                            };
-                            //handle message
-                            self.handle_message(message);
+                                self.send_event(ErrorReassembling(self.get_src_id()));
+                                return;
+                            }
+                            Ok(mess) => { mess }
+                        };
+                        //handle message
+                        self.handle_message(message);
 
-                            // empty the hashmap
-                            self.client_base.fragments().remove(&(packet.session_id, initiator_id));
-                        }
+                        // empty the hashmap
+                        self.client_base.fragments().remove(&(packet.session_id, initiator_id));
                     }
-                    Ack(ack) => {
-                        self.send_event(ClientEvent::AckReceived(packet.clone()));
+                }
+                Ack(ack) => {
+                    self.send_event(ClientEvent::AckReceived(packet.clone()));
 
-                        //the ack will have the source that was the destination of the initial packet
-                        let src = self.client_base.get_src_id();
-                        match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
-                            None => {}
-                            Some((_, _, vec)) => {
-                                vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+                    //the ack will have the source that was the destination of the initial packet
+                    let src = self.client_base.get_src_id();
+                    match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
+                        None => {}
+                        Some((_, _, vec)) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
 
-                                //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
-                                if vec.is_empty() {
-                                    let src = self.client_base.get_src_id();
-                                    self.client_base.fragments().remove_entry(&(packet.session_id, src));
-                                }
+                            //if it's empty I retained all fragments because I received all the Ack, hence I can remove my entry from hashmap
+                            if vec.is_empty() {
+                                let src = self.client_base.get_src_id();
+                                self.client_base.fragments().remove_entry(&(packet.session_id, src));
                             }
                         }
-
-                        // I apply the positive feed on all nodes in the path
-                        let nodes = packet.routing_header.hops;
-                        self.client_base.network().positive_feedback(nodes);
                     }
 
-                    PacketType::Nack(nack) => {
-                        self.send_event(ClientEvent::NackReceived(packet.clone()));
-                        self.client_base.handle_nack(nack, packet);
-                    }
-                    FloodRequest(_) => {
-                        unreachable!()
-                    }
-                    FloodResponse(_flood_resp) => {
-                        self.client_base.save_flood_response(packet);
-                    }
+                    // I apply the positive feed on all nodes in the path
+                    let nodes = packet.routing_header.hops;
+                    self.client_base.network().positive_feedback(nodes);
+                }
+
+                PacketType::Nack(nack) => {
+                    self.send_event(ClientEvent::NackReceived(packet.clone()));
+                    self.client_base.handle_nack(nack, packet);
+                }
+                FloodRequest(_) => {
+                    unreachable!()
+                }
+                FloodResponse(_flood_resp) => {
+                    self.client_base.save_flood_response(packet);
                 }
             }
         }
@@ -151,14 +153,14 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
-                        ///remove
-                        println!("got media");
                         self.arrived_content.insert(id, (name.clone(), media.clone()));
-                        self.send_event(SendMedia(self.get_src_id(), id, name, media));
+                        self.send_event(SendMedia(self.get_src_id(), id, name, media.clone()));
+
+                        if OPEN_AUTO_MEDIA {
+                            self.open_media(media)
+                        }
                     }
                     MediaResponse::NotFound(id) => {
-                        ///remove
-                        println!("not found");
                         //i update the catalogue
                         if let Some(vec) = self.catalogue.get_mut(&id){
                             vec.retain(|node| *node != src);
@@ -256,7 +258,7 @@ impl NetworkEdge for WebBrowser {
 
             },
             _ => {
-                // Gio: no point in getting other types of req
+                //no point in getting other types of req
                 let new_nack = self.create_nack(UnexpectedMessage);
                 self.send_nack_message(message.source_id, new_nack);
             }
@@ -314,8 +316,8 @@ impl NetworkEdgeErrors for WebBrowser {
         self.client_base.send_nack_message(dst, nack);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.client_base.send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -335,10 +337,10 @@ impl ClientTrait for WebBrowser {
         }
     }
 
-    ///Run function of WebBrowser, is equal to the web browser but call for different handles
+    ///Run function of WebBrowser, is equal to the chat client but call for different handles
     fn run(&mut self) {
         let mut count = 0;
-        loop {
+        while self.client_base.is_running() {
             select_biased! {
                 recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
@@ -396,7 +398,9 @@ impl ClientTrait for WebBrowser {
                 self.get_media(id);
             }
 
-
+            ClientCommand::InstantCrash => {
+                self.client_base.crash();
+            }
             //ignore other commands cause are chat clients commands
             _ =>{
 
@@ -431,7 +435,7 @@ impl WebBrowser{
 
     ///Retrieve a text file
     fn get_text_file(&mut self, text_file_id: u64) {
-        let src = self.client_base.get_src_id();
+        self.client_base.get_src_id();
         let session = self.client_base.get_session_id();
 
         if let Some(map) = self.available_text_lists.get(&text_file_id) {
@@ -461,24 +465,51 @@ impl WebBrowser{
         self.get_text_file(text_file_id)
     }
 
-    ///Retrieve a media file, consulting catalogue
+    ///Retrieve a media file, consulting catalogue, if it already has it, you just open it on www.
     fn get_media(&mut self, cont_id: u64) {
-        let src = self.client_base.get_src_id();
-        let session = self.client_base.get_session_id();
+        if self.arrived_content.contains_key(&cont_id) {
+            self.open_media(self.arrived_content.get(&cont_id).unwrap().1.clone())
+        }else {
+            println!("got here");
+            let src = self.client_base.get_src_id();
+            let session = self.client_base.get_session_id();
 
-        if let Some(destinations) = self.catalogue.get(&cont_id) {
-            if !destinations.is_empty() {
-                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
-                    let content = ContentType::MediaRequest(Media(cont_id));
-                    let msg = Message::new(src, session, content);
-                    self.client_base.send_message(msg, dst);
-                    if DEBUG_MODE {
-                        println!("Sent media request from {src} to server {dst}");
+            if let Some(destinations) = self.catalogue.get(&cont_id) {
+                if !destinations.is_empty() {
+                    if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
+                        let content = ContentType::MediaRequest(Media(cont_id));
+                        let msg = Message::new(src, session, content);
+                        self.client_base.send_message(msg, dst);
+                        if DEBUG_MODE {
+                            println!("Sent media request from {src} to server {dst}");
+                        }
                     }
                 }
+            } else {
+                self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
             }
-        } else {
-            self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
+        }
+    }
+
+    fn open_media(&self, image_bytes: Vec<u8>){
+        let base64_image = general_purpose::STANDARD.encode(image_bytes);
+
+        let html_content = format!(
+            "<html>
+            <body>
+                <img src='data:image/jpeg;base64,{}' />
+            </body>
+        </html>",
+            base64_image
+        );
+
+        let file_path = "image.html";
+        write(file_path, html_content).expect("error in file");
+
+        if let Err(e) = open::that(file_path) {
+            if DEBUG_MODE {
+                println!("Error opening file: {}", e);
+            }
         }
     }
 }

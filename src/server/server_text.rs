@@ -1,7 +1,7 @@
 use crate::message::{ContentType, EdgeNackType, MediaRequest, MediaResponse, Message, TextRequest, TextResponse, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crate::server::server_command::{ServerCommand, ServerEvent};
-use crate::server::server_trait::Server;
+use crate::server::server_trait::{obtain_file_display_name, Server};
 use crate::server::server_type::{ContentServerType, ServerType};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -44,8 +44,7 @@ impl NetworkEdge for TextServer {
                         self.send_message(msg, source_id);
                     },
                     TextRequest::TextFile(file_id) => {
-                        ///remove
-                        println!("a textfilerequest arrived of id {file_id}, here the complete: {:?}",self.text_files.get(&file_id));
+                        // println!("A text_file_request arrived of id {file_id}, here the complete: {:?}",self.text_files.get(&file_id));
                         match self.text_files.get(&file_id) {
                             Some((_,file)) => {
                                 // If I have the text file, I start the check on it
@@ -56,9 +55,8 @@ impl NetworkEdge for TextServer {
                                     self.send_message(msg, source_id);
                                     self.send_event(ServerEvent::IncompleteFile(self.get_src_id(), file_id));
                                 } else {
-                                    println!("siamo nell'else ");
                                     // If the requested text file is ready, I created the response from it
-                                    //mediareferences (HashMap<u64, (String, Vec<NodeId>)>)
+                                    // MediaReferences (HashMap<u64, (String, Vec<NodeId>)>)
                                     let resp = TextResponse::MediaReferences(file
                                         .iter()
                                         .map(|(x,y)|
@@ -70,8 +68,6 @@ impl NetworkEdge for TextServer {
                                         )
                                         .collect()
                                     );
-                                    println!("{:?}", resp);
-
 
 
                                     let msg = Message::new(self.get_src_id(), self.get_session_id(), ContentType::TextResponse(resp));
@@ -157,7 +153,7 @@ impl NetworkEdge for TextServer {
                                 // I set it as a not usable contact.
                             }
                         }
-                        //self.type_checked(from);
+                        // self.type_checked(from);
                     }
                 }
             }
@@ -173,17 +169,22 @@ impl NetworkEdge for TextServer {
 
     }
 
-    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {}
+    fn send_fragment(&mut self, _: Fragment, _: NodeId, _: u64) {
+        unimplemented!()
+    }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
         self.server_struct.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
-        self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+    fn send_fragment_after_nack(&mut self, _packet_session_id: u64, _nack: Nack) {
+        // self.server_send_fragment_after_nack(packet_session_id, nack, self.get_src_id());
+        unimplemented!()
     }
 
-    fn send_ack(&mut self, _: Packet, _: u64) {}
+    fn send_ack(&mut self, _: Packet, _: u64) {
+        unimplemented!()
+    }
 
     fn flood(&mut self) {
         self.start_flood();
@@ -203,13 +204,13 @@ impl NetworkEdge for TextServer {
 
     fn remove_sender(&mut self, id: NodeId) {
         self.server_struct.packet_send.remove(&id);
-        // Currently unused I think;
     }
 }
 
 impl NetworkEdgeErrors for TextServer {
     fn check_type(&mut self, id: NodeId) {
-        self.server_check_type(id);
+        // self.server_check_type(id);
+        unimplemented!()
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
@@ -220,8 +221,8 @@ impl NetworkEdgeErrors for TextServer {
         self.send_message(nack, dst);
     }
 
-    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
-        self.server_send_drone_nack(dst, nack);
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
+        self.server_send_drone_nack(dst, nack, session_id);
     }
 }
 
@@ -239,6 +240,7 @@ impl Server for TextServer {
         let mut text_files = HashMap::new();
         for e in files.into_iter() {
             // I read the file as a string
+            let text_name = obtain_file_display_name(e.clone());
             match fs::read_to_string(e.clone()) {
                 Ok(file_str) => {
                     // I divide the string to obtain the name of the medias contained in it.
@@ -250,7 +252,7 @@ impl Server for TextServer {
                     let file_id = node_id as u64 * u64::from_be_bytes([1,0,0,0,0,0,0,0]) + starting_id;
                     starting_id += 1;
 
-                    text_files.insert(file_id, (file_str, medias));
+                    text_files.insert(file_id, (text_name, medias));
                 },
                 Err(err) => {
                     // I notify the SC and discard the file.
@@ -310,6 +312,9 @@ impl Server for TextServer {
                         self.send_event(ServerEvent::FileNotReadable(self.get_src_id(), file, err.to_string()));
                     }
                 }
+            },
+            ServerCommand::InstantCrash => {
+                self.server_struct.is_running = false;
             }
         }
     }
@@ -335,14 +340,13 @@ impl Server for TextServer {
         self.server_struct.send_to_all(packet);
     }
     fn update_node_state(&mut self, source_id: NodeId, value: u8) {
-        /// REMOVE
-        println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
+        // println!("{} update_node_state: source_id={:?}, value={:?}",self.get_src_id(), source_id, value);
         self.server_struct.network.update_state(source_id, value);
     }
-
     fn check_to_resend_fragments(&mut self) -> bool {
         self.server_struct.check_to_resend_fragments()
     }
+
     fn reset_unsent_fragments(&mut self) {
         self.server_struct.reset_unsent_fragments();
     }
@@ -358,9 +362,12 @@ impl Server for TextServer {
     fn type_checked(&mut self, src: NodeId) {
         self.server_struct.type_checked(src);
     }
-
     fn add_destination_without_path(&mut self, dst: NodeId) {
         self.server_struct.add_destination_without_path(dst);
+    }
+
+    fn is_running(&self) -> bool {
+        self.server_struct.is_running
     }
 
     fn get_command_recv(&self) -> Receiver<ServerCommand> {
@@ -395,12 +402,14 @@ impl Server for TextServer {
 fn divide_text_file(file_str: String) -> HashMap<String, Vec<(u64, NodeId)>> {
     let mut res = HashMap::new();
     let mut tmp_string = String::new();
+    // I want to divide the file in the references of the media, collected into an HashMap.
     for c in file_str.chars() {
         if c != '\r' && c != '\n' {
             tmp_string.push(c);
+            // When I find '\n' the row ends, so I save the string and go to the next one.
         } else if c == '\n' {
             // I save the name of the media, but still can't know which media server might have it.
-            res.insert(tmp_string, Vec::new());
+            res.insert(obtain_file_display_name(tmp_string), Vec::new());
             tmp_string = String::new();
         }
     }

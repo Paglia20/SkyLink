@@ -12,31 +12,27 @@ mod test;
 mod clients_sam;
 
 //for testing
-pub const CLIENT_GIO: bool = true; //if false run with sam's
+pub const CLIENT_GIO: bool = true; // If false run with sam's
 
 pub const ALL_CHAT: bool = false;
-pub const ALL_CONTENT: bool = true;
+pub const ALL_CONTENT: bool = false;
 
 pub const DEBUG_MODE : bool = false;
-pub const NO_SERVER_MODE: bool = false; //provvisoria finchè non ci sono i server
+pub const NO_SERVER_MODE: bool = false; // Temporary why servers aren't finished.
 pub const AUTOMATIC_FLOOD: bool = false; //fast as fuck boi
 
-
 fn main() {
-    //change switch to change the run
+    // Change 'switch' to change the run
     let switch = Switch::SimDaniel;
+    // let switch = Switch::Test;
 
-    let s = if ALL_CONTENT{
-        "inputs/input_star_medias.toml"
-    }else if ALL_CHAT {
-        "inputs/input_star_chat.toml"
-    } else {
-        "inputs/input_tree.toml"
-    };
+    // Topology
+    let topology = "inputs/input_star_with_pdr_mixed_topology.toml";
 
     match switch {
         Switch::SimDaniel => {
-            if let Some((sim_contr, handles)) = initialize(s) {
+            println!("running {topology}");
+            if let Some((sim_contr, handles)) = initialize(topology) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();
@@ -48,17 +44,16 @@ fn main() {
         Switch::Test => {
             //Comment functions we aren't testing
 
-            // test_generic_fragment_forward();
-            // test_generic_drop();
-            // test_generic_nack();
-            // test_flood();
-            // test_double_chain_flood();
-            // test_star_flood();
-            // test_butterfly_flood();
-            // test_tree_flood();
-            // test_drone_commands();
-            // test_busy_network();
-
+            // test::test_bench::test_generic_fragment_forward();
+            // test::test_bench::test_generic_drop();
+            // test::test_bench::test_generic_nack();
+            // test::test_bench::test_flood();
+            // test::test_bench::test_double_chain_flood();
+            // test::test_bench::test_star_flood();
+            // test::test_bench::test_butterfly_flood();
+            // test::test_bench::test_tree_flood();
+            // test::test_bench::test_drone_commands();
+            // test::test_bench::test_busy_network();
         }
     }
 }

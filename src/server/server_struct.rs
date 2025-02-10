@@ -15,8 +15,8 @@ pub struct ServerStruct {
     pub event_send: Sender<ServerEvent>,
     pub packet_recv: Receiver<Packet>,
     pub packet_send: HashMap<NodeId, Sender<Packet>>,
+    
     pub flood_ids: HashSet<(u64, NodeId)>, // Used to recognize flooding from other nodes.
-
     pub network: Network, 
     
     pub fragments: HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>, // (session_id, source), (destination, Vec<Fragment>)
@@ -27,8 +27,9 @@ pub struct ServerStruct {
     is_flooding: bool,
     flood_counter: u8,
 
-    type_checking: HashSet<NodeId>,
+    type_checking: HashSet<NodeId>, // I save the nodes for which I already asked the type, to avoid sending it too many times.
     
+    pub is_running: bool,
 }
 
 impl ServerStruct {
@@ -54,6 +55,7 @@ impl ServerStruct {
             is_flooding: false,
             flood_counter: 0,
             type_checking: HashSet::new(),
+            is_running: true,
         }
     }
 
@@ -252,14 +254,6 @@ impl ServerStruct {
     }
     pub fn check_to_resend_fragments(&mut self) -> bool {
         !self.unsent_fragments.is_empty()
-        /*if self.unsent_fragments.0 >= 200  {
-            self.unsent_fragments.0 = 0;
-            // I don't want to flood if I don't have any fragment to send.
-            !self.unsent_fragments.1.is_empty()
-        } else {
-            self.unsent_fragments.0 += 1;
-            false
-        }*/
     }
     pub fn can_flood(&mut self) -> bool {
         !self.is_flooding

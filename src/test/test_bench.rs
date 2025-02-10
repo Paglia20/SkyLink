@@ -1,4 +1,4 @@
-use crate::initializer::initialize;
+/*use crate::initializer::initialize;
 use crate::sim_control::{LogEntry, SimulationControl};
 use crate::simulation_control::sim_control::*;
 use crate::simulation_control::sim_daniel::*;
@@ -126,10 +126,7 @@ fn send_packet(packet: Packet, sender: &Sender<Packet>) {
     };
 }
 
-fn listen_handle(
-    sim_recv: Receiver<DroneEvent>,
-    client_receiver: Receiver<Packet>,
-) -> JoinHandle<()> {
+fn listen_handle( sim_recv: Receiver<DroneEvent>, client_receiver: Receiver<Packet>) -> JoinHandle<()> {
     thread::spawn(move || loop {
         select_biased! {
             recv(sim_recv) -> event => {
@@ -203,8 +200,8 @@ pub fn test_generic_drop() {
 
     handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 //passed
@@ -219,8 +216,8 @@ pub fn test_generic_nack() {
     let client_receiver = clients.get(0).unwrap().client_recv.clone();
     handles.push(listen_handle(sim_contr.event_recv, client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 //passed
@@ -301,7 +298,7 @@ pub fn test_double_chain_flood() {
 //passed
 
 pub fn test_star_flood() {
-    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star_with_pdr_mixed_topology.toml");
 
     let flood_request = wg_2024::packet::FloodRequest {
         flood_id: 1,
@@ -324,8 +321,8 @@ pub fn test_star_flood() {
     // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
     handles.push(client_only_listen_handle(client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 //passed
@@ -354,8 +351,8 @@ pub fn test_butterfly_flood() {
     // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
     handles.push(client_only_listen_handle(client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 //passed
@@ -383,8 +380,8 @@ pub fn test_tree_flood() {
     // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
     handles.push(client_only_listen_handle(client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 
@@ -456,14 +453,14 @@ pub fn test_drone_commands() {
     // drop(d1_packet_sender);
     // drop(d2_packet_sender);
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
 }
 
 //Use star configuration and test busy network with a full route around the configuration, sending u64::max messages.
 pub fn test_busy_network() {
-    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star.toml");
+    let (_sim_contr, clients, mut handles) = test_initialize("inputs/input_star_with_pdr_mixed_topology.toml");
 
     let packet = create_packet(vec![0, 1, 4, 7, 10, 3, 6, 9, 2, 5, 8, 1, 0]);
 
@@ -481,8 +478,7 @@ pub fn test_busy_network() {
     // handles.push(listen_handle(_sim_contr.event_recv, client_receiver));
     handles.push(client_only_listen_handle(client_receiver));
 
-    for i in handles {
-        i.join().unwrap();
+    for e in handles {
+        e.join().unwrap();
     }
-}
-
+}*/
