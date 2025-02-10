@@ -22,16 +22,16 @@ pub struct SimulationControl {
     client_command_senders: HashMap<NodeId, Sender<ClientCommand>>,
     server_command_senders: HashMap<NodeId, Sender<ServerCommand>>,
 
-    pub(crate) drone_event_recv: Receiver<DroneEvent>,
-    pub(crate) client_event_recv: Receiver<ClientEvent>,
-    pub(crate) server_event_recv: Receiver<ServerEvent>,
+    pub drone_event_recv: Receiver<DroneEvent>,
+    pub client_event_recv: Receiver<ClientEvent>,
+    pub server_event_recv: Receiver<ServerEvent>,
 
     pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
-    pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
-    pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
-    pub(crate) log: VecDeque<LogEntry>,
+    pub all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
+    pub network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
+    pub log: VecDeque<LogEntry>,
 
-    pub(crate) storage: SimulationStorage,
+    pub storage: SimulationStorage,
 
 }
 
@@ -229,8 +229,6 @@ impl SimulationControl {
             ServerEvent::NackReceived(packet) => {
                 self.s_process_nack_received(packet);
             }
-            // I HAD TO ADD THESE; BUT IDK HOW YOU USE THEM IN YOUR CODE
-            // todo!() daniel
             ServerEvent::LostFragment(_session_id, node_id, fragment_index) => {
                 let new_log = LogEntry{
                     cause: Error,
@@ -315,7 +313,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: Error,
                     node_id: server_id,
-                    message: format!("COMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}", completed_files, incomplete_files)
+                    message: format!("\nCOMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}", completed_files, incomplete_files)
                 };
                 self.log.push_back(new_log);
             }
@@ -340,7 +338,7 @@ impl SimulationControl {
                     cause: Error,
                     node_id: server_id,
                     message: format!(
-                        "{}",
+                        "\n{}",
                         medias_ids_and_names.iter()
                             .map(|(num, text)| format!("media id: {}, media name: {}", num, text))
                             .collect::<Vec<String>>()
