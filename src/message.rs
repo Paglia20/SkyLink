@@ -116,30 +116,6 @@ pub enum MediaResponse {
     NotFound(u64), // If we didn't find that ID.
 }
 
-/*
-
-Ricapitolando:
-id media > 20000
-id texfiles < 1000
-
-
-web client              text server                     media server
-                            ---------------medialist? --->
-                            <---------------medialist! ---
-                         (process)
-
-  ----------textlist? --->
-  <--------TextLists! -----
-  -------textfile(u64) --->
-  <--------MediaReferences! ---
-
-  ----------------------------------------media(u64)? --->
-  <----------------------------------------media(..)! ---
-
-
- */
-
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EdgeNackType{
     //..
