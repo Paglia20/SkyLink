@@ -86,9 +86,6 @@ impl NetworkEdge for ClientStruct {
 
         match self.network.get_srh(&self.node_id, &destination){
             None => {
-
-                println!("Tried to send fragment {session_id} without path to {destination} with {}, so may have flooded again", self.node_id);
-
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
 
@@ -268,7 +265,6 @@ impl NetworkEdgeErrors for ClientStruct {
     fn is_state_ok(&self, node_id: NodeId) -> bool {
         let out =  match self.network.get_state(&node_id) {
             Some(s) => {
-                println!("State of {} is {:?}", node_id, s);
                 s == 1
             }
             None =>{false}
