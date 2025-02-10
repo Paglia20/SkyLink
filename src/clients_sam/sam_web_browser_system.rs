@@ -39,7 +39,10 @@ impl NetworkEdge for WebBrowser {
     }
 
     fn handle_packet(&mut self, packet: Packet) {
-        self.base.handle_packet(packet)
+        self.base.handle_packet(packet);
+        if let Some(msg) = self.base.reassembled_message.take() {
+            self.handle_message(msg);
+        }
     }
 
     fn handle_message(&mut self, message: Message) {
@@ -108,7 +111,7 @@ impl NetworkEdgeErrors for WebBrowser {
     }
 
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
-        self.base.send_drone_nack(dst, nack, session_id)
+        self.base.send_drone_nack(dst, nack,session_id)
     }
 }
 
@@ -232,7 +235,27 @@ impl WebBrowser {
                 ));
             }
             TextResponse::Incomplete(text_id) => {
-                self.retry_get_text_file(text_id);
+                // First collect all media IDs and servers we need to request
+                let media_to_request: Vec<(NodeId, u64)> = {
+                    let mut requests = Vec::new();
+                    if let Some(content) = self.text_contents.get(&text_id) {
+                        for &media_id in &content.media_refs {
+                            if let Some(media_content) = self.media_contents.get(&media_id) {
+                                if media_content.data.is_none() {
+                                    if let Some(&server) = media_content.servers.iter().next() {
+                                        requests.push((server, media_id));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    requests
+                };
+
+                // Now make the requests with no borrows active
+                for (server, media_id) in media_to_request {
+                    self.request_media(server, media_id);
+                }
             }
         }
     }
@@ -289,42 +312,20 @@ impl WebBrowser {
             TypeExchange::TypeResponse { from, edge_type } => {
                 if let EdgeType::Server(server_type) = edge_type {
                     match server_type {
-                        ServerType::Content(ContentServerType::Text) => {
+                        crate::server::server_type::ServerType::Content(_) => {
                             self.text_servers.insert(from);
                             self.base.node_states.insert(from, ConnectionState::Ready);
+                            // Send destination event
                             self.base.send_event(ClientEvent::SendDestinations(
                                 self.base.node_id,
                                 from
                             ));
-                        }
-                        ServerType::Content(ContentServerType::Media) => {
-                            self.media_servers.insert(from);
-                            self.base.node_states.insert(from, ConnectionState::Ready);
                         }
                         _ => {
                             self.base.node_states.insert(from, ConnectionState::Failed);
                         }
                     }
                 }
-            }
-        }
-    }
-
-    fn request_text(&mut self, server: NodeId, text_id: u64) {
-        let message = Message::new(
-            self.base.node_id,
-            self.base.get_session_id(),
-            ContentType::TextRequest(TextRequest::TextFile(text_id)),
-        );
-        self.base.send_message(message, server);
-    }
-
-    fn retry_get_text_file(&mut self, text_id: u64) {
-        // Small delay before retry
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if let Some(content) = self.text_contents.get(&text_id) {
-            if let Some(&server) = content.servers.iter().next() {
-                self.request_text(server, text_id);
             }
         }
     }
@@ -339,5 +340,14 @@ impl WebBrowser {
             self.base.send_message(message, server);
             self.pending_requests.insert((server, media_id));
         }
+    }
+
+    fn request_text(&mut self, server: NodeId, text_id: u64) {
+        let message = Message::new(
+            self.base.node_id,
+            self.base.get_session_id(),
+            ContentType::TextRequest(TextRequest::TextFile(text_id)),
+        );
+        self.base.send_message(message, server);
     }
 }
