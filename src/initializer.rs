@@ -355,13 +355,17 @@ fn create_servers(servers: Vec<config::Server>,
             text_count += 1;
         }
     }
+    let mut text_files: Vec<Vec<String>> = Vec::new();
+    let mut media_files: Vec<Vec<String>>  = Vec::new();
 
-    let chunk_size = (files.len() + text_count - 1) / text_count;
-    let text_files: Vec<Vec<String>> = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
+    if !ALL_CHAT {
+        let chunk_size = (files.len() + text_count - 1) / text_count;
+        text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    let mut media_files: Vec<Vec<String>> = vec![vec![]; media_count];
-    for (i, file) in files.iter().enumerate() {
-        media_files[i % media_count].push(file.clone());
+        media_files= vec![vec![]; media_count];
+        for (i, file) in files.iter().enumerate() {
+            media_files[i % media_count].push(file.clone());
+        }
     }
 
     for server in servers.into_iter() {
