@@ -337,7 +337,7 @@ impl ClientTrait for WebBrowser {
         }
     }
 
-    ///Run function of WebBrowser, is equal to the web browser but call for different handles
+    ///Run function of WebBrowser, is equal to the chat client but call for different handles
     fn run(&mut self) {
         let mut count = 0;
         while self.client_base.is_running() {
@@ -470,6 +470,7 @@ impl WebBrowser{
         if self.arrived_content.contains_key(&cont_id) {
             self.open_media(self.arrived_content.get(&cont_id).unwrap().1.clone())
         }else {
+            println!("got here");
             let src = self.client_base.get_src_id();
             let session = self.client_base.get_session_id();
 

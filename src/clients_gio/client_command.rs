@@ -23,7 +23,7 @@ pub enum ClientCommand {
     GetTextFile(u64),
     ///WebClient only, Get a Content from any server with that given id
     GetContent(u64),
-
+    ///Instant Crash for Client
     InstantCrash,
 
 }

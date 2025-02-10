@@ -1339,14 +1339,19 @@ impl MyApp {
 
                                                             if node.content.is_none() {
                                                                 ui.label("MyMedias are: ".to_string());
-                                                                ui.label("Click the one you want to show ".to_string());
+                                                                ui.label("Click the one you want to show".to_string());
                                                                 ui.separator();
-
-                                                                for media in node_medias {
-                                                                    if ui.button(format!("{} - {}", media.0.clone(), media.1.clone())).clicked() {
-                                                                        // load image
-                                                                        if let Some(texture) = load_image(ctx, media.2.clone()) {
-                                                                            node.content = Some(Media(texture));
+                                                                if node_medias.is_empty(){
+                                                                    ui.label(RichText::new("It appears you don't posses any media (yet)")
+                                                                        .font(FontId::new(12.0, egui::FontFamily::Monospace))
+                                                                        .color(Color32::LIGHT_RED));
+                                                                }else {
+                                                                    for media in node_medias {
+                                                                        if ui.button(format!("{} - {}", media.0.clone(), media.1.clone())).clicked() {
+                                                                            // load image
+                                                                            if let Some(texture) = load_image(ctx, media.2.clone()) {
+                                                                                node.content = Some(Media(texture));
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
@@ -1456,9 +1461,30 @@ impl MyApp {
                                                                         });
 
                                                                     } else {
-                                                                        ui.label("Updating catalogue, might take a second... ".to_string());
+                                                                        ui.label("Catalog is Empty: either is updating, or SC is congested ".to_string());
                                                                     }
                                                                 }
+                                                            }
+
+                                                            ui.separator();
+                                                            ui.label("Or you can enter an id:");
+                                                            let response = ui.add(egui::TextEdit::singleline(&mut node.input_text));
+                                                            ui.label("Remember, the drone may not know a location for it!");
+                                                            if response.lost_focus() {
+                                                                // Handle Enter key press
+                                                                if let Ok(id) = node.input_text.parse::<u64>() {
+                                                                    self.sim_contr.force_client_get_media(node.id, id);
+                                                                    node.content = None;
+                                                                    node.node_window_scenes = Start; // Close the window
+                                                                    node.input_text = "".to_string(); //reset input text
+                                                                }else{
+                                                                    node.input_text = "".to_string(); //reset input text
+                                                                }
+                                                            }
+
+                                                            if ui.button("Close Catalogue").clicked() {
+                                                                node.content = None;
+                                                                node.node_window_scenes = Start;
                                                             }
                                                         },
 
