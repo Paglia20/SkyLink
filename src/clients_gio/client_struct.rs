@@ -86,9 +86,6 @@ impl NetworkEdge for ClientStruct {
 
         match self.network.get_srh(&self.node_id, &destination){
             None => {
-
-                println!("Tried to send fragment {session_id} without path to {destination} with {}, so may have flooded again", self.node_id);
-
                 self.send_event(MissingDestination(self.get_src_id(), destination));
                 self.add_unsent_fragment(fragment, session_id, destination);
 
@@ -156,7 +153,6 @@ impl NetworkEdge for ClientStruct {
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
-                        println!("recovered till here with {}", self.node_id);
                         self.send_fragment(fragment.clone(), *dst, packet_session_id);
                     }
                 }
@@ -186,18 +182,24 @@ impl NetworkEdge for ClientStruct {
 
     ///Function used to flood the network
     fn flood(&mut self) {
-        self.is_flooding = true;
-        self.send_event(ClientEvent::Flooding(self.node_id));
+        if !self.packet_send.is_empty() {
+            self.is_flooding = true;
+            self.send_event(ClientEvent::Flooding(self.node_id));
 
-        let flood_request = wg_2024::packet::FloodRequest {
-            flood_id: self.get_flood_id(),
-            initiator_id: self.node_id,
-            path_trace: vec![(self.node_id, NodeType::Client)],
-        };
-        let packet = Packet::new_flood_request(SourceRoutingHeader::default(), self.get_session_id(), flood_request);
-        self.packet_send.iter().for_each(|(id, sender)| {
-            sender.send(packet.clone()).unwrap()
-        });
+            let flood_request = wg_2024::packet::FloodRequest {
+                flood_id: self.get_flood_id(),
+                initiator_id: self.node_id,
+                path_trace: vec![(self.node_id, NodeType::Client)],
+            };
+            let packet = Packet::new_flood_request(SourceRoutingHeader::default(), self.get_session_id(), flood_request);
+            self.packet_send.iter().for_each(|(id, sender)| {
+                sender.send(packet.clone()).unwrap()
+            });
+        }else {
+            if DEBUG_MODE{
+                println!("flood impossible: no channel attached");
+            }
+        }
     }
 
     ///Get unique flood ids in incremental order
@@ -263,7 +265,6 @@ impl NetworkEdgeErrors for ClientStruct {
     fn is_state_ok(&self, node_id: NodeId) -> bool {
         let out =  match self.network.get_state(&node_id) {
             Some(s) => {
-                println!("State of {} is {:?}", node_id, s);
                 s == 1
             }
             None =>{false}
@@ -369,11 +370,7 @@ impl ClientStruct {
                     self.send_event(MissingRoute(self.get_src_id(), next_id));
                     //send a nack as a drone
                     self.send_drone_nack(packet.routing_header.source().unwrap(), ErrorInRouting(next_id), packet.session_id);
-                    ///remove
-                    println!("error in routing sent to {} from {} caused by {}",
-                             packet.routing_header.source().unwrap(),
-                            self.node_id, next_id
-                    )
+
                 }
                 Some(sender) => {
                     match sender.try_send(packet.clone()) {
@@ -438,11 +435,6 @@ impl ClientStruct {
             },
             ErrorInRouting(wrong_node) => {
                 // I again remove the routes containing the (probably) crushed drone
-                ///remove
-                println!("arrived an error in routing to {} from {} because of {}",
-                self.node_id, packet.routing_header.source().unwrap(), wrong_node
-                );
-
                 self.network.remove_node(wrong_node);
                 self.send_fragment_after_nack(packet.session_id, nack);
             },

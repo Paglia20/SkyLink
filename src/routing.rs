@@ -280,7 +280,7 @@ impl Network {
         let mut to_remove = Vec::new();
         for (id, (_, index)) in &self.node_map {
             let node = &self.graph[*index];
-            if node.reliability() < 0.03 {
+            if node.reliability() < 0.02 {
                 to_remove.push(*id);
             }
             // Should be 0.01, but it's probably good to keep it slightly higher.
@@ -288,7 +288,6 @@ impl Network {
 
         for id in to_remove {
             self.remove_node(id);
-            println!("ATT: REMOVED {id}")
         }
     }
 }

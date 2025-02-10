@@ -12,7 +12,6 @@ pub trait NetworkEdge {
     fn fragment_message(message: &Message) -> Vec<Fragment> {
         let all_bytes = message.stringify_content().into_bytes();
         let total_n_fragments = (all_bytes.len() as u64).div_ceil(128);
-        // I divide rounding up with div_ceil
 
         let mut out = Vec::new();
         for (frag_id, chunk) in all_bytes.chunks(128).enumerate() {
