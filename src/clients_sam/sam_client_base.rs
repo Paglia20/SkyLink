@@ -1,15 +1,13 @@
 // sam_client_base.rs
-use super::sam_client_trait::Client;
-use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, WrongDestinationType};
-use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use crate::clients_gio::client_trait::ClientTrait;
-use crate::message::{Message, ContentType, TypeExchange};
-use crate::clients_gio::client_type::ClientType;
 use super::sam_events::{ConnectionState};
-use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
+use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use super::sam_client_trait::Client;
+use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
+use crate::message::{Message, ContentType, TypeExchange};
 use crate::routing::Network;
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 use wg_2024::network::NodeId;
 use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType, NodeType, Ack};
 
@@ -25,7 +23,10 @@ pub struct SamClientBase {
     pub node_states: HashMap<NodeId, ConnectionState>,
     pub unsent_fragments: (u8, HashMap<(u64, NodeId), (NodeId, Vec<Fragment>)>),
     pub is_flooding: bool,
+    pub last_flood: Option<Instant>,
     pub flood_count: u64,
+    pub reassembled_message: Option<Message>,
+    pub types_requested_for: HashSet<NodeId>,
 }
 
 impl NetworkEdge for SamClientBase {
@@ -43,6 +44,15 @@ impl NetworkEdge for SamClientBase {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
+        if
+        !matches!(packet.pack_type, PacketType::FloodRequest(_)) &&
+            packet.routing_header.destination().unwrap() != self.node_id
+        {
+
+            self.send_as_drone(packet);
+            return;
+        }
+
         match packet.pack_type.clone() {
             PacketType::FloodRequest(mut flood_request) => {
                 flood_request.path_trace.push((self.node_id, NodeType::Client));
@@ -53,9 +63,10 @@ impl NetworkEdge for SamClientBase {
                 );
 
                 if self.flood_ids.insert(flood_id) {
-                    // Send flooding notification for this node
-                    self.is_flooding = true;
-                    self.send_event(ClientEvent::Flooding(self.node_id));
+                    // setting this flag drasctically reduces redundent flooding
+                    // but may prevent full network discovery(ie flooding initiated at
+                    // A doesn't ensure that B can see C)
+                    // self.is_flooding = true;
 
                     // Forward to all except previous node
                     let prev = if flood_request.path_trace.len() > 1 {
@@ -76,14 +87,12 @@ impl NetworkEdge for SamClientBase {
                         routing_header: packet.routing_header.clone(),
                         session_id: packet.session_id,
                     };
-                    self.send_event(ClientEvent::PacketSent(packet_with_path));
-
-                    packet.pack_type = PacketType::FloodRequest(flood_request.clone());
+                    self.send_event(ClientEvent::PacketSent(packet_with_path.clone()));
 
                     // Send to all neighbors except previous
                     for (key, sender) in &self.packet_send {
                         if *key != prev {
-                            if sender.send(packet.clone()).is_ok() {
+                            if sender.send(packet_with_path.clone()).is_ok() {
                                 // Don't send another event here since we already sent it above
                             }
                         }
@@ -140,9 +149,9 @@ impl NetworkEdge for SamClientBase {
                 // Send ACK received event first
                 self.send_event(ClientEvent::AckReceived(packet.clone()));
 
-                if let Some(source) = packet.routing_header.source() {
-                    if let Some((_, fragments)) =
-                        self.unsent_fragments.1.get_mut(&(packet.session_id, source))
+                if packet.routing_header.source().is_some() {
+                    if let Some((_, _, fragments)) =
+                        self.fragments.get_mut(&(packet.session_id, self.node_id))
                     {
                         fragments.retain(|f| f.fragment_index != ack.fragment_index);
                     }
@@ -220,6 +229,7 @@ impl NetworkEdge for SamClientBase {
 
                 // Then store fragment and flood
                 self.add_unsent_fragment(fragment, session_id, destination);
+                self.network.add_destination_without_path(destination);
                 if !self.is_flooding {
                     self.flood();
                 }
@@ -284,7 +294,13 @@ impl NetworkEdge for SamClientBase {
     }
 
     fn flood(&mut self) {
+        if let Some(last_flood) = self.last_flood.as_ref() {
+            if dbg!(last_flood.elapsed().as_secs()) < 10 { return; }
+        }
+
+        self.last_flood = Some(Instant::now());
         self.is_flooding = true;
+        // Send flooding notification for this node
         self.send_event(ClientEvent::Flooding(self.node_id));
 
         let flood_request = wg_2024::packet::FloodRequest {
@@ -335,13 +351,15 @@ impl NetworkEdge for SamClientBase {
         }
     }
 
-    fn handle_message(&mut self, _message: Message) {
-        // Implemented by specific client types.
+    fn handle_message(&mut self, message: Message) {
+        assert!(self.reassembled_message.is_none());
+        self.reassembled_message = Some(message);
     }
 }
 
 impl NetworkEdgeErrors for SamClientBase {
     fn check_type(&mut self, id: NodeId) {
+        if !self.types_requested_for.insert(id) { return; }
         let type_request = Message::new(
             self.node_id,
             self.get_session_id(),
@@ -398,7 +416,10 @@ impl Client for SamClientBase {
             node_states: HashMap::new(),
             unsent_fragments: (0, HashMap::new()),
             is_flooding: false,
+            last_flood: None,
             flood_count: 0,
+            reassembled_message: None,
+            types_requested_for: HashSet::new(),
         }
     }
 
@@ -433,33 +454,59 @@ impl Client for SamClientBase {
 }
 
 impl SamClientBase {
-    fn edge_send_flood_response(&mut self, flood_request: wg_2024::packet::FloodRequest) {
-        // Clone the values we need before moving flood_request
-        let flood_id = flood_request.flood_id;
-        let path_trace = flood_request.path_trace.clone();
-        let initiator_id = flood_request.initiator_id;
-
-        let flood_response = wg_2024::packet::FloodResponse {
-            flood_id,
-            path_trace: path_trace.clone(),
-        };
-
-        let mut hops: Vec<NodeId> = path_trace
-            .iter()
-            .map(|(id, _)| *id)
-            .rev()
-            .collect();
-
-        if path_trace[0].0 != initiator_id {
-            hops.push(initiator_id);
+    // copied from gio
+    ///Send a packet for which we are not the destination, hence acting as a Drone
+    pub fn send_as_drone(&mut self, mut packet: Packet) {
+        packet.routing_header.hop_index += 1;
+        if let Some(&next_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
+            match self.packet_send.get(&next_id) {
+                None => {
+                    self.send_event(ClientEvent::MissingRoute(self.get_src_id(), next_id))
+                }
+                Some(sender) => {
+                    match sender.try_send(packet.clone()) {
+                        Err(_) => {
+                            // !!You need to send back the same errors a drone would
+                            self.send_drone_nack(packet.routing_header.source().unwrap(), NackType::ErrorInRouting(next_id));
+                            self.send_event(ClientEvent::PacketSendingError(packet));
+                        }
+                        Ok(_) => {
+                            self.send_event(ClientEvent::PacketSent(packet.clone()));
+                            // If the message was sent, I also notify the sim controller.
+                        }
+                    }
+                }
+            }
         }
+    }
 
-        let packet = Packet {
-            pack_type: PacketType::FloodResponse(flood_response),
-            routing_header: wg_2024::network::SourceRoutingHeader { hop_index: 0, hops },
-            session_id: flood_id,
+    // copied from gio
+    ///Send a drone nack
+    fn send_drone_nack(&mut self, dst: NodeId, nack: NackType) {
+        let new_nack = Nack{
+            fragment_index: 0,
+            nack_type: nack,
         };
+        if let Some(shr) = self.network.get_srh(&self.node_id, &dst){
+            let first_hop = shr.next_hop().unwrap_or(self.node_id);
+            let packet = Packet{
+                routing_header: shr,
+                session_id: self.get_session_id(),
+                pack_type: PacketType::Nack(new_nack),
+            };
 
-        self.handle_packet(packet);
+            match self.packet_send.get(&first_hop){
+                None => {
+                    self.send_event(ClientEvent::MissingDestination(self.node_id, dst));
+                    return;
+                }
+                Some(sender) => {
+                    sender.send(packet).unwrap();
+                }
+            }
+        } else {
+            self.send_event(ClientEvent::MissingDestination(self.node_id, dst));
+            return;
+        }
     }
 }

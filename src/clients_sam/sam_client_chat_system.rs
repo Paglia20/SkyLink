@@ -1,15 +1,14 @@
 use super::sam_client_base::SamClientBase;
-use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use super::sam_events::{ConnectionState};
+use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use super::sam_client_trait::Client;
-use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
 use crate::message::{Message, ContentType, ChatRequest, ChatResponse, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
 
 struct ChatSession {
     server_id: NodeId,
@@ -31,7 +30,18 @@ impl NetworkEdge for ChatClient {
     }
 
     fn handle_packet(&mut self, packet: Packet) {
-        self.base.handle_packet(packet)
+        self.base.handle_packet(packet.clone());
+        if let Some(msg) = self.base.reassembled_message.take() {
+            self.handle_message(msg);
+        }
+        if let PacketType::Ack(ack) = packet.pack_type {
+            if let Some((_, cont, vec)) = self.base.fragments.get_mut(&(packet.session_id, self.base.node_id)) {
+                if vec.is_empty() && matches!(cont, Some(ContentType::ChatRequest(ChatRequest::Register(_)))) {
+                    let server = packet.routing_header.source().unwrap();
+                    self.send_event(ClientEvent::RegisterSuccessfully(self.base.node_id, server));
+                }
+            }
+        }
     }
 
     fn handle_message(&mut self, message: Message) {
@@ -121,7 +131,7 @@ impl NetworkEdgeErrors for ChatClient {
     }
 
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
-        self.base.send_drone_nack(dst, nack, session_id);
+        self.base.send_drone_nack(dst, nack, session_id)
     }
 }
 
@@ -170,7 +180,7 @@ impl Client for ChatClient {
                     self.base.get_session_id(),
                     ContentType::ChatRequest(ChatRequest::Register(self.base.node_id))
                 );
-                self.base.send_message(message, server_id);
+                self.send_message(message, server_id);
             }
             ClientCommand::RetrieveList(server_id) => {
                 let message = Message::new(
@@ -178,7 +188,7 @@ impl Client for ChatClient {
                     self.base.get_session_id(),
                     ContentType::ChatRequest(ChatRequest::ClientList)
                 );
-                self.base.send_message(message, server_id);
+                self.send_message(message, server_id);
             }
             _ => self.base.handle_command(command)
         }
