@@ -27,7 +27,7 @@ fn main() {
     let switch = Switch::SimDaniel;
 
     ///topology
-    let topology = "inputs/input_star_with_pdr.toml";
+    let topology = "inputs/input_star_with_pdr_mixed_topology.toml";
 
     match switch {
         Switch::SimDaniel => {
