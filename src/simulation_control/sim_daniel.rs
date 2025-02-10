@@ -330,7 +330,7 @@ impl MyApp {
             ClientEvent::MissingDestForMedia(src, media) => {
                 self.sim_contr.storage.missing_media(src, media);
             }
-            _ => {/* degli altri niente */}
+            _ => {}
         }
     }
 
@@ -427,8 +427,6 @@ impl MyApp {
 
 
                             if ui.button("test (graphically) chat with 0 and 11!").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle chat */
 
                                 self.sim_contr.storage.add_chat_text(0, 11, "diomerda".to_string());
                                 self.sim_contr.storage.add_chat_text(11, 0, "a te!".to_string());
@@ -437,10 +435,7 @@ impl MyApp {
                             }
 
                             if ui.button("test (graphically) media with 12").clicked() {
-                                /* questo andrà cambiato appena leo avrà fatto il server,
-                                 è solo per vedere se ci piace il font delle media */
                                 let v = include_bytes!("../test/contents_inputs/media_files/charmander.png").to_vec();
-
                                 self.sim_contr.storage.add_to_medias(12, fastrand::u64(20000..29999), "char.png".to_string(), v);
                             }
 
@@ -711,7 +706,7 @@ impl MyApp {
                 }
 
                 for node in &mut self.nodes {
-                    if node.texture.is_none() { // Carica la texture solo se non è già stata caricata
+                    if node.texture.is_none() {
                         node.texture = match node.node_type {
                             NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone_mod.png")),
                             NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
@@ -743,10 +738,10 @@ impl MyApp {
                             texture.id(),
                             rect,
                             egui::Rect::from_min_max(
-                                egui::pos2(0.0, 0.0), // UV in alto a sinistra
-                                egui::pos2(1.0, 1.0), // UV in basso a destra
+                                egui::pos2(0.0, 0.0),
+                                egui::pos2(1.0, 1.0),
                             ),
-                           circle_color, // Colore (modifica per trasparenza o effetti)
+                           circle_color,
                         ));
 
                         if value.notify {
@@ -755,7 +750,6 @@ impl MyApp {
                         }
                     }
 
-                    // Disegna il testo
                     painter.text(
                         numbers_positions[index],
                         egui::Align2::CENTER_CENTER,
@@ -764,7 +758,6 @@ impl MyApp {
                         Color32::WHITE,
                     );
 
-                    // Gestisci il clic
                     if response.clicked() {
                         value.selected = true;
                     }
@@ -1000,7 +993,6 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1115,7 +1107,7 @@ impl MyApp {
                                                             };
                                                             if node.content.is_none() {
                                                                 ui.label( RichText::new("My Servers are: ".to_string())
-                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Font monospaziato
+                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace))
                                                                               .color(Color32::GRAY),);
                                                                 ui.separator();
                                                                 for (id) in node_dst {
@@ -1280,7 +1272,6 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1367,7 +1358,6 @@ impl MyApp {
                                                                         egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                                     };
 
-                                                                    //immagine scalata
                                                                     ui.image((texture.id(), new_size));
                                                                 }
                                                             }
@@ -1561,7 +1551,6 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        //immagine scalata
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1759,30 +1748,26 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
     // options.viewport.fullscreen = Option::from(true);
     options.viewport.min_inner_size = Option::from(Vec2::new(1400.0, 800.0));
     eframe::run_native(
-        "SkyLink Interface 1",
+        "SkyLink",
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
     )
 }
 
 fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
-    // Legge l'immagine dal file system
     let image = image::open(path).expect(format!{"Failed to load image {path}"}.as_str()).to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
 
-    // Converte l'immagine in un formato compatibile con egui
     let color_image = eframe::epaint::ColorImage::from_rgba_unmultiplied(size, image.as_flat_samples().as_slice());
     ctx.load_texture(path, color_image, egui::TextureOptions::default())
 }
 
 fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle> {
-    // Decodifica l'immagine usando il crate `image`
     let decoded_image = image::load_from_memory(&image_data).ok()?;
 
-    let rgba_image = decoded_image.to_rgba8(); // Converte in RGBA
+    let rgba_image = decoded_image.to_rgba8();
     let (width, height) = rgba_image.dimensions(); // Get the actual dimensions
 
-    // Crea una texture da RGBA bytes
     let pixels: Vec<Color32> = rgba_image
         .pixels()
         .map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
@@ -1793,7 +1778,5 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
         pixels,
     };
 
-
-    // Carica la texture nel contesto di egui
     Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
