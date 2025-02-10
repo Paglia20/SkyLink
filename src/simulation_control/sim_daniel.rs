@@ -327,9 +327,11 @@ impl MyApp {
             ClientEvent::MissingDestForMedia(src, media) => {
                 self.sim_contr.storage.missing_media(src, media);
             }
+
             _ => {
                 // Nothing for the others.
             }
+
         }
     }
 
@@ -712,7 +714,7 @@ impl MyApp {
                 }
 
                 for node in &mut self.nodes {
-                    if node.texture.is_none() { // Uploads the textures.
+                    if node.texture.is_none() {
                         node.texture = match node.node_type {
                             NodeNature::Drone => Some(load_texture(ctx, "src/simulation_control/texture_pngs/drone_mod.png")),
                             NodeNature::ChatServer => Some(load_texture(ctx, "src/simulation_control/texture_pngs/ChatServer.png")),
@@ -744,10 +746,11 @@ impl MyApp {
                             texture.id(),
                             rect,
                             egui::Rect::from_min_max(
-                                egui::pos2(0.0, 0.0), // UV in top left.
-                                egui::pos2(1.0, 1.0), // UV in bottom right.
+                                egui::pos2(0.0, 0.0),
+                                egui::pos2(1.0, 1.0),
                             ),
-                           circle_color, // Color (modifies per transparent or effects)
+                           circle_color,
+
                         ));
 
                         if value.notify {
@@ -755,8 +758,6 @@ impl MyApp {
                             painter.circle_filled(top_right, 7.0, Color32::YELLOW);
                         }
                     }
-
-                    // Draws the text.
                     painter.text(
                         numbers_positions[index],
                         egui::Align2::CENTER_CENTER,
@@ -764,8 +765,7 @@ impl MyApp {
                         FontId::proportional(16.0),
                         Color32::WHITE,
                     );
-
-                    // Managed the click.
+                  
                     if response.clicked() {
                         value.selected = true;
                     }
@@ -1001,7 +1001,6 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1116,7 +1115,7 @@ impl MyApp {
                                                             };
                                                             if node.content.is_none() {
                                                                 ui.label( RichText::new("My Servers are: ".to_string())
-                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace)) // Monospaced font.
+                                                                              .font(FontId::new(13.0, egui::FontFamily::Monospace))
                                                                               .color(Color32::GRAY),);
                                                                 ui.separator();
                                                                 for (id) in node_dst {
@@ -1281,14 +1280,9 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
-
-
-
-
                                                 });
 
                                             egui::CentralPanel::default()
@@ -1372,8 +1366,7 @@ impl MyApp {
                                                                     } else {
                                                                         egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                                     };
-
-                                                                    // Scaled image.
+                                                                  
                                                                     ui.image((texture.id(), new_size));
                                                                 }
                                                             }
@@ -1588,7 +1581,6 @@ impl MyApp {
                                                             egui::vec2(available_size.x, available_size.x / aspect_ratio)
                                                         };
 
-                                                        // Scaled image.
                                                         ui.image((texture.id(), new_size));
 
                                                     }
@@ -1786,30 +1778,29 @@ pub fn run_sim_dan(sim_control: SimulationControl) -> Result<(), eframe::Error> 
     // options.viewport.fullscreen = Option::from(true);
     options.viewport.min_inner_size = Option::from(Vec2::new(1400.0, 800.0));
     eframe::run_native(
-        "SkyLink Interface 1",
+        "SkyLink",
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::new(sim_control)))),
     )
 }
 
 fn load_texture(ctx: &egui::Context, path: &str) -> TextureHandle {
-    // Reads image from file system.
+
     let image = image::open(path).expect(format!{"Failed to load image {path}"}.as_str()).to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
 
-    // Converts image in a format compatible with the gui.
+
     let color_image = eframe::epaint::ColorImage::from_rgba_unmultiplied(size, image.as_flat_samples().as_slice());
     ctx.load_texture(path, color_image, egui::TextureOptions::default())
 }
 
 fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle> {
-    // Decodes image using `image` crate
+
     let decoded_image = image::load_from_memory(&image_data).ok()?;
 
-    let rgba_image = decoded_image.to_rgba8(); // Converts to RGBA
+    let rgba_image = decoded_image.to_rgba8();
     let (width, height) = rgba_image.dimensions(); // Get the actual dimensions
 
-    // Creates a texture from RGBA bytes
     let pixels: Vec<Color32> = rgba_image
         .pixels()
         .map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
@@ -1820,9 +1811,7 @@ fn load_image(ctx: &egui::Context, image_data: Vec<u8>) -> Option<TextureHandle>
         pixels,
     };
 
-
-    // Loads the texture in e-gui context
-    Some(ctx.load_texture("image", texture, egui::TextureOptions::default()))
+    Some(ctx.load_texture("immagine", texture, egui::TextureOptions::default()))
 }
 
 fn create_packet(hops: Vec<NodeId>) -> Packet {
@@ -1836,4 +1825,5 @@ fn create_packet(hops: Vec<NodeId>) -> Packet {
         routing_header: SourceRoutingHeader { hop_index: 1, hops },
         session_id: 1,
     }
+
 }

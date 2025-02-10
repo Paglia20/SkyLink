@@ -26,10 +26,12 @@ pub struct SimulationControl {
     pub client_event_recv: Receiver<ClientEvent>,
     pub server_event_recv: Receiver<ServerEvent>,
 
-    pub channel_for_drone: Sender<DroneEvent>, // questo serve così ogni volta che creo un nuovo drone, quando gli devo dare il channel per comunicare con il drone, mi limito a clonare questo, e per i test
-    pub all_sender_packets: HashMap<NodeId, Sender<Packet>>, //hashmap con tutti i sender packet così puoi clonarli nel spawn, made pub for testing
-    pub network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
-    pub log: VecDeque<LogEntry>,
+
+    pub channel_for_drone: Sender<DroneEvent>,
+    pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>,
+    pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
+    pub(crate) log: VecDeque<LogEntry>,
+
 
     pub storage: SimulationStorage,
 
@@ -464,7 +466,7 @@ impl SimulationControl {
         self.all_sender_packets.insert(new_id.clone(), packet_send.clone());
 
         let mut packet_send = HashMap::new();
-        //riempi la hashmap
+        //fill hashmap
         for (id, sender) in &self.all_sender_packets {
             for i in connections.clone() {
                 if i == *id {
@@ -475,7 +477,7 @@ impl SimulationControl {
 
         let channel_clone = self.channel_for_drone.clone();
 
-        //crea thread
+        //create thread
         let handle = thread::spawn(move || {
             let mut new_drone = SkyLinkDrone::new(
                 new_id,
@@ -587,7 +589,7 @@ impl SimulationControl {
                 format!("drone {} is not connected to {}", id_to_remove, id),
             ));
             return;
-            //se non sono connessi non far nulla e returna
+            //if not connected it does nothing
         }
 
         //I created get_type that gets the type of the node from the id,
@@ -1196,53 +1198,6 @@ impl Debug for LogEntry {
         write!(f, "id: {}", self.node_id)
     }
 }
-
-
-
-
-
-
-/*
-
-let mut first = true;
-for connection in node.connections.clone() {
-if !first {
-connections.push_str(", ");
-}
-first = false;
-connections.push_str(&connection.to_string());
-}
-
-ui.label(RichText::new(format!("Connected to: {}", connections))
-                .font(FontId::new(15.0, egui::FontFamily::Monospace))
-                .color(Color32::WHITE),);
-
- */
-
-
-
-/*
-COSE CHE DANIEL DEVI FARE, in entrambi i file:
-
-Cose importanti:
-sistemare il to-do daniel che ti ho lasciato sui server log
-ridurre i duplicate code per quanto riesci, e in generale tutti i warning che trovi
-testare tutto quello che trovi e scrivere i comportamenti anomali
-
-Cose belle:
-aggiungere il nostro logo sotto i bottoni a sinistra
-mettere a posto le labels
-modificare la notifica (tipo a intermittenza spaccherebbe ma ci ho provato e non si riesce)
-
-
-
-Cose Noiose (solo se hai voglia):
-mettere a posto le cause dei log
-
-
-
-*/
-
 
 
 
