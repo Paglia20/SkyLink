@@ -358,7 +358,7 @@ fn create_servers(servers: Vec<config::Server>,
     let mut text_files: Vec<Vec<String>> = Vec::new();
     let mut media_files: Vec<Vec<String>>  = Vec::new();
 
-    if !ALL_CHAT {
+    if text_count + media_count > 0 {
         let chunk_size = (files.len() + text_count - 1) / text_count;
         text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
