@@ -24,6 +24,7 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read};
 
 type ChatMsg = (NodeId, String);
+const NOTIFY:bool = false;
 
 pub struct ChatClient {
     ///Common Client base
@@ -171,8 +172,9 @@ impl NetworkEdge for ChatClient {
                         //here is from the src of the text, so first parameter supplied is from!
                         self.send_event(ReceivedChatText(from, self.client_base.get_src_id(), message.clone()));
                         self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
-
-                        self.play_notification_sound();
+                        if NOTIFY {
+                            self.play_notification_sound();
+                        }
                     }
                     ChatResponse::ClientNotFound(node) => {
                         //update contact list
@@ -292,9 +294,11 @@ impl ClientTrait for ChatClient {
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         //load notification
-        let mut file = File::open("src/clients_gio/notification.mp3").unwrap();
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).unwrap();
+        if NOTIFY {
+            let mut file = File::open("src/clients_gio/notification.mp3").unwrap();
+            file.read_to_end(&mut buffer).unwrap();
+        }
 
         ChatClient {
             client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
@@ -464,7 +468,6 @@ impl ChatClient {
         let cursor = Cursor::new(self.sound.clone());
         let source = Decoder::new(BufReader::new(cursor)).unwrap();
 
-        // Riproduce il suono
         sink.append(source);
         sink.sleep_until_end();
     }

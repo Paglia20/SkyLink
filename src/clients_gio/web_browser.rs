@@ -496,10 +496,20 @@ impl WebBrowser{
 
         let html_content = format!(
             "<html>
-            <body>
-                <img src='data:image/jpeg;base64,{}' />
-            </body>
-        </html>",
+        <head>
+            <style>
+                img {{
+                    max-width: 100%;
+                    height: auto;
+                    display: block;
+                    margin: auto;
+                }}
+            </style>
+        </head>
+        <body>
+            <img src='data:image/jpeg;base64,{}' />
+        </body>
+    </html>",
             base64_image
         );
 

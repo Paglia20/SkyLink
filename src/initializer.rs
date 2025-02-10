@@ -342,13 +342,13 @@ fn create_servers(servers: Vec<config::Server>,
     let mut media_files: Vec<Vec<String>>  = Vec::new();
 
     if text_count + media_count > 0 {
-        let chunk_size = (files.len() + text_count - 1) / text_count;
+        let chunk_size = text_count;
         text_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-        media_files= vec![vec![]; media_count];
-        for (i, file) in files.iter().enumerate() {
-            media_files[i % media_count].push(file.clone());
-        }
+        let chunk_size = media_count;
+        media_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
+
+
     }
 
     for server in servers.into_iter() {
