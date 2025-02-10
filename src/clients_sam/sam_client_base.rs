@@ -44,11 +44,16 @@ impl NetworkEdge for SamClientBase {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
+        // seems like we need to be capable of relaying packages.
+        // edge_send_flood_response emits packets to this function
+        // so we need to forward them, just like the gio version does.
+
+        // copied from gio
         if
         !matches!(packet.pack_type, PacketType::FloodRequest(_)) &&
             packet.routing_header.destination().unwrap() != self.node_id
         {
-
+            // If it's not his packet, but he has to act as a drone (that never misses)
             self.send_as_drone(packet);
             return;
         }
