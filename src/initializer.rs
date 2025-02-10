@@ -318,19 +318,21 @@ fn create_servers(servers: Vec<config::Server>,
     let mut text_count = 0;
     let mut media_count = 0;
     let mut chat_count = 0;
-    if ALL_CHAT || !media_servers {
+    if ALL_CHAT {
         chat_count = length;
-    } else if ALL_CONTENT || !chat_servers{
+    } else if ALL_CONTENT {
         media_count = (length + 1) / 2; // Sum the average if it's odd; I want more media servers rather than text if I have to choose.
         text_count = length / 2;
     } else {
         let full_sets = length / 3;
         let remainder = length % 3;
 
+        // If I have less than 3 servers, they all would be 0.
         text_count = full_sets;
         media_count = full_sets;
         chat_count = full_sets;
 
+        // With the remainder I can also manage the cases with less than 3 servers.
         if remainder == 1 {
             chat_count += 1;
         } else if remainder == 2 {
@@ -338,6 +340,10 @@ fn create_servers(servers: Vec<config::Server>,
             text_count += 1;
         }
     }
+    if chat_count + media_count + text_count == 0 {
+        panic!("No servers are created");
+    }
+    
     let mut text_files: Vec<Vec<String>> = Vec::new();
     let mut media_files: Vec<Vec<String>>  = Vec::new();
 
