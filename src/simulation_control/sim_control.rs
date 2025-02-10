@@ -313,7 +313,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: Error,
                     node_id: server_id,
-                    message: format!("\nCOMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}", completed_files, incomplete_files)
+                    message: format!("\nCOMPLETED FILES: \n {:?} \n INCOMPLETE FILES: \n {:?}\n", completed_files, incomplete_files)
                 };
                 self.log.push_back(new_log);
             }
@@ -338,7 +338,7 @@ impl SimulationControl {
                     cause: Error,
                     node_id: server_id,
                     message: format!(
-                        "\n{}",
+                        "\n{}\n",
                         medias_ids_and_names.iter()
                             .map(|(num, text)| format!("media id: {}, media name: {}", num, text))
                             .collect::<Vec<String>>()

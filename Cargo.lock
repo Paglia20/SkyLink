@@ -2255,7 +2255,7 @@ dependencies = [
 [[package]]
 name = "lockheedrustin-drone"
 version = "0.1.0"
-source = "git+https://github.com/Lockheed-Rustin/drone.git#8a2916f14f9f0de4e5246fd302bc210984781ba4"
+source = "git+https://github.com/Lockheed-Rustin/drone.git#e82cf49507cf6b64d0e9cf1c90c5c3f523c321c2"
 dependencies = [
  "crossbeam-channel",
  "rand 0.8.5",
@@ -3452,7 +3452,7 @@ dependencies = [
 [[package]]
 name = "skylink"
 version = "0.1.0"
-source = "git+https://github.com/Suge42/Skylink_drone.git#e3c3973177739cfbcbc3374cbe24c934a9b286c9"
+source = "git+https://github.com/Suge42/Skylink_drone.git#b6529f3f77f22dd5da28325308818fc43d46aaa1"
 dependencies = [
  "crossbeam-channel",
  "fastrand",
