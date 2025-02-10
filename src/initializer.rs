@@ -1,10 +1,8 @@
 use crate::sim_control::SimulationControl;
-use skylink::SkyLinkDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::thread::JoinHandle;
 use std::{fs, thread};
-use std::cmp::max;
 use fungi_drone::FungiDrone;
 use getdroned::GetDroned;
 use lockheedrustin_drone::LockheedRustin;
@@ -17,7 +15,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, DEBUG_MODE, NO_SERVER_MODE};
+use crate::{server, ALL_CHAT, ALL_CONTENT, CLIENT_GIO, NO_SERVER_MODE};
 use crate::clients_sam;
 use crate::clients_gio;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
@@ -27,7 +25,6 @@ use crate::server::server_trait::*;
 use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
 use crate::simulation_control::sim_daniel::NodeNature;
-use crate::simulation_control::sim_daniel::NodeNature::*;
 
 
 pub fn initialize(file: &str) -> Option<(SimulationControl, Vec<JoinHandle<()>>)> {
@@ -376,7 +373,7 @@ fn create_servers(servers: Vec<config::Server>,
         // Give the server a copy of the sender of events to the Sim Contr.
         let node_event_send = server_event_send.clone();
 
-        network_graph.insert(server.id, (TextServer, HashSet::from_iter(server.connected_drone_ids.clone())));
+        network_graph.insert(server.id, (NodeNature::TextServer, HashSet::from_iter(server.connected_drone_ids.clone())));
 
         // Take the channels necessary to this client.
         let server_recv = packet_receivers.remove(&server.id).unwrap();
@@ -408,12 +405,11 @@ fn create_servers(servers: Vec<config::Server>,
                 );
                 server.run();
             }));
-            continue;
-        }
-        if media_count != 0 {
+            
+        } else if media_count != 0 {
             media_count = media_count - 1;
             let my_files = media_files[media_count].clone();
-            network_graph.entry(server.id).and_modify(|x| x.0 = MediaServer);
+            network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::MediaServer);
 
             handles.push(thread::spawn(move || {
                 let mut server = server::server_media::MediaServer::new(
@@ -427,11 +423,10 @@ fn create_servers(servers: Vec<config::Server>,
                 server.run();
             }));
             media_servers = true;
-            continue;
-        }
-        if chat_count != 0 {
+            
+        } else if chat_count != 0 {
             chat_count = chat_count - 1;
-            network_graph.entry(server.id).and_modify(|x| x.0 = ChatServer);
+            network_graph.entry(server.id).and_modify(|x| x.0 = NodeNature::ChatServer);
 
             handles.push(thread::spawn(move || {
                 let mut chat_server = ChatServer::new(
@@ -445,10 +440,10 @@ fn create_servers(servers: Vec<config::Server>,
                 chat_server.run();
             }));
             chat_servers = true;
-            continue;
+            
+        } else {
+            println!("An error was encountered calculating the servers")
         }
-
-        println!("An error was encountered calculating the servers")
     }
 
     (chat_servers, media_servers)
@@ -513,9 +508,9 @@ fn create_clients(clients: Vec<config::Client>,
                         client.run();
                     }));
                 }
-            }
-
-            else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
+                
+                // I want chat clients only if a chat server exists, and I can have at least two clients.
+            } else if (length >= 2 && chat_server && chooser) || ALL_CHAT {
                 network_graph.entry(client.id).and_modify(|x|x.0 = NodeNature::ChatClient);
                 if CLIENT_GIO {
                     handles.push(thread::spawn(move || {
@@ -528,7 +523,7 @@ fn create_clients(clients: Vec<config::Client>,
                         );
                         client.run();
                     }));
-                }else {
+                } else {
                     //SAM MODE
                     handles.push(thread::spawn(move || {
                         let mut client = clients_sam::sam_client_chat_system::ChatClient::new(
@@ -540,15 +535,15 @@ fn create_clients(clients: Vec<config::Client>,
                         );
                         client.run();
                     }));
-
-
                 }
 
-                chooser = !chooser;
-                println!("chooser: {}", chooser);
-            } else {
-                //create media client
+                // In case I don't have media servers, I don't change chooser, to create another chat client.
+                if media_server {
+                    chooser = !chooser;
+                }
 
+                // Media servers can work without other clients, but still need a media server.
+            } else if media_server || ALL_CONTENT {
                 if CLIENT_GIO {
                     handles.push(thread::spawn(move || {
                         let mut client = clients_gio::web_browser::WebBrowser::new(
@@ -574,9 +569,14 @@ fn create_clients(clients: Vec<config::Client>,
                     }));
                 }
 
-                chooser = !chooser
+                // In case I don't have chat servers, I don't change chooser, to create another media client.
+                if chat_server {
+                    chooser = !chooser;
+                }
+            } else {
+                panic!("Wrong client-server configuration for clients to work");
             }
-
+            
         }
     } else {
         panic!("Clients can't work without servers");
@@ -584,10 +584,10 @@ fn create_clients(clients: Vec<config::Client>,
 }
 
 fn check_config(conf: &Config) -> bool {
-    ///remove
-    let o = check_bidirectional(conf);
+    /*let o = check_bidirectional(conf);
     let i = check_edges(conf);
-    println!("{o} - {i}");
+    println!("{o} - {i}");*/
+    
     check_bidirectional(conf) && check_edges(conf)
 }
 
@@ -596,7 +596,7 @@ fn check_edges(conf: &Config) -> bool{
     let all_client_ids: Vec<NodeId> = conf.client.iter().map(|z| z.id).collect();
 
     if !NO_SERVER_MODE {
-        // Untill we don't have servers I don't check if they are rightfully connected.
+        // Until we don't have servers I don't check if they are rightfully connected.
 
         for server in &conf.server {
             if server.connected_drone_ids.len() < 2 || server.connected_drone_ids.contains(&server.id) {
