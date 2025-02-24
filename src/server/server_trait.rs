@@ -38,7 +38,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                     }
                 }
                 default => {
-                    if count >= 255 {
+                    if count >= 254 {
                         // If I have some unchecked nodes I try to check them.
                         for i in self.get_unresolved().into_iter() {
                             // println!("Unresolved {}", i);
