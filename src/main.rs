@@ -35,7 +35,7 @@ fn main() {
     match switch {
         Switch::SimDaniel => {
             println!("running {topology}");
-            if let Some((sim_contr, handles)) = initialize(topology2) {
+            if let Some((sim_contr, handles)) = initialize(topology) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();

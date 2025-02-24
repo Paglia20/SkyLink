@@ -24,7 +24,7 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
         if AUTOMATIC_FLOOD {
             self.flood();
         }
-        let mut count = 0;
+        let mut count:u8 = 0;
         while self.is_running() {
             select_biased! {
                 recv(self.get_command_recv()) -> cmd => {
@@ -37,22 +37,25 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.handle_packet(packet);
                     }
                 }
-            }
-            if count > 255 {
-                // If I have some unchecked nodes I try to check them.
-                for i in self.get_unresolved().into_iter() {
-                    // println!("Unresolved {}", i);
-                    self.server_check_type(i);
+                default => {
+                    if count >= 255 {
+                        // If I have some unchecked nodes I try to check them.
+                        for i in self.get_unresolved().into_iter() {
+                            // println!("Unresolved {}", i);
+                            self.server_check_type(i);
+                        }
+                        
+                        // I check a counter, so that I don't try to send all the fragments every loop.
+                        if self.check_to_resend_fragments() {
+                            // println!("resend fragments");
+                            // If I have some unsent fragment, I check periodically.
+                            self.process_unsent_periodically();
+                        }
+                        count = 0;
+                    } else {
+                        count += 1;
+                    }
                 }
-
-                // I check a counter, so that I don't try to send all the fragments every loop.
-                if self.check_to_resend_fragments() {
-                    // If I have some unsent fragment, I check periodically.
-                    self.process_unsent_periodically();
-                }
-                count = 0;
-            }else {
-                count += 1;
             }
         }
     }
@@ -138,6 +141,8 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                                 self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                                 self.add_unsent_fragment(fragment, session_id, destination);
                                 self.remove_faulty_connection(first_hop);
+                                self.add_destination_without_path(destination);
+                                self.flood();
                             }
                         }
                     }
@@ -149,6 +154,8 @@ pub trait Server: NetworkEdge + NetworkEdgeErrors {
                         self.send_event(ServerEvent::MissingRoute(self.get_src_id(), destination));
                         self.add_unsent_fragment(fragment, session_id, destination);
                         self.remove_faulty_connection(first_hop);
+                        self.add_destination_without_path(destination);
+                        self.flood();
                     }
                 }
             },
