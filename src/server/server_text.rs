@@ -62,7 +62,7 @@ impl NetworkEdge for TextServer {
                                         self.send_message(message.clone(), dst);
                                     }
                                     // If I'm not already flooding, I might start a new flood in search of media servers.
-                                    self.flood();
+                                    // self.flood();
                                 } else {
                                     // If the requested text file is ready, I created the response from it
                                     // MediaReferences (HashMap<u64, (String, Vec<NodeId>)>)
