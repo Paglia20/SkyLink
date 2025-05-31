@@ -23,21 +23,19 @@ pub const AUTOMATIC_FLOOD: bool = false; //fast as fuck boi
 
 fn main() {
     // Change 'switch' to change the run
-    // Only one can be applied
-    let _simulator_switch = Switch::SimDaniel;
-    let _test_switch = Switch::Test;
-    let switch = _simulator_switch;
+    let switch = Switch::SimDaniel;
+    // let switch = Switch::Test;
 
     // Topology
-    let _topology = "inputs/input.toml";
-    let _topology2 = "inputs/input_flood.toml";
-    let _topology3 = "inputs/input_3_peat.toml";
+    let topology = "inputs/input.toml";
+    let topology2 = "inputs/input_3_peat.toml";
+    let topology3 = "inputs/input_flood.toml";
 
-    let running_topology = _topology3;
+
     match switch {
         Switch::SimDaniel => {
-            println!("running {running_topology}");
-            if let Some((sim_contr, handles)) = initialize(running_topology) {
+            println!("running {topology}");
+            if let Some((sim_contr, handles)) = initialize(topology) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();

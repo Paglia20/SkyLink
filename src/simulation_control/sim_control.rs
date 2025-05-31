@@ -9,8 +9,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Display, Formatter};
 use std::thread;
 use std::thread::JoinHandle;
+use wg_2024::controller::DroneCommand::{AddSender, Crash, RemoveSender};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
+use wg_2024::drone::*;
 use wg_2024::network::NodeId;
 use wg_2024::packet::NodeType::*;
 use wg_2024::packet::{NodeType, Packet, PacketType};
@@ -26,11 +28,13 @@ pub struct SimulationControl {
 
 
     pub channel_for_drone: Sender<DroneEvent>,
-    pub all_sender_packets: HashMap<NodeId, Sender<Packet>>,
-    pub network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
-    pub log: VecDeque<LogEntry>,
-    
+    pub(crate) all_sender_packets: HashMap<NodeId, Sender<Packet>>,
+    pub(crate) network_graph: HashMap<NodeId, (NodeNature, HashSet<NodeId>)>,
+    pub(crate) log: VecDeque<LogEntry>,
+
+
     pub storage: SimulationStorage,
+
 }
 
 impl SimulationControl {
@@ -60,7 +64,7 @@ impl SimulationControl {
         }
     }
 
-    pub fn add_drone_event_to_log(&mut self, e: DroneEvent) {
+    pub(crate) fn add_drone_event_to_log(&mut self, e: DroneEvent) {
         match e {
             //had to correct index due to not having a source routing header in the flood request!!
             DroneEvent::PacketSent(packet) => {
@@ -74,13 +78,13 @@ impl SimulationControl {
             }
         }
     }
-    pub fn add_client_event_to_log(&mut self, e: ClientEvent){
+    pub(crate) fn add_client_event_to_log(&mut self, e: ClientEvent){
         match e {
             ClientEvent::PacketSent(packet) => {
                 self.c_process_packet_sent(packet);
             }
             ClientEvent::PacketReceived(packet) => {
-                self.process_packet_received(packet);
+                self.c_process_packet_received(packet);
             }
             ClientEvent::PacketSendingError(packet) => {
                 self.c_process_packet_sending_error(packet);
@@ -216,7 +220,7 @@ impl SimulationControl {
                 self.s_process_packet_sent(packet);
             }
             ServerEvent::PacketReceived(packet) => {
-                self.process_packet_received(packet);
+                self.s_process_packet_received(packet);
             }
             ServerEvent::PacketSendingError(packet) => {
                 self.s_process_packet_sending_error(packet);
@@ -389,7 +393,7 @@ impl SimulationControl {
                 let new_log = LogEntry{
                     cause: Error,
                     node_id: server_id,
-                    message: "flooding...".to_string(),
+                    message: format!("flooding...")
                 };
                 self.log.push_back(new_log);
             }
@@ -413,11 +417,11 @@ impl SimulationControl {
             }*/
         }
     }
-    pub fn retrieve_list_from_server(&self, src: NodeId, dst: NodeId){
+    pub fn retrive_list_from_server(&self, src: NodeId, dst: NodeId){
         if Some(Client) == self.get_type(src){
             self.client_command_senders.get(&src).unwrap().send(ClientCommand::RetrieveList(dst)).unwrap();
             /*if DEBUG_MODE{
-                println!("Sim Controller Forced {src} to retrieve list from {}", dst);
+                println!("Sim Controller Forced {src} to retrive list from {}", dst);
             }*/
         }
     }
@@ -438,21 +442,28 @@ impl SimulationControl {
             }*/
         }
     }
+    pub fn get_media(&self, src: NodeId, media: u64){
+        if Some(Client) == self.get_type(src){
+            self.client_command_senders.get(&src).unwrap().send(ClientCommand::GetTextFile(media)).unwrap();
+            /*if DEBUG_MODE{
+                println!("Sim Controller Forced {src} to get media {}",media);
+            }*/
+        }
+    }
 
 
 
     pub fn spawn_drone(&mut self, pdr: f32, connections: Vec<NodeId>) -> (JoinHandle<()>, NodeId) {
         let new_id = self.generate_id();
-        // updates network graph
-        self.network_graph.insert(new_id, (NodeNature::Drone, HashSet::from_iter(connections.clone())));
+        //aggiorna network graph
+        self.network_graph.insert(new_id, (NodeNature::Drone, HashSet::from_iter(connections.clone().into_iter())));
 
-        let (control_sender, control_receiver) = unbounded(); // Channel to send DroneCommands to the drone.
+        let (control_sender, control_receiver) = unbounded(); //canale per il Sim che manda drone command al drone
         self.drone_command_senders
-            .insert(new_id, control_sender.clone()); // I give the SC the channel to this drone.
+            .insert(new_id.clone(), control_sender.clone()); // do al sim il sender per questo drone
 
-        let (packet_send, packet_recv) = unbounded();
-        // Channel for the drone, the recv goes in it, the send is given to its neighbour.
-        self.all_sender_packets.insert(new_id, packet_send.clone());
+        let (packet_send, packet_recv) = unbounded(); //canale per il drone, il recv gli va dentro, il send va dato in copia a tutti i droni che vogliono comunicare con lui
+        self.all_sender_packets.insert(new_id.clone(), packet_send.clone());
 
         let mut packet_send = HashMap::new();
         //fill hashmap
@@ -505,9 +516,9 @@ impl SimulationControl {
                 println!("crash command sent do the drone {}", id);
 
                 // remove the drone from the neighbour's sends
-                let vec = self.network_graph.get(&id).unwrap().1.clone();
-                    self.drone_command_senders.iter().for_each(|(_neigh_id, sender)|{
-                        match sender.try_send(DroneCommand::RemoveSender(id)) {
+                let mut vec = self.network_graph.get(&id).unwrap().1.clone();
+                    self.drone_command_senders.iter().for_each(|(neigh_id, sender)|{
+                        match sender.try_send(RemoveSender(id)) {
                             Ok(_) => {}
                             Err(_e) => {
                                 /*if DEBUG_MODE {
@@ -516,7 +527,7 @@ impl SimulationControl {
                             }
                         }
                     });
-                    self.client_command_senders.iter().for_each(|(_neigh_id, sender)|{
+                    self.client_command_senders.iter().for_each(|(neigh_id, sender)|{
                         match sender.try_send(ClientCommand::RemoveSender(id)) {
                             Ok(_) => {}
                             Err(_e) => {
@@ -558,11 +569,16 @@ impl SimulationControl {
         }
     }
 
-    pub fn crash_all(&mut self) {
-        self.drone_command_senders.iter().for_each(|(_neigh_id, sender)| sender.try_send(DroneCommand::Crash).unwrap());
-        self.server_command_senders.iter().for_each(|(_neigh_id, sender)| sender.try_send(ServerCommand::InstantCrash).unwrap());
-        self.client_command_senders.iter().for_each(|(_neigh_if, sender)| sender.try_send(ClientCommand::InstantCrash).unwrap());
-        
+    pub(crate) fn crash_all(&mut self) {
+        for (_, sender) in &self.drone_command_senders {
+            sender.try_send(Crash).unwrap()
+        }
+        for (_, sender) in &self.server_command_senders {
+            sender.try_send(ServerCommand::InstantCrash).unwrap()
+        }
+        for (_, sender) in &self.client_command_senders {
+            sender.try_send(ClientCommand::InstantCrash).unwrap()
+        }
     }
 
     pub fn remove_senders(&mut self, id: NodeId, id_to_remove: NodeId) {
@@ -600,6 +616,7 @@ impl SimulationControl {
                     id,
                     format!("drone {id_to_remove} is not in network",
                     )));
+                return;
             }
             Some(n_type) => {
                 self.match_node_type_for_remove_senders(n_type, id_to_remove, id);
@@ -622,7 +639,7 @@ impl SimulationControl {
                 node_id,
                 format!("drone {node_id} is not in network",
                 )));
-            },
+                return;},
 
             Some(n_type) => {
                 if Client == n_type{
@@ -682,6 +699,7 @@ impl SimulationControl {
                     id_to_add,
                     format!("drone {id_to_add} is not in network",
                     )));
+                return;
             }
             Some(n_type) => {
                 self.match_node_type_for_add_sender(n_type, id_to_add, id);
@@ -756,7 +774,7 @@ impl SimulationControl {
                 *id
             }
             _ => *{
-                packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap()
+                packet.routing_header.hops.get(packet.routing_header.hop_index).unwrap() //riguarda per type exchange
             },
         };
 
@@ -764,6 +782,19 @@ impl SimulationControl {
             cause: Sent,
             node_id: id_drone,
             message
+        };
+        self.log.push_back(new_log);
+    }
+    fn c_process_packet_received(& mut self, packet: Packet){
+        let id_drone = self.get_id_drone(packet.clone());
+
+        let new_log = LogEntry {
+            cause: Sent,
+            node_id: id_drone,
+            message: format!(
+                "Received fragment {:?} moving from node {} to {}",
+                packet.session_id, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap()
+            ),
         };
         self.log.push_back(new_log);
     }
@@ -781,31 +812,39 @@ impl SimulationControl {
     }
     fn c_process_ack_received(& mut self, packet: Packet){
         if let Some(ack_id) = packet.routing_header.destination(){
-            if let PacketType::Ack(ack) = packet.pack_type {
-                let new_log = LogEntry{
-                    cause: AckReceived,
-                    node_id: ack_id,
-                    message: format!(
-                        "received Ack of fragment {} coming from {} in session {}"
-                        , ack.fragment_index, packet.routing_header.source().unwrap() ,packet.session_id
-                    )
-                };
-                self.log.push_back(new_log);
+            match packet.pack_type {
+                PacketType::Ack(ack) => {
+                    let new_log = LogEntry{
+                        cause: AckReceived,
+                        node_id: ack_id,
+                        message: format!(
+                            "received Ack of fragment {} coming from {} in session {}"
+                            , ack.fragment_index, packet.routing_header.source().unwrap() ,packet.session_id
+                        )
+                    };
+                    self.log.push_back(new_log);
+                }
+                _ => {}
             }
         }
     }
     fn c_process_nack_received(& mut self, packet: Packet){
         if let Some(nack_id) = packet.routing_header.destination(){
-            if let PacketType::Nack(nack) = packet.pack_type {
-                let new_log = LogEntry{
-                    cause: NackReceived,
-                    node_id: nack_id,
-                    message: format!(
-                        "received Nack of fragment {}, nack type:{:?} "
-                        , nack.fragment_index, nack.nack_type
-                    )
-                };
-                self.log.push_back(new_log);
+            match packet.pack_type {
+                PacketType::Nack(nack) => {
+                    let new_log = LogEntry{
+                        cause: NackReceived,
+                        node_id: nack_id,
+                        message: format!(
+                            "received Nack of fragment {}, nack type:{:?} "
+                            , nack.fragment_index, nack.nack_type
+                        )
+                    };
+                    self.log.push_back(new_log);
+                }
+                _ => {
+
+                }
             }
         }
     }
@@ -930,12 +969,12 @@ impl SimulationControl {
         };
         self.log.push_back(new_log);
     }
-    fn process_packet_received(&mut self, packet: Packet){
-        let id_node = self.get_id_drone(packet.clone());
+    fn s_process_packet_received(&mut self, packet: Packet){
+        let id_drone = self.get_id_drone(packet.clone());
 
         let new_log = LogEntry {
             cause: Sent,
-            node_id: id_node,
+            node_id: id_drone,
             message: format!(
                 "Received fragment {:?} moving from node {} to {}",
                 packet.session_id, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap()
@@ -960,16 +999,19 @@ impl SimulationControl {
     }
     fn s_process_nack_received(&mut self, packet: Packet){
         if let Some(ack_id) = packet.routing_header.destination(){
-            if let PacketType::Ack(ack) = packet.pack_type {
-                let new_log = LogEntry{
-                    cause: AckReceived,
-                    node_id: ack_id,
-                    message: format!(
-                        " received Nack of fragment {}"
-                        ,ack.fragment_index
-                    )
-                };
-                self.log.push_back(new_log);
+            match packet.pack_type {
+                PacketType::Ack(ack) => {
+                    let new_log = LogEntry{
+                        cause: AckReceived,
+                        node_id: ack_id,
+                        message: format!(
+                            " received Nack of fragment {}"
+                            ,ack.fragment_index
+                        )
+                    };
+                    self.log.push_back(new_log);
+                }
+                _ => {}
             }
         }
     }
@@ -987,29 +1029,31 @@ impl SimulationControl {
         id_drone
     }
 
-    fn get_message(&mut self, packet: Packet) -> String {
-        match packet.clone().pack_type {
+    fn get_message(&mut self, packet: Packet) -> String{
+        let mut message = String::new();
+        match packet.clone().pack_type{
             PacketType::MsgFragment(fragment) => {
-                format!("sent fragment id: {}, to {}", fragment.fragment_index, packet.routing_header.destination().unwrap())
+                message = format!("sent fragment id: {}, to {}", fragment.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::Ack(ack) => {
-                format!("forwarded ack with id: {} from initiator {} to {} of session {}", ack.fragment_index, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap(), packet.session_id)
+                message = format!("forwarded ack with id: {} from initiator {} to {} of session {}", ack.fragment_index, packet.routing_header.source().unwrap(), packet.routing_header.destination().unwrap(), packet.session_id);
             }
             PacketType::Nack(nack) => {
-                format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap())
+                message = format!("sent nack id: {} to {}", nack.fragment_index, packet.routing_header.destination().unwrap());
             }
             PacketType::FloodRequest(rq) => {
                 let path: Vec<NodeId> = rq.path_trace.iter().map(|x| x.0).collect();
-                format!("sent flood request: (id: {}, initiator :{}) containing {:?}", rq.flood_id, rq.initiator_id, path)
+                message = format!("sent flood request: (id: {}, initiator :{}) containing {:?}", rq.flood_id, rq.initiator_id, path);
             }
             PacketType::FloodResponse(rr) => {
                 let path: Vec<NodeId> = rr.path_trace.iter().map(|x| x.0).collect();
-                format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
+                message = format!("sent flood response to {:?}, containing {:?}", packet.routing_header.destination(), path)
             }
         }
+        message
     }
 
-    // Functions to remove_senders.
+    //functions for remove_senders
     fn match_node_type_for_remove_senders(&mut self, n_type: NodeType, id:NodeId, id_to_remove:NodeId){
         match n_type {
             Client => {
@@ -1025,7 +1069,7 @@ impl SimulationControl {
             }
             Drone => {
                 if let Some(sender) = self.drone_command_senders.get(&id) {
-                    if let Err(_e) = sender.try_send(DroneCommand::RemoveSender(id_to_remove)) {
+                    if let Err(_e) = sender.try_send(RemoveSender(id_to_remove)) {
                         println!(
                             "error in removing drone {} from drone {} senders",
                             id_to_remove, id
@@ -1047,7 +1091,7 @@ impl SimulationControl {
             }
         }
 
-        if let Some((_node_type, ids)) = self.network_graph.get_mut(&id) {
+        if let Some((_nodetype, ids)) = self.network_graph.get_mut(&id) {
             ids.retain(|id| {id != &id_to_remove});
         }
         self.log.push_back(LogEntry::new(
@@ -1062,8 +1106,8 @@ impl SimulationControl {
         match n_type {
             Client => {
                 if let Some(sender) = self.client_command_senders.get(&id) {
-                    if let Some(sender_packet) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.try_send(ClientCommand::AddSender(id_to_add, sender_packet.clone())) {
+                    if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                        if let Err(_e) = sender.try_send(ClientCommand::AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to client {} senders", id_to_add, id);
                             return;
                         }
@@ -1074,8 +1118,8 @@ impl SimulationControl {
             }
             Drone => {
                 if let Some(sender) = self.drone_command_senders.get(&id) {
-                    if let Some(sender_packet) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.try_send(DroneCommand::AddSender(id_to_add, sender_packet.clone())) {
+                    if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                        if let Err(_e) = sender.try_send(AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to drone {} senders", id_to_add, id);
                             return;
                         }
@@ -1086,8 +1130,8 @@ impl SimulationControl {
             }
             Server => {
                 if let Some(sender) = self.server_command_senders.get(&id) {
-                    if let Some(sender_packet) = self.all_sender_packets.get(&id_to_add) {
-                        if let Err(_e) = sender.try_send(ServerCommand::AddSender(id_to_add, sender_packet.clone())) {
+                    if let Some(senderpacket) = self.all_sender_packets.get(&id_to_add) {
+                        if let Err(_e) = sender.try_send(ServerCommand::AddSender(id_to_add, senderpacket.clone())) {
                             println!("error adding drone {} to server {} senders", id_to_add, id);
                             return;
                         }
