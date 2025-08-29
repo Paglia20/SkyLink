@@ -355,7 +355,8 @@ fn create_servers(servers: Vec<config::Server>,
         let chunk_size = (files.len() + media_count - 1) / media_count;
         media_files = files.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-
+    } else {
+        panic!("Not enough text servers in the selected topology");
     }
 
     for server in servers.into_iter() {
