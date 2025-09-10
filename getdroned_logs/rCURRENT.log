@@ -1,23 +1,3 @@
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
-2025-02-10 23:46:48 [WARN] [getdroned::get_droned] Drone 7 failed to receive a command: RecvError
+2025-09-10 19:18:37 [INFO] [rust_do_it::drone] Drone 4 received command AddSender(0, Sender { .. })
+2025-09-10 19:19:00 [INFO] [rust_do_it::drone] Drone 4 received command AddSender(17, Sender { .. })
+2025-09-10 19:19:12 [INFO] [rust_do_it::drone] Drone 4 received command AddSender(18, Sender { .. })

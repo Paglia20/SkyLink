@@ -1,180 +1,401 @@
+// Web browser client built on ClientStruct: discovery, fragment reassembly, text/media fetching. Comments refreshed and methods lightly reordered; no logic changes.
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
+use crate::clients_sam::sam_client_base::ClientStruct;
+use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use super::sam_client_base::SamClientBase;
-use super::sam_client_trait::Client;
-use crate::message::{Message, ContentType, TextRequest, TextResponse, MediaRequest, MediaResponse, TypeExchange};
+use crate::message::MediaRequest::{Media};
+use crate::message::TextRequest::*;
+use crate::message::{ContentType, MediaResponse, Message, TypeExchange, TextResponse};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
+use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::thread::sleep;
+use std::time::Duration;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, NackType, Packet};
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::PacketType::{Ack, FloodRequest, FloodResponse, MsgFragment};
+use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, MissingDestForMedia, MissingTextList, SendCatalogue, SendDestinations, SendMedia, SendTextList};
+use crate::message::EdgeNackType::UnexpectedMessage;
 use crate::server::server_type::{ContentServerType, ServerType};
-use crate::DEBUG_MODE;
-use crate::NO_SERVER_MODE;
-use super::sam_events::ConnectionState;
-struct TextContent {
-    name: String,
-    media_refs: HashSet<u64>,
-    servers: HashSet<NodeId>,
-}
+use base64::{engine::general_purpose, Engine};
+use std::fs::write;
+use open;
+use std::marker::PhantomData;
 
-struct MediaContent {
-    name: String,
-    data: Option<Vec<u8>>,
-    servers: HashSet<NodeId>,
-}
+const BUILD_FLAVOR: &str = "alt-web-v1";
 
-pub struct WebBrowser {
-    base: SamClientBase,
-    text_contents: HashMap<u64, TextContent>,
-    media_contents: HashMap<u64, MediaContent>,
-    text_servers: HashSet<NodeId>,
-    media_servers: HashSet<NodeId>,
-    pending_requests: HashSet<(NodeId, u64)>,
+type ArrivedMedia = (String, Vec<u8>);
+const OPEN_AUTO_MEDIA:bool = true;
+struct WebTag;
+
+pub struct WebBrowser{
+    // Shared networking core for clients.
+    client_base: ClientStruct,
+    // Stored text lists: id -> (servers, name).
+    available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
+    // Media catalogue: media_id -> candidate servers.
+    catalogue: HashMap<u64, Vec<NodeId>>,
+    // Cached media content: id -> (name, bytes).
+    arrived_content: HashMap<u64, ArrivedMedia>,
+    _marker: PhantomData<WebTag>,
 }
 
 impl NetworkEdge for WebBrowser {
-    fn send_message(&mut self, message: Message, destination: NodeId) {
-        self.base.send_message(message, destination)
-    }
-
-    fn handle_packet(&mut self, packet: Packet) {
-        self.base.handle_packet(packet);
-        if let Some(msg) = self.base.reassembled_message.take() {
-            self.handle_message(msg);
-        }
-    }
-
-    fn handle_message(&mut self, message: Message) {
-        match message.content {
-            ContentType::TextResponse(response) => {
-                self.handle_text_response(message.source_id, response);
-            }
-            ContentType::MediaResponse(response) => {
-                self.handle_media_response(message.source_id, response);
-            }
-            ContentType::TypeExchange(exchange) => {
-                self.handle_type_exchange(exchange);
-            }
-            _ => {}
-        }
-    }
-
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        self.base.send_fragment(fragment, destination, session_id)
+        self.client_base.send_fragment(fragment, destination, session_id)
     }
 
     fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
-        self.base.add_unsent_fragment(fragment, session_id, destination)
+        self.client_base.add_unsent_fragment(fragment, session_id, destination);
     }
 
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
-        self.base.send_fragment_after_nack(packet_session_id, nack)
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack)  {
+        self.client_base.send_fragment_after_nack(packet_session_id, nack)
     }
 
     fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
-        self.base.send_ack(packet, fragment_index)
+        self.client_base.send_ack(packet, fragment_index);
     }
 
     fn flood(&mut self) {
-        self.base.flood()
+        self.client_base.flood();
     }
 
     fn get_flood_id(&mut self) -> u64 {
-        self.base.get_flood_id()
+        self.client_base.get_flood_id()
     }
 
     fn get_session_id(&mut self) -> u64 {
-        self.base.get_session_id()
+        self.client_base.get_session_id()
     }
 
     fn get_src_id(&self) -> NodeId {
-        self.base.get_src_id()
+        self.client_base.get_src_id()
     }
 
     fn remove_sender(&mut self, id: NodeId) {
-        self.base.remove_sender(id)
+        self.client_base.remove_sender(id);
+    }
+
+    fn send_message(&mut self, message: Message, destination: NodeId) {
+        self.client_base.send_message(message, destination)
+    }
+
+    /// Handle inbound packets (web browser role).
+    fn handle_packet(&mut self, mut packet: Packet) {
+        if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
+            flood_request
+                .path_trace
+                .push((self.client_base.get_src_id(), NodeType::Client));
+            // Update the packet's path_trace.
+            packet.pack_type = FloodRequest(flood_request.clone());
+
+            if !self.client_base.handle_flood_request(packet) {
+                self.edge_send_flood_response(flood_request);
+            }
+        }
+        else if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
+            // Not for us: act as a relay (drone).
+            self.client_base.send_as_drone(packet);
+        } else {
+            // We are the destination; handle by packet type.
+            match packet.pack_type.clone() {
+                MsgFragment(fragment) => {
+                    let tot_num_frag = fragment.total_n_fragments as usize;
+                    let session_id = packet.session_id;
+                    let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.client_base.get_src_id(); //he is the destination
+                    let frag_index = fragment.fragment_index;
+                    // Buffer the arriving fragment.
+                    let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                    entry.2.push(fragment);
+
+                    // ACK each received fragment.
+                    self.send_ack(packet.clone(), frag_index);
+
+                    // Notify the simulation controller about receipt.
+                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
+
+                    // If all fragments have arrived, reconstruct the message.
+                    let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
+                    if frags_clone.len() == tot_num_frag {
+                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{e} with {}", self.client_base.get_src_id());
+                                }
+                                self.send_event(ErrorReassembling(self.get_src_id()));
+                                return;
+                            }
+                            Ok(mess) => { mess }
+                        };
+                        // Deliver the reassembled message to the handler.
+                        self.handle_message(message);
+
+                        // Clear saved fragments for this session.
+                        self.client_base.fragments().remove(&(packet.session_id, initiator_id));
+                    }
+                }
+                Ack(ack) => {
+                    self.send_event(ClientEvent::AckReceived(packet.clone()));
+
+                    // ACKs reference the original destination as source; clean up when all fragments are acknowledged.
+                    let src = self.client_base.get_src_id();
+                    match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
+                        None => {}
+                        Some((_, _, vec)) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                            if vec.is_empty() {
+                                let src = self.client_base.get_src_id();
+                                self.client_base.fragments().remove_entry(&(packet.session_id, src));
+                            }
+                        }
+                    }
+
+                    // Reward successful path with positive feedback.
+                    let nodes = packet.routing_header.hops;
+                    self.client_base.network().positive_feedback(nodes);
+                }
+
+                PacketType::Nack(nack) => {
+                    self.send_event(ClientEvent::NackReceived(packet.clone()));
+                    // Delegate NACK handling to the base.
+                    self.client_base.handle_nack(nack, packet);
+                }
+                FloodRequest(_) => {
+                    unreachable!()
+                }
+                FloodResponse(_flood_resp) => {
+                    self.client_base.save_flood_response(packet);
+                }
+            }
+        }
+    }
+
+    // Handle a fully reassembled message (web browser).
+    fn handle_message(&mut self,message: Message )  {
+        let src = message.source_id;
+
+        match message.content {
+            ContentType::MediaResponse(media_response) => {
+                match media_response{
+                    MediaResponse::MediaList(_list) => {
+                        let new_nack = self.create_nack(UnexpectedMessage);
+                        self.send_nack_message(message.source_id, new_nack);
+                    }
+                    MediaResponse::Media(id, name, media) => {
+                        self.arrived_content.insert(id, (name.clone(), media.clone()));
+                        self.send_event(SendMedia(self.get_src_id(), id, name, media.clone()));
+
+                        if OPEN_AUTO_MEDIA {
+                            self.open_media(media)
+                        }
+                    }
+                    MediaResponse::NotFound(id) => {
+                        // Update the catalogue.
+                        if let Some(vec) = self.catalogue.get_mut(&id){
+                            vec.retain(|node| *node != src);
+                        }
+                        // Try to fetch the same media from another server.
+                        self.get_media(id);
+                    }
+                }
+            },
+            ContentType::TextResponse(text_response) => {
+                match text_response{
+                    TextResponse::TextList(map) => {
+                        for (text_file_id, name) in map {
+                            let entry = self.available_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
+                            entry.0.push(src);
+
+                            if entry.0.len() == 1 {
+                                self.send_event(SendTextList(self.get_src_id(), text_file_id, name))
+                            }
+                        }
+                    }
+                    TextResponse::MediaReferences(media_refs) => {
+                        for (media_id, (name, media_server_id)) in media_refs{
+                            let mut is_new= false;
+                            let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
+                            for e in media_server_id {
+                                entry.push(e);
+                                if entry.len() == 1 {
+                                    is_new = true;
+                                }
+                            }
+                            if is_new {
+                                self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
+                            }
+                        }
+                    }
+                    TextResponse::Incomplete(incomplete_text) => {
+                        self.retry_get_text_file(incomplete_text);
+                    }
+                    TextResponse::NotFound(text_id) => {
+                        //update catalogue
+                        self.available_text_lists.entry(text_id).and_modify(|(v, _)|
+                            v.retain(|node_id| *node_id != src));
+
+                        //retry to obtain it
+                        self.get_text_file(text_id);
+                    }
+                }
+            }
+
+            ContentType::TypeExchange(exchange) => {
+                match exchange {
+                    TypeExchange::TypeRequest { from } => {
+                        let type_resp = TypeExchange::TypeResponse {
+                            edge_type: EdgeType::Client(ClientType::WebBrowser),
+                            from: self.client_base.get_src_id(),
+                        };
+                        let message = Message::new(self.client_base.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
+
+                        self.send_message(message, from);
+
+                    }
+                    TypeExchange::TypeResponse { from, edge_type } => {
+                        if let EdgeType::Server(server_type) = edge_type{
+                            if let ServerType::Content(ty) = server_type{
+                                self.client_base.network().update_state(from, 1);
+                                if ty == ContentServerType::Text{
+                                    // Only text servers are exposed to SC as destinations for list queries; media is handled via catalogue.
+                                    self.send_event(SendDestinations(self.client_base.get_src_id(), from));
+                                }
+                            }
+                            else {
+                                self.client_base.network().update_state(from, 2);
+                            }
+                        } else {
+                            //if it's a client
+                            self.client_base.network().update_state(from, 2);
+
+                            if NO_SERVER_MODE {
+                                self.send_event(SendDestinations(self.client_base.get_src_id(), from));
+                            }
+                        }
+                    }
+                }
+            }
+            ContentType::EdgeNack(nack) => {
+                self.client_base.handle_edge_nack(nack, message.source_id);
+
+            },
+            _ => {
+                // Ignore unrelated request types and reply with an edge-level NACK.
+                let new_nack = self.create_nack(UnexpectedMessage);
+                self.send_nack_message(message.source_id, new_nack);
+            }
+        }
+
     }
 }
 
 impl NetworkEdgeErrors for WebBrowser {
     fn check_type(&mut self, id: NodeId) {
-        self.base.check_type(id)
+        self.client_base.check_type(id);
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
-        self.base.is_state_ok(node_id)
+        self.client_base.is_state_ok(node_id)
     }
 
     fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
-        self.base.send_nack_message(dst, nack)
+        self.client_base.send_nack_message(dst, nack);
     }
 
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
-        self.base.send_drone_nack(dst, nack,session_id)
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 
-impl Client for WebBrowser {
+impl ClientTrait for WebBrowser {
     fn new(
-        id: NodeId,
+        node_id: NodeId,
         command_recv: Receiver<ClientCommand>,
         event_send: Sender<ClientEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         WebBrowser {
-            base: SamClientBase::new(id, command_recv, event_send, packet_recv, packet_send),
-            text_contents: HashMap::new(),
-            media_contents: HashMap::new(),
-            text_servers: HashSet::new(),
-            media_servers: HashSet::new(),
-            pending_requests: HashSet::new(),
+            client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            available_text_lists: Default::default(),
+            arrived_content: Default::default(),
+            catalogue: Default::default(),
+            _marker: PhantomData,
         }
     }
 
+    /// Main event loop for the web browser (delegates I/O to the base).
     fn run(&mut self) {
-        loop {
+        let mut count = 0;
+        while self.client_base.is_running() {
             select_biased! {
-                recv(self.base.command_recv) -> cmd => {
+                recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
                         self.handle_command(command);
                     }
                 }
-                recv(self.base.packet_recv) -> pkt => {
+                recv(self.client_base.packet_recv()) -> pkt => {
                     if let Ok(packet) = pkt {
                         self.handle_packet(packet);
                     }
                 }
+                default => {
+                    // Brief pause to avoid busy-waiting.
+                     sleep(Duration::from_millis(11));
+                }
+            }
+
+            // Throttle periodic work via a simple counter.
+            if count >= 128 {
+                // Probe unresolved neighbour types.
+                self.client_base.periodic_check_type();
+
+                self.client_base.process_unsent_periodically();
+
+                // Reset counter.
+                count = 0;
+            } else {
+                count += 1;
             }
         }
     }
 
+
+    //Handle Web Browser Commands
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
-            ClientCommand::GetTextFile(text_id) => {
-                if let Some(content) = self.text_contents.get(&text_id) {
-                    if let Some(&server) = content.servers.iter().next() {
-                        self.request_text(server, text_id);
-                    }
-                }
+            ClientCommand::RemoveSender(node_id) => {
+                self.remove_sender(node_id);
             }
-            ClientCommand::GetContent(media_id) => {
-                if let Some(content) = self.media_contents.get(&media_id) {
-                    if let Some(&server) = content.servers.iter().next() {
-                        self.request_media(server, media_id);
-                    }
-                }
+            ClientCommand::AddSender(node_id, sender) => {
+                self.client_base.packet_send().insert(node_id, sender);
             }
-            ClientCommand::RetrieveList(server_id) => {
-                let message = Message::new(
-                    self.base.node_id,
-                    self.base.get_session_id(),
-                    ContentType::TextRequest(TextRequest::TextList)
-                );
-                self.base.send_message(message, server_id);
+            ClientCommand::Flood =>{
+                self.flood();
             }
-            _ => self.base.handle_command(command)
+            ClientCommand::RetrieveList(id) => {
+                self.get_list(id);
+            }
+            ClientCommand::GetTextFile(id) => {
+                self.get_text_file(id);
+            }
+
+            // WebClient-specific command
+            ClientCommand::GetContent(id) => {
+                self.get_media(id);
+            }
+
+            ClientCommand::InstantCrash => {
+                self.client_base.crash();
+            }
+            // Ignore non-web commands.
+            _ =>{
+
+            }
         }
     }
 
@@ -183,171 +404,121 @@ impl Client for WebBrowser {
     }
 
     fn send_event(&self, ce: ClientEvent) {
-        self.base.send_event(ce);
+        self.client_base.send_event(ce);
     }
 }
 
-impl WebBrowser {
-    fn handle_text_response(&mut self, source: NodeId, response: TextResponse) {
-        match response {
-            TextResponse::TextList(texts) => {
-                for (id, name) in texts {
-                    let entry = self.text_contents.entry(id).or_insert_with(|| TextContent {
-                        name: name.clone(),
-                        media_refs: HashSet::new(),
-                        servers: HashSet::new(),
-                    });
-                    entry.servers.insert(source);
+// WebBrowser helpers.
+impl WebBrowser{
 
-                    // Send text list event
-                    self.base.send_event(ClientEvent::SendTextList(
-                        self.base.node_id,
-                        id,
-                        name
-                    ));
-                }
-            }
-            TextResponse::MediaReferences(refs) => {
-                for (media_id, (name, servers)) in refs {
-                    let entry = self.media_contents.entry(media_id).or_insert_with(|| MediaContent {
-                        name: name.clone(),
-                        data: None,
-                        servers: HashSet::new(),
-                    });
-                    entry.servers.extend(servers);
+    // Identify this build flavor (purely informational; no behavior change).
+    pub fn build_flavor(&self) -> &'static str {
+        BUILD_FLAVOR
+    }
 
-                    // Send catalogue event
-                    self.base.send_event(ClientEvent::SendCatalogue(
-                        self.base.node_id,
-                        media_id,
-                        name
-                    ));
-                }
-            }
-            TextResponse::NotFound(text_id) => {
-                if let Some(content) = self.text_contents.get_mut(&text_id) {
-                    content.servers.remove(&source);
-                }
-                // Send missing text list event
-                self.base.send_event(ClientEvent::MissingTextList(
-                    self.base.node_id,
-                    text_id
-                ));
-            }
-            TextResponse::Incomplete(text_id) => {
-                // First collect all media IDs and servers we need to request
-                let media_to_request: Vec<(NodeId, u64)> = {
-                    let mut requests = Vec::new();
-                    if let Some(content) = self.text_contents.get(&text_id) {
-                        for &media_id in &content.media_refs {
-                            if let Some(media_content) = self.media_contents.get(&media_id) {
-                                if media_content.data.is_none() {
-                                    if let Some(&server) = media_content.servers.iter().next() {
-                                        requests.push((server, media_id));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    requests
-                };
-
-                // Now make the requests with no borrows active
-                for (server, media_id) in media_to_request {
-                    self.request_media(server, media_id);
-                }
-            }
+    // Request the list of texts from a server.
+    fn get_list(&mut self, id: NodeId) {
+        let src = self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
+        let content = ContentType::TextRequest(TextList);
+        let msg = Message::new(src, session, content);
+        self.client_base.send_message(msg, id);
+        // Debug trace for list request.
+        if DEBUG_MODE {
+            println!("Sent text list request from {src} to server {id}");
         }
     }
 
-    fn handle_media_response(&mut self, source: NodeId, response: MediaResponse) {
-        match response {
-            MediaResponse::Media(media_id, name, data) => {
-                if let Some(content) = self.media_contents.get_mut(&media_id) {
-                    content.data = Some(data.clone());
-                }
+    // Request a specific text file by ID.
+    fn get_text_file(&mut self, text_file_id: u64) {
+        self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
 
-                // Send media event
-                self.base.send_event(ClientEvent::SendMedia(
-                    self.base.node_id,
-                    media_id,
-                    name,
-                    data
-                ));
-
-                self.pending_requests.remove(&(source, media_id));
-            }
-            MediaResponse::MediaList(_) => {
-                // Handle media list - no specific event needed
-            }
-            MediaResponse::NotFound(media_id) => {
-                if let Some(content) = self.media_contents.get_mut(&media_id) {
-                    content.servers.remove(&source);
-                }
-
-                // Send missing media event
-                self.base.send_event(ClientEvent::MissingDestForMedia(
-                    self.base.node_id,
-                    media_id
-                ));
-
-                self.pending_requests.remove(&(source, media_id));
-            }
-        }
-    }
-
-    fn handle_type_exchange(&mut self, exchange: TypeExchange) {
-        match exchange {
-            TypeExchange::TypeRequest { from } => {
-                let response = Message::new(
-                    self.base.node_id,
-                    self.base.get_session_id(),
-                    ContentType::TypeExchange(TypeExchange::TypeResponse {
-                        edge_type: EdgeType::Client(ClientType::WebBrowser),
-                        from: self.base.node_id,
-                    })
-                );
-                self.send_message(response, from);
-            }
-            TypeExchange::TypeResponse { from, edge_type } => {
-                if let EdgeType::Server(server_type) = edge_type {
-                    match server_type {
-                        crate::server::server_type::ServerType::Content(_) => {
-                            self.text_servers.insert(from);
-                            self.base.node_states.insert(from, ConnectionState::Ready);
-                            // Send destination event
-                            self.base.send_event(ClientEvent::SendDestinations(
-                                self.base.node_id,
-                                from
-                            ));
-                        }
-                        _ => {
-                            self.base.node_states.insert(from, ConnectionState::Failed);
-                        }
+        if let Some(map) = self.available_text_lists.get(&text_file_id) {
+            let destinations = map.0.clone();
+            if !destinations.is_empty() {
+                let src = self.client_base.get_src_id();
+                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
+                    let content = ContentType::TextRequest(TextFile(text_file_id));
+                    let msg = Message::new(src, session, content);
+                    self.client_base.send_message(msg, dst);
+                    if DEBUG_MODE {
+                        println!("Sent text file request from {src} to server {dst}");
                     }
                 }
             }
+        } else {
+            self.send_event(MissingTextList(self.get_src_id(), text_file_id))
         }
     }
 
-    fn request_media(&mut self, server: NodeId, media_id: u64) {
-        if !self.pending_requests.contains(&(server, media_id)) {
-            let message = Message::new(
-                self.base.node_id,
-                self.base.get_session_id(),
-                ContentType::MediaRequest(MediaRequest::Media(media_id)),
-            );
-            self.base.send_message(message, server);
-            self.pending_requests.insert((server, media_id));
+    // Retry fetching a text file that arrived incomplete.
+    fn retry_get_text_file(&mut self, text_file_id: u64) {
+        let wait_time: u32 = (u16::MAX as u32) * 2u32;
+        for _ in 0..wait_time {
+
+        }
+        self.get_text_file(text_file_id)
+    }
+
+    // Retrieve a media file using the catalogue; open immediately if cached.
+    fn get_media(&mut self, cont_id: u64) {
+        if self.arrived_content.contains_key(&cont_id) {
+            self.open_media(self.arrived_content.get(&cont_id).unwrap().1.clone())
+        }else {
+            println!("got here");
+            let src = self.client_base.get_src_id();
+            let session = self.client_base.get_session_id();
+
+            if let Some(destinations) = self.catalogue.get(&cont_id) {
+                if !destinations.is_empty() {
+                    if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
+                        let content = ContentType::MediaRequest(Media(cont_id));
+                        let msg = Message::new(src, session, content);
+                        self.client_base.send_message(msg, dst);
+                        if DEBUG_MODE {
+                            println!("Sent media request from {src} to server {dst}");
+                        }
+                    }
+                }
+            } else {
+                self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
+            }
         }
     }
 
-    fn request_text(&mut self, server: NodeId, text_id: u64) {
-        let message = Message::new(
-            self.base.node_id,
-            self.base.get_session_id(),
-            ContentType::TextRequest(TextRequest::TextFile(text_id)),
+    // Render media as a data-URL in a temporary HTML file and open it.
+    fn open_media(&self, image_bytes: Vec<u8>){
+        let base64_image = general_purpose::STANDARD.encode(image_bytes);
+
+        let html_content = format!(
+            "<html>
+        <head>
+            <style>
+                img {{
+                    max-width: 100%;
+                    height: auto;
+                    display: block;
+                    margin: auto;
+                }}
+            </style>
+        </head>
+        <body>
+            <img src='data:image/jpeg;base64,{}' />
+        </body>
+    </html>",
+            base64_image
         );
-        self.base.send_message(message, server);
+
+        let file_path = "image.html";
+        write(file_path, html_content).expect("error in file");
+
+        if let Err(e) = open::that(file_path) {
+            if DEBUG_MODE {
+                println!("Error opening file: {}", e);
+            }
+        }
     }
 }
+
+

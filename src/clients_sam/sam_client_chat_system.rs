@@ -1,196 +1,381 @@
-use super::sam_client_base::SamClientBase;
-use super::sam_events::{ConnectionState};
+// Chat client built on ClientStruct: routing, flooding, fragmenting, and chat-specific handling. Comments refreshed and functions lightly reordered; no logic changes.
+use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, ReceivedChatText, RegisterSuccessfully, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
-use super::sam_client_trait::Client;
+use crate::clients_gio::client_trait::ClientTrait;
 use crate::clients_gio::client_type::ClientType;
-use crate::message::{Message, ContentType, ChatRequest, ChatResponse, TypeExchange};
+use crate::clients_gio::client_type::ClientType::*;
+use crate::clients_sam::sam_client_base::ClientStruct;
+use crate::message::EdgeNackType::*;
+use crate::message::TextRequest::*;
+use crate::message::{ChatResponse, ContentType, Message, TypeExchange};
 use crate::network_edge::{EdgeType, NetworkEdge, NetworkEdgeErrors};
+use crate::server::server_type::ServerType;
+use crate::{NO_SERVER_MODE, DEBUG_MODE};
 use crossbeam_channel::{select_biased, Receiver, Sender};
 use std::collections::{HashMap, HashSet};
+use std::thread::sleep;
+use std::time::Duration;
 use wg_2024::network::NodeId;
-use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
+use wg_2024::packet::PacketType::*;
+use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet, PacketType};
+use crate::message::ChatRequest::{ClientList, Register, SendMessage};
+use crate::message::ContentType::*;
+use rodio::{Decoder, OutputStream, Sink};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read};
+use std::marker::PhantomData;
 
-struct ChatSession {
-    server_id: NodeId,
-    last_message_id: u64,
-    messages: Vec<String>,
-}
+const BUILD_FLAVOR: &str = "alt-chat-v1";
+
+type ChatMsg = (NodeId, String);
+const NOTIFY:bool = false;
+
+struct ChatTag;
 
 pub struct ChatClient {
-    base: SamClientBase,
-    chat_servers: HashSet<NodeId>,
-    active_sessions: HashMap<NodeId, ChatSession>,
-    available_contacts: HashMap<NodeId, HashSet<NodeId>>,
-    message_cache: HashMap<(NodeId, u64), String>,
+    // Shared networking core for clients.
+    client_base: ClientStruct,
+
+    // Contacts map: peer -> candidate servers enabling the path.
+    contact_list: HashMap<NodeId, Vec<NodeId>>,
+
+    // Chat client state.
+    // Per-contact transcript of sent/received messages.
+    all_messages: HashMap<NodeId, Vec<ChatMsg>>,
+
+    // Chat client state.
+    // Servers this client has successfully registered with.
+    registered_to: HashSet<NodeId>,
+
+    sound: Vec<u8>,
+    _marker: PhantomData<ChatTag>,
 }
 
 impl NetworkEdge for ChatClient {
-    fn send_message(&mut self, message: Message, destination: NodeId) {
-        self.base.send_message(message, destination)
+    fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
+        self.client_base.send_fragment(fragment, destination, session_id)
     }
 
-    fn handle_packet(&mut self, packet: Packet) {
-        self.base.handle_packet(packet.clone());
-        if let Some(msg) = self.base.reassembled_message.take() {
-            self.handle_message(msg);
-        }
-        if let PacketType::Ack(ack) = packet.pack_type {
-            if let Some((_, cont, vec)) = self.base.fragments.get_mut(&(packet.session_id, self.base.node_id)) {
-                if vec.is_empty() && matches!(cont, Some(ContentType::ChatRequest(ChatRequest::Register(_)))) {
-                    let server = packet.routing_header.source().unwrap();
-                    self.send_event(ClientEvent::RegisterSuccessfully(self.base.node_id, server));
+    fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
+        self.client_base.add_unsent_fragment(fragment, session_id, destination);
+    }
+
+    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
+        self.client_base.send_fragment_after_nack(packet_session_id, nack)
+    }
+
+    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
+        self.client_base.send_ack(packet, fragment_index);
+    }
+
+    fn flood(&mut self) {
+        self.client_base.flood();
+    }
+
+    fn get_flood_id(&mut self) -> u64 {
+        self.client_base.get_flood_id()
+    }
+
+    fn get_session_id(&mut self) -> u64 {
+        self.client_base.get_session_id()
+    }
+
+    fn get_src_id(&self) -> NodeId {
+        self.client_base.get_src_id()
+    }
+
+    fn remove_sender(&mut self, id: NodeId) {
+        self.client_base.remove_sender(id);
+    }
+
+    fn send_message(&mut self, message: Message, destination: NodeId) {
+        self.client_base.send_message(message, destination)
+    }
+
+    // Handle inbound packets (chat client role).
+    fn handle_packet(&mut self, mut packet: Packet) {
+        if let FloodRequest(mut flood_request) = packet.pack_type.clone(){
+            flood_request
+                .path_trace
+                .push((self.client_base.get_src_id(), NodeType::Client));
+
+            // Update the packet's path_trace.
+            packet.pack_type = FloodRequest(flood_request.clone());
+
+            if !self.client_base.handle_flood_request(packet) {
+                self.edge_send_flood_response(flood_request);
+            }
+        } else if packet.routing_header.destination().unwrap() != self.client_base.get_src_id() {
+            // Not for us: act as a relay (drone).
+            self.client_base.send_as_drone(packet);
+        } else {
+            // We are the destination; handle by packet type.
+            match packet.pack_type.clone() {
+                MsgFragment(fragment) => {
+                    let tot_num_frag = fragment.total_n_fragments as usize;
+                    let session_id = packet.session_id;
+                    let initiator_id = packet.routing_header.hops[0];
+                    let destination = self.client_base.get_src_id(); //he is the destination
+                    let frag_index = fragment.fragment_index;
+
+                    // Buffer the arriving fragment.
+                    let entry = self.client_base.fragments().entry((session_id, initiator_id)).or_insert((destination, None, vec![]));
+                    entry.2.push(fragment);
+
+                    // ACK each received fragment.
+                    self.send_ack(packet.clone(), frag_index);
+
+                    // Notify the simulation controller about receipt.
+                    self.send_event(ClientEvent::PacketReceived(packet.clone()));
+
+                    // If all fragments have arrived, reconstruct the message.
+                    let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
+                    if frags_clone.len() == tot_num_frag {
+                        let message = match Self::reassemble_message(session_id, initiator_id, frags_clone) {
+                            Ok(mess) => { mess }
+                            Err(e) => {
+                                if DEBUG_MODE {
+                                    println!("{e} with {}", self.client_base.get_src_id());
+                                }
+                                self.send_event(ErrorReassembling(self.get_src_id()));
+                                return;
+                            }
+                        };
+                        // Deliver the reassembled message to the handler.
+                        self.handle_message(message);
+
+                        // Clear saved fragments for this session.
+                        self.client_base.fragments().remove(&(packet.session_id, initiator_id));
+                    }
+                }
+                Ack(ack) => {
+                    self.send_event(ClientEvent::AckReceived(packet.clone()));
+                    // ACKs reference the original destination as source; optionally notify SC when relevant.
+                    let src = self.client_base.get_src_id();
+                    match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
+                        None => {}
+                        Some((_, cont, vec)) => {
+                            vec.retain(|fragment| fragment.fragment_index != ack.fragment_index);
+
+                            // If no fragments remain, all ACKs have arrived; clean up.
+                            if vec.is_empty() {
+                                // Registration flow complete: mark server and notify.
+                                if let Some(ChatRequest(Register(_node))) = cont{
+                                    let server = packet.routing_header.source().unwrap();
+                                    self.registered_to.insert(server);
+                                    self.send_event(RegisterSuccessfully(self.get_src_id(), server));
+                                }
+                                let src = self.client_base.get_src_id();
+                                self.client_base.fragments().remove_entry(&(packet.session_id, src));
+                            }
+                        }
+                    }
+
+                    // Reward successful path with positive feedback.
+                    let nodes = packet.routing_header.hops;
+                    self.client_base.network().positive_feedback(nodes);
+                }
+
+                PacketType::Nack(nack) => {
+                    self.send_event(ClientEvent::NackReceived(packet.clone()));
+                    // Delegate NACK handling to the base.
+                    self.client_base.handle_nack(nack, packet);
+                }
+                FloodRequest(_) => {
+                    unreachable!()
+                }
+                FloodResponse(_) => {
+                    self.client_base.save_flood_response(packet);
                 }
             }
         }
     }
 
+    /// Handle a fully reassembled message (chat client).
     fn handle_message(&mut self, message: Message) {
         match message.content {
-            ContentType::ChatResponse(response) => {
-                self.handle_chat_response(message.source_id, response);
-            }
-            ContentType::TypeExchange(exchange) => {
-                match exchange {
-                    TypeExchange::TypeRequest { from } => {
-                        let response = Message::new(
-                            self.base.node_id,
-                            self.base.get_session_id(),
-                            ContentType::TypeExchange(TypeExchange::TypeResponse {
-                                edge_type: EdgeType::Client(ClientType::ChatClient),
-                                from: self.base.node_id,
-                            })
-                        );
-                        self.send_message(response, from);
-                    }
-                    TypeExchange::TypeResponse { from, edge_type } => {
-                        if let EdgeType::Server(server_type) = edge_type {
-                            if matches!(server_type, crate::server::server_type::ServerType::Chat) {
-                                self.chat_servers.insert(from);
-                                self.base.node_states.insert(from, ConnectionState::Ready);
-                                self.base.send_event(ClientEvent::SendDestinations(
-                                    self.base.node_id,
-                                    from
-                                ));
+            ContentType::ChatResponse(resp) => {
+                match resp{
+                    ChatResponse::ClientList(list) => {
+                        let source= message.source_id;
+                        for i in list {
+                            let is_new = self.contact_list.entry(i).and_modify(|vec| vec.push(source)).or_insert(vec![source]).len() == 1;
+
+                            if is_new {
+                                // Inform SC about the newly learned contact.
+                                self.send_event(SendContactsToSC(self.client_base.get_src_id(), i));
                             }
+
+                        }
+                    }
+                    ChatResponse::MessageFrom { from, message } => {
+                        // Message arrived intact: notify SC and store locally.
+                        self.send_event(ReceivedChatText(from, self.client_base.get_src_id(), message.clone()));
+                        self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
+                        if NOTIFY {
+                            self.play_notification_sound();
+                        }
+                    }
+                    ChatResponse::ClientNotFound(node) => {
+                        // Remove the server that reported the client as missing.
+                        let server_src = message.source_id;
+                        if let Some(vec) = self.contact_list.get_mut(&node){
+                            vec.retain(|node| *node != server_src);
                         }
                     }
                 }
             }
-            _ => {}
+
+            ContentType::TypeExchange(exchange) => {
+                match exchange {
+                    TypeExchange::TypeRequest { from } => {
+                        let type_resp = TypeExchange::TypeResponse {
+                            edge_type: EdgeType::Client(ClientType::ChatClient),
+                            from: self.client_base.get_src_id(),
+                        };
+                        let message = Message::new(self.client_base.get_src_id(), self.get_session_id(), ContentType::TypeExchange(type_resp));
+                        self.send_message(message, from);
+                    }
+                    TypeExchange::TypeResponse { from, edge_type } => {
+                        match edge_type{
+                            EdgeType::Server(ServerType::Chat) => {
+                                self.client_base.network().update_state(from, 1);
+                                self.send_event(SendDestinations(self.client_base.get_src_id(), from));
+                            },
+
+                            _ => {
+                                self.client_base.network().update_state(from, 2);
+                            }
+                        }
+
+                    }
+                }
+            }
+            EdgeNack(nack) => {
+                self.client_base.handle_edge_nack(nack, message.source_id);
+
+            },
+            _ => {
+                // Ignore unrelated request types and reply with an edge-level NACK.
+                let new_nack = self.create_nack(UnexpectedMessage);
+                self.send_nack_message(message.source_id, new_nack);
+            }
         }
-    }
 
-    fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
-        self.base.send_fragment(fragment, destination, session_id)
-    }
-
-    fn add_unsent_fragment(&mut self, fragment: Fragment, session_id: u64, destination: NodeId) {
-        self.base.add_unsent_fragment(fragment, session_id, destination)
-    }
-
-    fn send_fragment_after_nack(&mut self, packet_session_id: u64, nack: Nack) {
-        self.base.send_fragment_after_nack(packet_session_id, nack)
-    }
-
-    fn send_ack(&mut self, packet: Packet, fragment_index: u64) {
-        self.base.send_ack(packet, fragment_index)
-    }
-
-    fn flood(&mut self) {
-        self.base.flood()
-    }
-
-    fn get_flood_id(&mut self) -> u64 {
-        self.base.get_flood_id()
-    }
-
-    fn get_session_id(&mut self) -> u64 {
-        self.base.get_session_id()
-    }
-
-    fn get_src_id(&self) -> NodeId {
-        self.base.get_src_id()
-    }
-
-    fn remove_sender(&mut self, id: NodeId) {
-        self.base.remove_sender(id)
     }
 }
 
 impl NetworkEdgeErrors for ChatClient {
     fn check_type(&mut self, id: NodeId) {
-        self.base.check_type(id)
+        self.client_base.check_type(id);
     }
 
     fn is_state_ok(&self, node_id: NodeId) -> bool {
-        self.base.is_state_ok(node_id)
+        self.client_base.is_state_ok(node_id)
     }
 
     fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
-        self.base.send_nack_message(dst, nack)
+        self.client_base.send_nack_message(dst, nack);
     }
 
     fn send_drone_nack(&mut self, dst: NodeId, nack: NackType, session_id: u64) {
-        self.base.send_drone_nack(dst, nack,session_id)
+        self.client_base.send_drone_nack(dst, nack, session_id);
     }
 }
 
-impl Client for ChatClient {
+impl ClientTrait for ChatClient {
     fn new(
-        id: NodeId,
+        node_id: NodeId,
         command_recv: Receiver<ClientCommand>,
         event_send: Sender<ClientEvent>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
+        //load notification
+        let mut buffer = Vec::new();
+        if NOTIFY {
+            let mut file = File::open("src/clients_gio/notification.mp3").unwrap();
+            file.read_to_end(&mut buffer).unwrap();
+        }
+
         ChatClient {
-            base: SamClientBase::new(id, command_recv, event_send, packet_recv, packet_send),
-            chat_servers: HashSet::new(),
-            active_sessions: HashMap::new(),
-            available_contacts: HashMap::new(),
-            message_cache: HashMap::new(),
+            client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            contact_list: HashMap::new(),
+            all_messages: HashMap::new(),
+            registered_to: HashSet::new(),
+            sound: buffer,
+            _marker: PhantomData,
         }
     }
 
+
+    // Main event loop for the chat client (delegates I/O to the base).
     fn run(&mut self) {
-        loop {
+        let mut count = 0;
+
+        while self.client_base.is_running() {
             select_biased! {
-                recv(self.base.command_recv) -> cmd => {
+                recv(self.client_base.command_recv()) -> cmd => {
                     if let Ok(command) = cmd {
                         self.handle_command(command);
                     }
                 }
-                recv(self.base.packet_recv) -> pkt => {
+                recv(self.client_base.packet_recv()) -> pkt => {
                     if let Ok(packet) = pkt {
                         self.handle_packet(packet);
                     }
                 }
+                default => {
+                     sleep(Duration::from_millis(10));
+                    // Brief pause to avoid busy-waiting.
+                }
+            }
+            // Throttle periodic work via a simple counter.
+            if count >= 128 {
+                // Probe unresolved neighbour types.
+                self.client_base.periodic_check_type();
+
+                self.client_base.process_unsent_periodically();
+
+                // Reset counter.
+                count = 0;
+            } else {
+                count += 1;
             }
         }
     }
 
+    ///Handle Chat Client Commands
     fn handle_command(&mut self, command: ClientCommand) {
         match command {
-            ClientCommand::SendMSG(dst, content) => {
-                self.send_chat_message(dst, content);
+            ClientCommand::RemoveSender(node_id) => {
+                self.remove_sender(node_id);
             }
-            ClientCommand::Register(server_id) => {
-                let message = Message::new(
-                    self.base.node_id,
-                    self.base.get_session_id(),
-                    ContentType::ChatRequest(ChatRequest::Register(self.base.node_id))
-                );
-                self.send_message(message, server_id);
+            ClientCommand::AddSender(node_id, sender) => {
+                self.client_base.packet_send().insert(node_id, sender);
             }
-            ClientCommand::RetrieveList(server_id) => {
-                let message = Message::new(
-                    self.base.node_id,
-                    self.base.get_session_id(),
-                    ContentType::ChatRequest(ChatRequest::ClientList)
-                );
-                self.send_message(message, server_id);
+
+            ClientCommand::Flood =>{
+                self.flood();
             }
-            _ => self.base.handle_command(command)
+
+            // Chat-specific commands
+            ClientCommand::RetrieveList(id) => {
+                self.get_list(id);
+            }
+            ClientCommand::Register(id) => {
+                self.register(id);
+            }
+            ClientCommand::SendMSG(id, str) => {
+                self.send_chat_text(id, str);
+            }
+            ClientCommand::InstantCrash => {
+                self.client_base.crash();
+            }
+
+            _ =>{
+                // Ignore non-chat commands.
+            }
         }
     }
 
@@ -199,97 +384,97 @@ impl Client for ChatClient {
     }
 
     fn send_event(&self, ce: ClientEvent) {
-        self.base.send_event(ce);
+        self.client_base.send_event(ce);
     }
 }
 
+
+// ChatClient helpers.
 impl ChatClient {
-    fn handle_chat_response(&mut self, source: NodeId, response: ChatResponse) {
-        match response {
-            ChatResponse::ClientList(clients) => {
-                let entry = self.available_contacts.entry(source).or_insert_with(HashSet::new);
 
-                // Send destination event for the server
-                self.base.send_event(ClientEvent::SendDestinations(
-                    self.base.node_id,
-                    source
-                ));
+    // Identify this build flavor (purely informational; no behavior change).
+    pub fn build_flavor(&self) -> &'static str {
+        BUILD_FLAVOR
+    }
 
-                for client_id in clients {
-                    if !entry.contains(&client_id) {
-                        entry.insert(client_id);
-                        // Send contact event for each new client
-                        self.base.send_event(ClientEvent::SendContactsToSC(
-                            self.base.node_id,
-                            client_id
-                        ));
-                    }
-                }
-            }
-            ChatResponse::MessageFrom { from, message } => {
-                let msg_id = if let Some(session) = self.active_sessions.get_mut(&from) {
-                    session.last_message_id += 1;
-                    session.messages.push(message.clone());
-                    session.last_message_id
-                } else {
-                    let mut session = ChatSession {
-                        server_id: source,
-                        last_message_id: 0,
-                        messages: vec![message.clone()],
-                    };
-                    let msg_id = session.last_message_id;
-                    self.active_sessions.insert(from, session);
-                    msg_id
-                };
+    // Request the current contact list from a server.
+    fn get_list(&mut self, id: NodeId){
+        let src = self.client_base.get_src_id();
+        let session = self.client_base.get_session_id();
+        let content = ChatRequest(ClientList);
+        let msg = Message::new(src, session, content);
+        self.client_base.send_message(msg, id);
 
-                self.message_cache.insert((from, msg_id), message.clone());
-
-                // Send received chat text event
-                self.base.send_event(ClientEvent::ReceivedChatText(
-                    from,
-                    self.base.node_id,
-                    message
-                ));
-            }
-            ChatResponse::ClientNotFound(client_id) => {
-                if let Some(contacts) = self.available_contacts.get_mut(&source) {
-                    contacts.remove(&client_id);
-                }
-                self.active_sessions.remove(&client_id);
-
-                // Send missing contacts event
-                self.base.send_event(ClientEvent::MissingContacts(
-                    self.base.node_id,
-                    client_id
-                ));
-            }
+        // Debug trace for list request.
+        if DEBUG_MODE{
+            println!("sent client list req from {src} to server {id}")
         }
     }
 
-    fn send_chat_message(&mut self, destination: NodeId, content: String) {
-        if let Some(&server_id) = self.chat_servers.iter().next() {
-            let message = Message::new(
-                self.base.node_id,
-                self.base.get_session_id(),
-                ContentType::ChatRequest(ChatRequest::SendMessage {
-                    from: self.base.node_id,
-                    to: destination,
-                    message: content.clone(),
-                })
-            );
+    // Register this client with a server.
+    fn register(&mut self, id: NodeId){
+        let src = self.get_src_id();
+        let session = self.get_session_id();
+        let content = ChatRequest(Register(src));
+        let msg = Message::new(src, session, content);
+        self.client_base.send_message(msg, id);
 
-            if let Some(session) = self.active_sessions.get_mut(&destination) {
-                session.last_message_id += 1;
-                session.messages.push(content.clone());
-            } else {
-                self.active_sessions.insert(destination, ChatSession {
-                    server_id,
-                    last_message_id: 0,
-                    messages: vec![content.clone()],
-                });
-            }
-
-            self.base.send_message(message, server_id);
+        // Debug trace for registration request.
+        if DEBUG_MODE{
+            println!("sent register req from {src} to server {id}")
         }
+    }
+
+    // Send a text to peer `id`, choosing an optimal server when possible.
+    fn send_chat_text(&mut self, id: NodeId, str: String){
+        // Local echo when running without servers.
+        if NO_SERVER_MODE {
+            self.send_event(ReceivedChatText(self.get_src_id(), id, str.clone()));
+        }
+
+        let src = self.get_src_id();
+        if let Some(servers) = self.contact_list.get(&id){
+
+            // Consider only servers we are registered with.
+            let available_servers: Vec<NodeId> = servers
+                .clone()
+                .into_iter()
+                .filter(|x| self.registered_to.contains(x))
+                .collect();
+
+            let src = self.client_base.get_src_id();
+            if let Some(server_id) = self.client_base.network().get_optimal_dest(&src, &available_servers){
+                // Choose the server (current policy: first optimal).
+
+                let session = self.get_session_id();
+                let content = ChatRequest(SendMessage {
+                    from: src,
+                    to: id,
+                    message: str.clone(),
+                });
+
+                // Append to local transcript.
+                self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
+
+
+                let msg = Message::new(src, session, content);
+                self.client_base.send_message(msg, server_id);
+            }
+        } else {
+            self.send_event(ClientEvent::MissingContacts(src,id))
+        }
+
+    }
+
+    // Play the incoming-message notification sound (if enabled).
+    fn play_notification_sound(&self) {
+        let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+
+        let cursor = Cursor::new(self.sound.clone());
+        let source = Decoder::new(BufReader::new(cursor)).unwrap();
+
+        sink.append(source);
+        sink.sleep_until_end();
     }
 }

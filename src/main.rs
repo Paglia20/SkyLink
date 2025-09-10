@@ -12,7 +12,7 @@ mod test;
 mod clients_sam;
 
 //for testing
-pub const CLIENT_GIO: bool = true; // If false run with sam's
+pub const CLIENT_GIO: bool = false; // If false run with sam's
 
 pub const ALL_CHAT: bool = false;
 pub const ALL_CONTENT: bool = false;
@@ -34,8 +34,8 @@ fn main() {
 
     match switch {
         Switch::SimDaniel => {
-            println!("running {topology}");
-            if let Some((sim_contr, handles)) = initialize(topology) {
+            println!("running {topology2}");
+            if let Some((sim_contr, handles)) = initialize(topology2) {
                 run_sim_dan(sim_contr).expect("Problem in running GUI");
                 for handle in handles.into_iter() {
                     handle.join().unwrap();

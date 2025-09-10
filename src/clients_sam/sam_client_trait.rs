@@ -1,13 +1,12 @@
-// sam_client_trait.rs
-use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_type::ClientType;
+use crate::network_edge::{NetworkEdge, NetworkEdgeErrors};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
-use wg_2024::network::NodeId;
+use wg_2024::network::*;
 use wg_2024::packet::Packet;
 
-pub trait Client: NetworkEdge + NetworkEdgeErrors {
+pub trait ClientTrait: NetworkEdge + NetworkEdgeErrors{
     fn new(
         id: NodeId,
         command_recv: Receiver<ClientCommand>,
@@ -17,7 +16,11 @@ pub trait Client: NetworkEdge + NetworkEdgeErrors {
     ) -> Self;
 
     fn run(&mut self);
+
     fn handle_command(&mut self, command: ClientCommand);
+
     fn get_client_type(&self) -> ClientType;
+
     fn send_event(&self, ce: ClientEvent);
 }
+

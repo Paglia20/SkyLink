@@ -20,7 +20,7 @@ use crate::clients_sam;
 use crate::clients_gio;
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
-use crate::clients_sam::sam_client_trait::Client;
+// use crate::clients_sam::sam_client_trait::Client;
 use crate::server::server_trait::*;
 use crate::server::server_chat::ChatServer;
 use crate::server::server_command::{ServerCommand, ServerEvent};
