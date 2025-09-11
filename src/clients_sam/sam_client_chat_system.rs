@@ -1,4 +1,4 @@
-// Chat client built on ClientStruct: routing, flooding, fragmenting, and chat-specific handling. Comments refreshed and functions lightly reordered; no logic changes.
+// Chat client built on ClientStruct: routing, flooding, fragmenting, and chat-specific handling.
 use crate::clients_gio::client_command::ClientEvent::{ErrorReassembling, ReceivedChatText, RegisterSuccessfully, SendContactsToSC, SendDestinations};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
@@ -24,28 +24,30 @@ use rodio::{Decoder, OutputStream, Sink};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read};
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
+use crate::clients_sam::sam_client_base::ChatTag;
 
 const BUILD_FLAVOR: &str = "alt-chat-v1";
 
 type ChatMsg = (NodeId, String);
 const NOTIFY:bool = false;
 
-struct ChatTag;
+// Type tag imported from the client base
 
 pub struct ChatClient {
     // Shared networking core for clients.
-    client_base: ClientStruct,
+    client_base: ClientStruct<ChatTag>,
 
-    // Contacts map: peer -> candidate servers enabling the path.
-    contact_list: HashMap<NodeId, Vec<NodeId>>,
-
-    // Chat client state.
-    // Per-contact transcript of sent/received messages.
-    all_messages: HashMap<NodeId, Vec<ChatMsg>>,
+    // Contacts map: peer -> candidate servers enabling the path. Shared for cross-thread observers.
+    contact_list: Arc<Mutex<HashMap<NodeId, Vec<NodeId>>>>,
 
     // Chat client state.
-    // Servers this client has successfully registered with.
-    registered_to: HashSet<NodeId>,
+    // Per-contact transcript of sent/received messages. Shared for cross-thread observers.
+    all_messages: Arc<Mutex<HashMap<NodeId, Vec<ChatMsg>>>>,
+
+    // Chat client state.
+    // Servers this client has successfully registered with. Shared for cross-thread observers.
+    registered_to: Arc<Mutex<HashSet<NodeId>>>,
 
     sound: Vec<u8>,
     _marker: PhantomData<ChatTag>,
@@ -127,6 +129,10 @@ impl NetworkEdge for ChatClient {
 
                     // Notify the simulation controller about receipt.
                     self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                    // Notify telemetry about packet reception
+                    self.client_base.on_packet_received();
+                    // Notify telemetry about packet reception
+                    self.client_base.on_packet_received();
 
                     // If all fragments have arrived, reconstruct the message.
                     let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
@@ -151,6 +157,8 @@ impl NetworkEdge for ChatClient {
                 Ack(ack) => {
                     self.send_event(ClientEvent::AckReceived(packet.clone()));
                     // ACKs reference the original destination as source; optionally notify SC when relevant.
+                    // Record ACK RTT for telemetry
+                    self.client_base.on_ack_received(packet.session_id, ack.fragment_index);
                     let src = self.client_base.get_src_id();
                     match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
                         None => {}
@@ -162,7 +170,9 @@ impl NetworkEdge for ChatClient {
                                 // Registration flow complete: mark server and notify.
                                 if let Some(ChatRequest(Register(_node))) = cont{
                                     let server = packet.routing_header.source().unwrap();
-                                    self.registered_to.insert(server);
+                                    if let Ok(mut set) = self.registered_to.lock() {
+                                        set.insert(server);
+                                    }
                                     self.send_event(RegisterSuccessfully(self.get_src_id(), server));
                                 }
                                 let src = self.client_base.get_src_id();
@@ -198,20 +208,22 @@ impl NetworkEdge for ChatClient {
                 match resp{
                     ChatResponse::ClientList(list) => {
                         let source= message.source_id;
-                        for i in list {
-                            let is_new = self.contact_list.entry(i).and_modify(|vec| vec.push(source)).or_insert(vec![source]).len() == 1;
-
-                            if is_new {
-                                // Inform SC about the newly learned contact.
-                                self.send_event(SendContactsToSC(self.client_base.get_src_id(), i));
+                        if let Ok(mut contacts) = self.contact_list.lock() {
+                            for i in list {
+                                let is_new = contacts.entry(i).and_modify(|vec| vec.push(source)).or_insert(vec![source]).len() == 1;
+                                if is_new {
+                                    // Inform SC about the newly learned contact.
+                                    self.send_event(SendContactsToSC(self.client_base.get_src_id(), i));
+                                }
                             }
-
                         }
                     }
                     ChatResponse::MessageFrom { from, message } => {
                         // Message arrived intact: notify SC and store locally.
                         self.send_event(ReceivedChatText(from, self.client_base.get_src_id(), message.clone()));
-                        self.all_messages.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
+                        if let Ok(mut msgs) = self.all_messages.lock() {
+                            msgs.entry(from).or_insert(vec![(from, message.clone())]).push((from, message));
+                        }
                         if NOTIFY {
                             self.play_notification_sound();
                         }
@@ -219,8 +231,10 @@ impl NetworkEdge for ChatClient {
                     ChatResponse::ClientNotFound(node) => {
                         // Remove the server that reported the client as missing.
                         let server_src = message.source_id;
-                        if let Some(vec) = self.contact_list.get_mut(&node){
-                            vec.retain(|node| *node != server_src);
+                        if let Ok(mut contacts) = self.contact_list.lock() {
+                            if let Some(vec) = contacts.get_mut(&node){
+                                vec.retain(|n| *n != server_src);
+                            }
                         }
                     }
                 }
@@ -299,10 +313,10 @@ impl ClientTrait for ChatClient {
         }
 
         ChatClient {
-            client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
-            contact_list: HashMap::new(),
-            all_messages: HashMap::new(),
-            registered_to: HashSet::new(),
+            client_base: ClientStruct::<ChatTag>::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            contact_list: Arc::new(Mutex::new(HashMap::new())),
+            all_messages: Arc::new(Mutex::new(HashMap::new())),
+            registered_to: Arc::new(Mutex::new(HashSet::new())),
             sound: buffer,
             _marker: PhantomData,
         }
@@ -336,6 +350,22 @@ impl ClientTrait for ChatClient {
                 self.client_base.periodic_check_type();
 
                 self.client_base.process_unsent_periodically();
+
+                // Periodic telemetry snapshot (visible when DEBUG_MODE = true)
+                if DEBUG_MODE {
+                    let t = self.client_base.telemetry_snapshot();
+                    println!(
+                        "[TELEM:{}] node={} sent={} recv={} inflight={} last_ack_ms={} avg_ack_ms={:?} neigh={}",
+                        self.client_base.build_flavor(),
+                        t.node_id,
+                        t.packets_sent,
+                        t.packets_received,
+                        t.inflight_awaiting_acks,
+                        t.last_ack_ms,
+                        t.avg_ack_ms,
+                        t.neighbors
+                    );
+                }
 
                 // Reset counter.
                 count = 0;
@@ -392,7 +422,7 @@ impl ClientTrait for ChatClient {
 // ChatClient helpers.
 impl ChatClient {
 
-    // Identify this build flavor (purely informational; no behavior change).
+    // Build flavor identifier
     pub fn build_flavor(&self) -> &'static str {
         BUILD_FLAVOR
     }
@@ -433,14 +463,14 @@ impl ChatClient {
         }
 
         let src = self.get_src_id();
-        if let Some(servers) = self.contact_list.get(&id){
+        let servers_opt = { self.contact_list.lock().ok().and_then(|map| map.get(&id).cloned()) };
+        if let Some(servers) = servers_opt {
 
             // Consider only servers we are registered with.
-            let available_servers: Vec<NodeId> = servers
-                .clone()
-                .into_iter()
-                .filter(|x| self.registered_to.contains(x))
-                .collect();
+            let available_servers: Vec<NodeId> = {
+                let reg = self.registered_to.lock().unwrap();
+                servers.into_iter().filter(|x| reg.contains(x)).collect()
+            };
 
             let src = self.client_base.get_src_id();
             if let Some(server_id) = self.client_base.network().get_optimal_dest(&src, &available_servers){
@@ -454,7 +484,9 @@ impl ChatClient {
                 });
 
                 // Append to local transcript.
-                self.all_messages.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
+                if let Ok(mut msgs) = self.all_messages.lock() {
+                    msgs.entry(id).or_insert(vec!((src, str.clone()))).push((src, str));
+                }
 
 
                 let msg = Message::new(src, session, content);
@@ -476,5 +508,23 @@ impl ChatClient {
 
         sink.append(source);
         sink.sleep_until_end();
+    }
+
+    // Expose telemetry snapshot from the base
+    pub fn telemetry(&self) -> crate::clients_sam::sam_client_base::SamTelemetry {
+        self.client_base.telemetry_snapshot()
+    }
+
+    // Expose shared views guarded by Arc<Mutex<...>>
+    pub fn shared_contacts_handle(&self) -> Arc<Mutex<HashMap<NodeId, Vec<NodeId>>>> {
+        self.contact_list.clone()
+    }
+
+    pub fn shared_messages_handle(&self) -> Arc<Mutex<HashMap<NodeId, Vec<ChatMsg>>>> {
+        self.all_messages.clone()
+    }
+
+    pub fn shared_registered_handle(&self) -> Arc<Mutex<HashSet<NodeId>>> {
+        self.registered_to.clone()
     }
 }

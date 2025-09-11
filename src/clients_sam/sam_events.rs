@@ -1,4 +1,4 @@
-// Event and command definitions exchanged between simulation controller (SC) and clients. Comments refreshed and variants lightly reordered; no logic changes.
+// Events and commands exchanged between the simulation controller (SC) and clients.
 
 use crossbeam_channel::Sender;
 use wg_2024::network::NodeId;
@@ -82,5 +82,4 @@ pub enum ClientEvent {
     // Web client: missing text list.
     MissingTextList(NodeId, u64),
 }
-
 

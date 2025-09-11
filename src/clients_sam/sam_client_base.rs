@@ -1,4 +1,4 @@
-// Client-side network edge for SkyLink: channels, routing, flooding, acks/nacks, and helpers. No logic changes—just comment refresh + light reordering.
+// Client-side network edge for SkyLink: channels, routing, flooding, acks/nacks, and helpers.
 use crate::clients_gio::client_command::ClientEvent::{MissingDestination, MissingRoute, WrongDestinationType};
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_gio::client_trait::ClientTrait;
@@ -14,13 +14,58 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::NackType::ErrorInRouting;
 use wg_2024::packet::PacketType::*;
 use wg_2024::packet::{Fragment, Nack, NackType, NodeType, Packet};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
 
-const BUILD_FLAVOR: &str = "alt-client-v1";
+// add a tiny randomized backoff before certain retries/floods
+const ENABLE_SAM_JITTER: bool = true;
+
+// Role policy: per-client tag controls jitter and flavor at compile time
+mod sealed { pub trait Sealed {} }
+
+pub trait SamRole: sealed::Sealed {
+    const BUILD_FLAVOR: &'static str;
+    const JITTER_MIN_MS: u64;
+    const JITTER_MAX_MS: u64;
+}
+
+// Public tags usable by Sam clients
+#[derive(Debug, Clone, Copy)]
+pub struct ChatTag;
+
+#[derive(Debug, Clone, Copy)]
+pub struct WebTag;
+
+impl SamRole for ChatTag {
+    const BUILD_FLAVOR: &'static str = "sam-chat";
+    const JITTER_MIN_MS: u64 = 2;
+    const JITTER_MAX_MS: u64 = 6;
+}
+
+impl SamRole for WebTag {
+    const BUILD_FLAVOR: &'static str = "sam-web";
+    const JITTER_MIN_MS: u64 = 3;
+    const JITTER_MAX_MS: u64 = 9;
+}
+
+impl sealed::Sealed for ChatTag {}
+impl sealed::Sealed for WebTag {}
+
+#[inline]
+fn sam_jitter<T: SamRole>() {
+    if ENABLE_SAM_JITTER && T::JITTER_MAX_MS > 0 {
+        let low = T::JITTER_MIN_MS.min(T::JITTER_MAX_MS);
+        let high = T::JITTER_MAX_MS.max(T::JITTER_MIN_MS) + 1; // inclusive
+        let delay = fastrand::u64(low..high);
+        if delay > 0 { sleep(Duration::from_millis(delay)); }
+    }
+}
 
 
-// Core client structure shared by both client types.
-// Note: some functions are intentionally left \`unreachable!()\` and are invoked only by the concrete client.
-pub struct ClientStruct {
+
+
+pub struct ClientStruct<T> {
     node_id: NodeId,
     command_recv: Receiver<ClientCommand>,
     event_send: Sender<ClientEvent>,
@@ -46,10 +91,16 @@ pub struct ClientStruct {
     flood_count: u64,
 
     is_running: bool,
-    _phantom: PhantomData<()>,
+    _phantom: PhantomData<T>,
+    // Runtime metrics
+    metrics: SamMetrics,
+    // Track send timestamps for fragments awaiting ACKs
+    ack_inflight: HashMap<(u64, u64), Instant>,
+    // Shared telemetry snapshot guarded by Arc<Mutex<..>> for cross-thread reads
+    shared_telemetry: Arc<Mutex<SamTelemetry>>,
 }
 
-impl NetworkEdge for ClientStruct {
+impl<T: SamRole> NetworkEdge for ClientStruct<T> {
     // Send a single fragment toward a destination using the current best route.
     fn send_fragment(&mut self, fragment: Fragment, destination: NodeId, session_id: u64) {
         if destination == self.node_id {
@@ -65,6 +116,8 @@ impl NetworkEdge for ClientStruct {
                 self.add_unsent_fragment(fragment, session_id, destination);
 
                 if !self.is_flooding {
+                    // Tiny backoff to avoid flood bursts when many clients discover misses simultaneously
+                    sam_jitter::<T>();
                     self.flood();
                 }
             }
@@ -73,10 +126,15 @@ impl NetworkEdge for ClientStruct {
                 let packet = Packet::new_fragment(srh, session_id, fragment.clone());
 
                 // Route found: attempt to forward the fragment.
+                // Track send time for ACK RTT telemetry before attempting send
+                let frag_idx = fragment.fragment_index;
+                self.ack_inflight.insert((session_id, frag_idx), Instant::now());
+
                 match self.packet_send.get(&first_dst) {
                     Some(sender) => {
                         sender.send(packet.clone()).unwrap();
                         self.send_event(ClientEvent::PacketSent(packet.clone()));
+                        self.metrics.packets_sent += 1;
 
                     }
                     None => {
@@ -144,6 +202,8 @@ impl NetworkEdge for ClientStruct {
                 self.send_event(ClientEvent::LostMessage(packet_session_id, self.node_id));
 
                 if !self.is_flooding {
+                    // Small randomized delay before re-flooding after a loss
+                    sam_jitter::<T>();
                     self.flood();
                 }
                 if DEBUG_MODE{
@@ -157,6 +217,8 @@ impl NetworkEdge for ClientStruct {
                     },
                     // If I manage to find the fragment, I send it
                     Some(fragment) => {
+                        // Small randomized delay before retrying an individual fragment
+                        sam_jitter::<T>();
                         self.send_fragment(fragment.clone(), *dst, packet_session_id);
                     }
                 }
@@ -175,7 +237,8 @@ impl NetworkEdge for ClientStruct {
         match self.packet_send.get(&next_id) {
             Some(sender) => {
                 sender.send(packet_ack.clone()).unwrap();
-                self.send_event(ClientEvent::PacketSent(packet_ack))
+                self.send_event(ClientEvent::PacketSent(packet_ack));
+                self.metrics.acks_sent += 1;
             }
             None => {
                 self.send_event(MissingDestination(self.node_id, next_id))
@@ -187,8 +250,11 @@ impl NetworkEdge for ClientStruct {
     // Start a topology discovery flood (rate-limited via `is_flooding`).
     fn flood(&mut self) {
         if !self.packet_send.is_empty() {
+            // Small jitter before starting a flood to de-sync multiple clients
+            sam_jitter::<T>();
             self.is_flooding = true;
             self.send_event(ClientEvent::Flooding(self.node_id));
+            self.metrics.floods_started += 1;
 
             let flood_request = wg_2024::packet::FloodRequest {
                 flood_id: self.get_flood_id(),
@@ -199,6 +265,9 @@ impl NetworkEdge for ClientStruct {
             self.packet_send.iter().for_each(|(id, sender)| {
                 sender.send(packet.clone()).unwrap()
             });
+            if DEBUG_MODE {
+                println!("[SAM:{}] flooding from {}", T::BUILD_FLAVOR, self.node_id);
+            }
         }else {
             if DEBUG_MODE{
                 println!("flood impossible: no channel attached");
@@ -252,7 +321,7 @@ impl NetworkEdge for ClientStruct {
     }
 }
 
-impl NetworkEdgeErrors for ClientStruct {
+impl<T: SamRole> NetworkEdgeErrors for ClientStruct<T> {
     // Ask a neighbour to reveal its node type.
     fn check_type(&mut self, id: NodeId) {
         let req = TypeExchange::TypeRequest { from: self.node_id };
@@ -282,6 +351,7 @@ impl NetworkEdgeErrors for ClientStruct {
     // Forward an edge-level NACK message.
     fn send_nack_message(&mut self, dst: NodeId, nack: Message) {
         self.send_message(nack, dst);
+        self.metrics.nacks_sent += 1;
     }
 
     // As an intermediate (drone), emit a NACK toward the source.
@@ -304,6 +374,7 @@ impl NetworkEdgeErrors for ClientStruct {
                 }
                 Some(sender) => {
                     sender.send(packet).unwrap();
+                    self.metrics.nacks_sent += 1;
                 }
             }
         } else {
@@ -312,14 +383,14 @@ impl NetworkEdgeErrors for ClientStruct {
     }
 }
 
-impl ClientTrait for ClientStruct {
+impl<T: SamRole> ClientTrait for ClientStruct<T> {
     fn new(node_id: NodeId,
            command_recv: Receiver<ClientCommand>,
            event_send: Sender<ClientEvent>,
            packet_recv: Receiver<Packet>,
            packet_send: HashMap<NodeId,
                Sender<Packet>>) -> Self {
-        Self {
+        let me = Self {
             node_id,
             command_recv,
             event_send,
@@ -334,7 +405,29 @@ impl ClientTrait for ClientStruct {
             flood_count: 0,
             is_running: true,
             _phantom: PhantomData,
+            metrics: SamMetrics::default(),
+            ack_inflight: HashMap::new(),
+            shared_telemetry: Arc::new(Mutex::new(SamTelemetry {
+                node_id,
+                build_flavor: T::BUILD_FLAVOR,
+                packets_sent: 0,
+                packets_received: 0,
+                floods_started: 0,
+                flood_responses: 0,
+                acks_sent: 0,
+                nacks_sent: 0,
+                deferred_unsent_fragments: 0,
+                pending_fragments_outbound: 0,
+                neighbors: 0,
+                inflight_awaiting_acks: 0,
+                last_ack_ms: 0,
+                avg_ack_ms: None,
+            })),
+        };
+        if DEBUG_MODE {
+            println!("[SAM:{}] client {} initialized", T::BUILD_FLAVOR, node_id);
         }
+        me
     }
 
     // Functions intentionally delegated to concrete client implementations
@@ -364,7 +457,7 @@ impl ClientTrait for ClientStruct {
     }
 }
 
-impl ClientStruct {
+impl<T: SamRole> ClientStruct<T> {
     // Forward a packet we're relaying (drone behaviour).
     pub(crate) fn send_as_drone(&mut self, mut packet: Packet) {
         packet.routing_header.hop_index += 1;
@@ -468,6 +561,7 @@ impl ClientStruct {
     pub (crate) fn save_flood_response(&mut self, pack: Packet) {
         if let FloodResponse(flood_resp) = pack.pack_type {
             self.network.add_route(self.node_id, flood_resp.path_trace.clone());
+            self.metrics.flood_responses += 1;
 
             // Either we've learned all current routes or the flood counter tripped the cap; allow flooding again.
             if self.network.has_all_routes(self.node_id) || self.flood_count >= 200 {
@@ -522,9 +616,9 @@ impl ClientStruct {
         }
     }
 
-    // Identify this build flavor (purely informational; no behavior change).
+    // Build flavor identifier
     pub fn build_flavor(&self) -> &'static str {
-        BUILD_FLAVOR
+        T::BUILD_FLAVOR
     }
 
     // Liveness flag for the client.
@@ -591,4 +685,93 @@ impl ClientStruct {
     pub (crate) fn flood_count(&self) -> u64 {
         self.flood_count
     }
+
+    // Increment when a packet is received (called from client implementations)
+    pub (crate) fn on_packet_received(&mut self) {
+        self.metrics.packets_received += 1;
+    }
+
+    // Export a snapshot of runtime metrics for observability
+    pub fn telemetry_snapshot(&self) -> SamTelemetry {
+        let deferred_unsent_fragments = self
+            .unsent_fragments
+            .values()
+            .map(|(_, vec)| vec.len())
+            .sum();
+        let pending_fragments_outbound = self
+            .fragments
+            .values()
+            .map(|(_, _, vec)| vec.len())
+            .sum();
+        let avg_ack_ms = if self.metrics.ack_rtt_count > 0 {
+            Some(self.metrics.ack_rtt_total_ms as f64 / self.metrics.ack_rtt_count as f64)
+        } else { None };
+        let snap = SamTelemetry {
+            node_id: self.node_id,
+            build_flavor: T::BUILD_FLAVOR,
+            packets_sent: self.metrics.packets_sent,
+            packets_received: self.metrics.packets_received,
+            floods_started: self.metrics.floods_started,
+            flood_responses: self.metrics.flood_responses,
+            acks_sent: self.metrics.acks_sent,
+            nacks_sent: self.metrics.nacks_sent,
+            deferred_unsent_fragments,
+            pending_fragments_outbound,
+            neighbors: self.packet_send.len(),
+            inflight_awaiting_acks: self.ack_inflight.len(),
+            last_ack_ms: self.metrics.last_ack_ms,
+            avg_ack_ms,
+        };
+        if let Ok(mut guard) = self.shared_telemetry.lock() {
+            *guard = snap.clone();
+        }
+        snap
+    }
+
+    // Called by Chat/Web on ACK reception to update latency stats
+    pub(crate) fn on_ack_received(&mut self, session_id: u64, fragment_index: u64) {
+        if let Some(start) = self.ack_inflight.remove(&(session_id, fragment_index)) {
+            let elapsed = start.elapsed().as_millis();
+            self.metrics.ack_rtt_total_ms += elapsed as u128;
+            self.metrics.ack_rtt_count += 1;
+            self.metrics.last_ack_ms = elapsed as u64;
+        }
+    }
+
+    // Get a clone of the shared telemetry handle for cross-thread access
+    pub fn shared_telemetry_handle(&self) -> Arc<Mutex<SamTelemetry>> {
+        self.shared_telemetry.clone()
+    }
+}
+
+// Internal counters and exported telemetry
+#[derive(Debug, Clone, Default)]
+struct SamMetrics {
+    packets_sent: u64,
+    packets_received: u64,
+    floods_started: u64,
+    flood_responses: u64,
+    acks_sent: u64,
+    nacks_sent: u64,
+    ack_rtt_total_ms: u128,
+    ack_rtt_count: u64,
+    last_ack_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SamTelemetry {
+    pub node_id: NodeId,
+    pub build_flavor: &'static str,
+    pub packets_sent: u64,
+    pub packets_received: u64,
+    pub floods_started: u64,
+    pub flood_responses: u64,
+    pub acks_sent: u64,
+    pub nacks_sent: u64,
+    pub deferred_unsent_fragments: usize,
+    pub pending_fragments_outbound: usize,
+    pub neighbors: usize,
+    pub inflight_awaiting_acks: usize,
+    pub last_ack_ms: u64,
+    pub avg_ack_ms: Option<f64>,
 }

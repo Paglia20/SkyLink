@@ -1,4 +1,4 @@
-// Web browser client built on ClientStruct: discovery, fragment reassembly, text/media fetching. Comments refreshed and methods lightly reordered; no logic changes.
+// Web browser client built on ClientStruct: discovery, fragment reassembly, and text/media fetching.
 use crate::clients_gio::client_command::{ClientCommand, ClientEvent};
 use crate::clients_sam::sam_client_base::ClientStruct;
 use crate::clients_gio::client_trait::ClientTrait;
@@ -22,22 +22,24 @@ use base64::{engine::general_purpose, Engine};
 use std::fs::write;
 use open;
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
+use crate::clients_sam::sam_client_base::WebTag;
 
 const BUILD_FLAVOR: &str = "alt-web-v1";
 
 type ArrivedMedia = (String, Vec<u8>);
 const OPEN_AUTO_MEDIA:bool = true;
-struct WebTag;
+// Using WebTag from sam_client_base
 
 pub struct WebBrowser{
     // Shared networking core for clients.
-    client_base: ClientStruct,
+    client_base: ClientStruct<WebTag>,
     // Stored text lists: id -> (servers, name).
-    available_text_lists: HashMap<u64, (Vec<NodeId>, String)>,
+    available_text_lists: Arc<Mutex<HashMap<u64, (Vec<NodeId>, String)>>>,
     // Media catalogue: media_id -> candidate servers.
-    catalogue: HashMap<u64, Vec<NodeId>>,
+    catalogue: Arc<Mutex<HashMap<u64, Vec<NodeId>>>>,
     // Cached media content: id -> (name, bytes).
-    arrived_content: HashMap<u64, ArrivedMedia>,
+    arrived_content: Arc<Mutex<HashMap<u64, ArrivedMedia>>>,
     _marker: PhantomData<WebTag>,
 }
 
@@ -116,6 +118,8 @@ impl NetworkEdge for WebBrowser {
 
                     // Notify the simulation controller about receipt.
                     self.send_event(ClientEvent::PacketReceived(packet.clone()));
+                    // Notify telemetry about packet reception
+                    self.client_base.on_packet_received();
 
                     // If all fragments have arrived, reconstruct the message.
                     let frags_clone = &self.client_base.fragments().get(&(packet.session_id, initiator_id)).unwrap().2;
@@ -139,7 +143,8 @@ impl NetworkEdge for WebBrowser {
                 }
                 Ack(ack) => {
                     self.send_event(ClientEvent::AckReceived(packet.clone()));
-
+                    // Record ACK RTT for telemetry
+                    self.client_base.on_ack_received(packet.session_id, ack.fragment_index);
                     // ACKs reference the original destination as source; clean up when all fragments are acknowledged.
                     let src = self.client_base.get_src_id();
                     match self.client_base.fragments().get_mut(&(packet.session_id,src)) {
@@ -186,7 +191,9 @@ impl NetworkEdge for WebBrowser {
                         self.send_nack_message(message.source_id, new_nack);
                     }
                     MediaResponse::Media(id, name, media) => {
-                        self.arrived_content.insert(id, (name.clone(), media.clone()));
+                        if let Ok(mut map) = self.arrived_content.lock() {
+                            map.insert(id, (name.clone(), media.clone()));
+                        }
                         self.send_event(SendMedia(self.get_src_id(), id, name, media.clone()));
 
                         if OPEN_AUTO_MEDIA {
@@ -195,8 +202,10 @@ impl NetworkEdge for WebBrowser {
                     }
                     MediaResponse::NotFound(id) => {
                         // Update the catalogue.
-                        if let Some(vec) = self.catalogue.get_mut(&id){
-                            vec.retain(|node| *node != src);
+                        if let Ok(mut cat) = self.catalogue.lock() {
+                            if let Some(vec) = cat.get_mut(&id){
+                                vec.retain(|node| *node != src);
+                            }
                         }
                         // Try to fetch the same media from another server.
                         self.get_media(id);
@@ -206,27 +215,30 @@ impl NetworkEdge for WebBrowser {
             ContentType::TextResponse(text_response) => {
                 match text_response{
                     TextResponse::TextList(map) => {
-                        for (text_file_id, name) in map {
-                            let entry = self.available_text_lists.entry(text_file_id).or_insert((vec![], name.clone()));
-                            entry.0.push(src);
-
-                            if entry.0.len() == 1 {
-                                self.send_event(SendTextList(self.get_src_id(), text_file_id, name))
+                        if let Ok(mut tl) = self.available_text_lists.lock() {
+                            for (text_file_id, name) in map {
+                                let entry = tl.entry(text_file_id).or_insert((vec![], name.clone()));
+                                entry.0.push(src);
+                                if entry.0.len() == 1 {
+                                    self.send_event(SendTextList(self.get_src_id(), text_file_id, name))
+                                }
                             }
                         }
                     }
                     TextResponse::MediaReferences(media_refs) => {
-                        for (media_id, (name, media_server_id)) in media_refs{
-                            let mut is_new= false;
-                            let entry =  self.catalogue.entry(media_id).or_insert(vec![]);
-                            for e in media_server_id {
-                                entry.push(e);
-                                if entry.len() == 1 {
-                                    is_new = true;
+                        if let Ok(mut cat) = self.catalogue.lock() {
+                            for (media_id, (name, media_server_id)) in media_refs{
+                                let mut is_new= false;
+                                let entry =  cat.entry(media_id).or_insert(vec![]);
+                                for e in media_server_id {
+                                    entry.push(e);
+                                    if entry.len() == 1 {
+                                        is_new = true;
+                                    }
                                 }
-                            }
-                            if is_new {
-                                self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
+                                if is_new {
+                                    self.send_event(SendCatalogue(self.get_src_id(), media_id, name))
+                                }
                             }
                         }
                     }
@@ -235,8 +247,9 @@ impl NetworkEdge for WebBrowser {
                     }
                     TextResponse::NotFound(text_id) => {
                         //update catalogue
-                        self.available_text_lists.entry(text_id).and_modify(|(v, _)|
-                            v.retain(|node_id| *node_id != src));
+                        if let Ok(mut tl) = self.available_text_lists.lock() {
+                            tl.entry(text_id).and_modify(|(v, _)| v.retain(|node_id| *node_id != src));
+                        }
 
                         //retry to obtain it
                         self.get_text_file(text_id);
@@ -320,10 +333,10 @@ impl ClientTrait for WebBrowser {
         packet_send: HashMap<NodeId, Sender<Packet>>,
     ) -> Self {
         WebBrowser {
-            client_base: ClientStruct::new(node_id, command_recv, event_send, packet_recv, packet_send),
-            available_text_lists: Default::default(),
-            arrived_content: Default::default(),
-            catalogue: Default::default(),
+            client_base: ClientStruct::<WebTag>::new(node_id, command_recv, event_send, packet_recv, packet_send),
+            available_text_lists: Arc::new(Mutex::new(HashMap::new())),
+            arrived_content: Arc::new(Mutex::new(HashMap::new())),
+            catalogue: Arc::new(Mutex::new(HashMap::new())),
             _marker: PhantomData,
         }
     }
@@ -355,6 +368,22 @@ impl ClientTrait for WebBrowser {
                 self.client_base.periodic_check_type();
 
                 self.client_base.process_unsent_periodically();
+
+                // Periodic telemetry snapshot (visible when DEBUG_MODE = true)
+                if DEBUG_MODE {
+                    let t = self.client_base.telemetry_snapshot();
+                    println!(
+                        "[TELEM:{}] node={} sent={} recv={} inflight={} last_ack_ms={} avg_ack_ms={:?} neigh={}",
+                        self.client_base.build_flavor(),
+                        t.node_id,
+                        t.packets_sent,
+                        t.packets_received,
+                        t.inflight_awaiting_acks,
+                        t.last_ack_ms,
+                        t.avg_ack_ms,
+                        t.neighbors
+                    );
+                }
 
                 // Reset counter.
                 count = 0;
@@ -411,7 +440,7 @@ impl ClientTrait for WebBrowser {
 // WebBrowser helpers.
 impl WebBrowser{
 
-    // Identify this build flavor (purely informational; no behavior change).
+    // Build flavor identifier
     pub fn build_flavor(&self) -> &'static str {
         BUILD_FLAVOR
     }
@@ -434,8 +463,14 @@ impl WebBrowser{
         self.client_base.get_src_id();
         let session = self.client_base.get_session_id();
 
-        if let Some(map) = self.available_text_lists.get(&text_file_id) {
-            let destinations = map.0.clone();
+        let destinations = {
+            self.available_text_lists
+                .lock()
+                .ok()
+                .and_then(|m| m.get(&text_file_id).cloned())
+                .map(|pair| pair.0)
+                .unwrap_or_default()
+        };
             if !destinations.is_empty() {
                 let src = self.client_base.get_src_id();
                 if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
@@ -447,7 +482,7 @@ impl WebBrowser{
                     }
                 }
             }
-        } else {
+        if destinations.is_empty() {
             self.send_event(MissingTextList(self.get_src_id(), text_file_id))
         }
     }
@@ -463,23 +498,22 @@ impl WebBrowser{
 
     // Retrieve a media file using the catalogue; open immediately if cached.
     fn get_media(&mut self, cont_id: u64) {
-        if self.arrived_content.contains_key(&cont_id) {
-            self.open_media(self.arrived_content.get(&cont_id).unwrap().1.clone())
-        }else {
+        if let Some(bytes) = { self.arrived_content.lock().ok().and_then(|m| m.get(&cont_id).map(|(_, b)| b.clone())) } {
+            self.open_media(bytes)
+        } else {
             println!("got here");
             let src = self.client_base.get_src_id();
             let session = self.client_base.get_session_id();
 
-            if let Some(destinations) = self.catalogue.get(&cont_id) {
-                if !destinations.is_empty() {
-                    if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
+            let destinations = { self.catalogue.lock().ok().and_then(|c| c.get(&cont_id).cloned()).unwrap_or_default() };
+            if !destinations.is_empty() {
+                if let Some(dst) = self.client_base.network().get_optimal_dest(&src, &destinations) {
                         let content = ContentType::MediaRequest(Media(cont_id));
                         let msg = Message::new(src, session, content);
                         self.client_base.send_message(msg, dst);
                         if DEBUG_MODE {
                             println!("Sent media request from {src} to server {dst}");
                         }
-                    }
                 }
             } else {
                 self.send_event(MissingDestForMedia(self.get_src_id(), cont_id))
@@ -519,6 +553,22 @@ impl WebBrowser{
             }
         }
     }
+
+    // Expose telemetry snapshot from the base
+    pub fn telemetry(&self) -> crate::clients_sam::sam_client_base::SamTelemetry {
+        self.client_base.telemetry_snapshot()
+    }
+
+    // Expose shared views guarded by Arc<Mutex<...>>
+    pub fn shared_text_lists_handle(&self) -> Arc<Mutex<HashMap<u64, (Vec<NodeId>, String)>>> {
+        self.available_text_lists.clone()
+    }
+
+    pub fn shared_catalogue_handle(&self) -> Arc<Mutex<HashMap<u64, Vec<NodeId>>>> {
+        self.catalogue.clone()
+    }
+
+    pub fn shared_arrived_content_handle(&self) -> Arc<Mutex<HashMap<u64, ArrivedMedia>>> {
+        self.arrived_content.clone()
+    }
 }
-
-

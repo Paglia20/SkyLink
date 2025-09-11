@@ -1,0 +1,5 @@
+2025-09-11 06:38:03 [INFO] [getdroned::get_droned] Drone 7 received a command: RemoveSender(1)
+2025-09-11 06:38:03 [INFO] [rust_do_it::drone] Drone 4 received command RemoveSender(1)
+2025-09-11 06:38:03 [WARN] [rustastic_drone::drone] [33m!!![0m [ Drone 3 ] is already disconnected from [ Drone 1 ]
+2025-09-11 06:38:03 [INFO] [drone-5] Drone '5' disconnected from '1'
+2025-09-11 06:38:03 [WARN] [rust_do_it::drone::rust_do_it] Drone 4 could not remove sender 1 because it is not a neighbour
